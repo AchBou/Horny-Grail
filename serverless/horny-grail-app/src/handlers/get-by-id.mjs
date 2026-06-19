@@ -3,7 +3,8 @@
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { lookupTableName } from '../config/env.mjs';
+import { getLookupTableName } from '../config/env.mjs';
+import { getAllItemsHandler } from './get-all-items.mjs';
 import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
 import { isValidImageId } from '../lib/validation.mjs';
 const client = new DynamoDBClient({});
@@ -15,21 +16,25 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
 export const getByIdHandler = async (event) => {
   const method = event?.httpMethod || event?.requestContext?.http?.method || '';
   if (method !== 'GET') {
-    return methodNotAllowed(`getMethod only accepts GET method, you tried: ${method}`);
+    return methodNotAllowed(`getMethod only accepts GET method, you tried: ${method}`, event);
   }
   // All log statements are written to CloudWatch
   console.info('received:', event);
  
   // Get id from pathParameters from APIGateway because of `/{id}` at template.yaml
   const id = event?.pathParameters?.id;
+  if (!id) {
+    return getAllItemsHandler(event);
+  }
+
   if (!isValidImageId(id)) {
-    return badRequest('Invalid image id');
+    return badRequest('Invalid image id', event);
   }
  
   // Get the item from the table
   // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#get-property
   var params = {
-    TableName : lookupTableName,
+    TableName : getLookupTableName(),
     Key: { id: id },
   };
 
@@ -38,10 +43,10 @@ export const getByIdHandler = async (event) => {
     var item = data.Item;
   } catch (err) {
     console.error("Error", err);
-    return serverError('Failed to get item');
+    return serverError('Failed to get item', event);
   }
  
-  const response = jsonResponse(200, item || null);
+  const response = jsonResponse(200, item || null, event);
  
   // All log statements are written to CloudWatch
   console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);

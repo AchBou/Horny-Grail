@@ -6,11 +6,52 @@
 - Write endpoints require the `x-api-key` header and the Lambda runtime `WRITE_API_KEY` value.
 - The desktop uploader should use backend-issued presigned URLs rather than direct AWS credentials.
 - API Gateway CORS origins are controlled by the `AllowedCorsOrigins` SAM parameter.
+- Local development currently needs both `http://localhost:5173` for the Svelte frontend and `http://localhost:1420` for Tauri dev.
+- Browser uploads to presigned S3 URLs also require S3 bucket CORS on `my-awesome-very-secret-upload-bucket`.
 - Handlers validate image IDs as 64-character hex strings and image extensions against supported image formats.
 
 ## S3
 
 The image bucket is external to the SAM stack, so bucket policy and IAM role permissions must be managed in AWS.
+
+Current bucket:
+
+```text
+my-awesome-very-secret-upload-bucket
+```
+
+Current bucket region:
+
+```text
+us-west-2
+```
+
+Required bucket CORS for local development:
+
+```json
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": [
+        "http://localhost:1420",
+        "http://localhost:5173"
+      ],
+      "AllowedMethods": [
+        "PUT",
+        "GET",
+        "HEAD"
+      ],
+      "AllowedHeaders": [
+        "*"
+      ],
+      "ExposeHeaders": [
+        "ETag"
+      ],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}
+```
 
 The backend role that serves `POST /api/uploads/sign` needs these S3 permissions:
 
@@ -24,8 +65,8 @@ The backend role that serves `POST /api/uploads/sign` needs these S3 permissions
         "s3:PutObject"
       ],
       "Resource": [
-        "arn:aws:s3:::horny-grail-bucket/files/*",
-        "arn:aws:s3:::horny-grail-bucket/thumbnails/*"
+        "arn:aws:s3:::my-awesome-very-secret-upload-bucket/files/*",
+        "arn:aws:s3:::my-awesome-very-secret-upload-bucket/thumbnails/*"
       ]
     }
   ]

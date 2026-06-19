@@ -3,9 +3,9 @@
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { lookupTableName } from '../config/env.mjs';
+import { getLookupTableName } from '../config/env.mjs';
 import { requireWriteApiKey } from '../lib/auth.mjs';
-import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
+import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
 import { isValidImageExt, isValidImageId, parseJsonBody } from '../lib/validation.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
@@ -15,8 +15,12 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
  */
 export const putItemHandler = async (event) => {
     const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+    if (method === 'OPTIONS') {
+        return corsPreflight(event);
+    }
+
     if (method !== 'POST') {
-        return methodNotAllowed(`postMethod only accepts POST method, you tried: ${method} method.`);
+        return methodNotAllowed(`postMethod only accepts POST method, you tried: ${method} method.`, event);
     }
 
     const authError = requireWriteApiKey(event);
@@ -29,24 +33,24 @@ export const putItemHandler = async (event) => {
 
     const body = parseJsonBody(event);
     if (!body) {
-        return badRequest('Invalid JSON body');
+        return badRequest('Invalid JSON body', event);
     }
 
     const id = body.id;
     const ext = body.ext;
 
     if (!isValidImageId(id)) {
-        return badRequest('Invalid image id');
+        return badRequest('Invalid image id', event);
     }
 
     if (!isValidImageExt(ext)) {
-        return badRequest('Invalid image extension');
+        return badRequest('Invalid image extension', event);
     }
 
     // Creates a new item, or replaces an old item with a new item
     // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#put-property
     var params = {
-        TableName : lookupTableName,
+        TableName : getLookupTableName(),
         Item: {
             id,
             ext,
@@ -59,10 +63,10 @@ export const putItemHandler = async (event) => {
         console.log("Success - item added or updated", data);
       } catch (err) {
         console.error("Error", err);
-        return serverError('Failed to write item');
+        return serverError('Failed to write item', event);
       }
 
-    const response = jsonResponse(200, params.Item);
+    const response = jsonResponse(200, params.Item, event);
 
     // All log statements are written to CloudWatch
     console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);

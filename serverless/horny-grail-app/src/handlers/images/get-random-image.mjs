@@ -1,6 +1,6 @@
 // Create clients and set shared const values outside of the handler.
 import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
-import { buildCloudFrontFileUrl, lookupTableName } from '../../config/env.mjs';
+import { buildCloudFrontFileUrl, getLookupTableName } from '../../config/env.mjs';
 import { jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
 
 const dynamoClient = new DynamoDBClient({});
@@ -31,14 +31,14 @@ const scanTable = async (params) => {
 export const getRandomImageHandler = async (event) => {
     const method = event?.httpMethod || event?.requestContext?.http?.method || '';
     if (method && method !== 'GET') {
-        return methodNotAllowed(`getRandomImage only accepts GET method, you tried: ${method}`);
+        return methodNotAllowed(`getRandomImage only accepts GET method, you tried: ${method}`, event);
     }
     // All log statements are written to CloudWatch
     console.info('received:', event);
 
     try {
         const params = {
-            TableName: lookupTableName,
+            TableName: getLookupTableName(),
             Limit: 1,
             ExclusiveStartKey: {
                 'id': {
@@ -60,7 +60,7 @@ export const getRandomImageHandler = async (event) => {
         // Return the CloudFront URL
         const response = jsonResponse(200, {
             url: buildCloudFrontFileUrl(key)
-        });
+        }, event);
         
         // All log statements are written to CloudWatch
         console.info(`Response: statusCode: ${response.statusCode} body: ${response.body}`);
@@ -69,7 +69,7 @@ export const getRandomImageHandler = async (event) => {
         console.error("Error:", err);
         
         // Create a user-friendly error response
-        const response = serverError('Error getting random image. Please try again later.');
+        const response = serverError('Error getting random image. Please try again later.', event);
         
         console.info(`Error response: statusCode: ${response.statusCode} body: ${response.body}`);
         return response;

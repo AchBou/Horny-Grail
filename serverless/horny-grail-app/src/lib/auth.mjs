@@ -11,7 +11,7 @@ function getHeader(event, name) {
 export function requireWriteApiKey(event) {
   const provided = getHeader(event, 'x-api-key');
   if (!provided || provided !== getWriteApiKey()) {
-    return unauthorized();
+    return unauthorized(event);
   }
 
   return null;

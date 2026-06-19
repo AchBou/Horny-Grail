@@ -55,8 +55,9 @@ sam deploy --guided
 - Original files are expected at CloudFront path `files/<hash>.<ext>`.
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
 - The frontend requires `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` from public env.
-- The serverless app requires `LOOKUP_TABLE` and `CLOUDFRONT_BASE_URL` from runtime env or SAM parameters.
+- The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
 - The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.
+- The current upload bucket is `my-awesome-very-secret-upload-bucket` in `us-west-2`; browser uploads require S3 bucket CORS for `http://localhost:1420`.
 
 ## Environment And AWS Notes
 

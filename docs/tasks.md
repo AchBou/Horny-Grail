@@ -21,7 +21,7 @@ This document contains a comprehensive list of actionable improvement tasks for 
 ### Performance
 - [ ] Implement caching for frequently accessed resources
 - [ ] Optimize image processing pipeline
-- [ ] Consider using AWS CloudFront for content delivery
+- [x] Use AWS CloudFront for content delivery
 - [ ] Implement pagination for listing resources
 - [ ] Review and optimize DynamoDB queries
 
@@ -61,8 +61,8 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Standardize error handling across all functions
 - [ ] Implement proper logging with different log levels
 - [ ] Remove console.log statements from production code
-- [ ] Add input validation for all function parameters
-- [ ] Implement proper HTTP status codes for responses
+- [x] Add input validation for all function parameters
+- [x] Implement proper HTTP status codes for responses
 
 #### get-random-image
 - [ ] Refactor to use a more efficient method for getting random items from DynamoDB
@@ -70,9 +70,9 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Improve error handling with specific error messages
 - [ ] Fix potential infinite loop in random item selection
 
-#### get-full-image
-- [ ] Implement content type detection based on file extension
-- [ ] Add validation for image ID parameter
+#### image retrieval
+- [ ] Implement content type detection based on file extension where raw image responses are served
+- [x] Add validation for image ID parameter
 - [ ] Improve error handling with specific error messages
 
 ### Local Development Environment

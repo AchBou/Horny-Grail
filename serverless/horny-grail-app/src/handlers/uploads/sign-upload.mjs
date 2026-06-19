@@ -1,10 +1,10 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getBucketName, getWriteApiKey } from '../../config/env.mjs';
-import { badRequest, jsonResponse, methodNotAllowed, serverError, unauthorized } from '../../lib/http.mjs';
+import { getBucketName, getBucketRegion, getWriteApiKey } from '../../config/env.mjs';
+import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, serverError, unauthorized } from '../../lib/http.mjs';
 import { isValidImageExt, isValidImageId, parseJsonBody } from '../../lib/validation.mjs';
 
-const s3Client = new S3Client({});
+const s3Client = new S3Client({ region: getBucketRegion() });
 const ALLOWED_PATHS = new Set(['files', 'thumbnails']);
 
 /**
@@ -18,18 +18,22 @@ async function createSignedUrl(input) {
 
 export const signUploadHandler = async (event) => {
   const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+  if (method === 'OPTIONS') {
+    return corsPreflight(event);
+  }
+
   if (method !== 'POST') {
-    return methodNotAllowed(`signUpload only accepts POST method, you tried: ${method}`);
+    return methodNotAllowed(`signUpload only accepts POST method, you tried: ${method}`, event);
   }
 
   const providedKey = event?.headers?.['x-api-key'] || event?.headers?.['X-Api-Key'];
   if (!providedKey || providedKey !== getWriteApiKey()) {
-    return unauthorized();
+    return unauthorized(event);
   }
 
   const body = parseJsonBody(event);
   if (!body) {
-    return badRequest('Invalid JSON body');
+    return badRequest('Invalid JSON body', event);
   }
 
   const path = body.path;
@@ -37,15 +41,15 @@ export const signUploadHandler = async (event) => {
   const ext = body.ext;
 
   if (!ALLOWED_PATHS.has(path)) {
-    return badRequest('Invalid upload path');
+    return badRequest('Invalid upload path', event);
   }
 
   if (!isValidImageId(id)) {
-    return badRequest('Invalid image id');
+    return badRequest('Invalid image id', event);
   }
 
   if (!isValidImageExt(ext)) {
-    return badRequest('Invalid image extension');
+    return badRequest('Invalid image extension', event);
   }
 
   const isThumbnail = path === 'thumbnails';
@@ -72,9 +76,9 @@ export const signUploadHandler = async (event) => {
       uploadUrl,
       key: objectKey,
       headers
-    });
+    }, event);
   } catch (error) {
     console.error('Error creating upload URL', error);
-    return serverError('Failed to create upload URL');
+    return serverError('Failed to create upload URL', event);
   }
 };

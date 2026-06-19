@@ -3,7 +3,7 @@
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
-import { lookupTableName } from '../../config/env.mjs';
+import { getLookupTableName } from '../../config/env.mjs';
 import { jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
@@ -14,7 +14,7 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
 export const getAllThumbnailsHandler = async (event) => {
     const method = event?.httpMethod || event?.requestContext?.http?.method || '';
     if (method !== 'GET') {
-        return methodNotAllowed(`getAllThumbnails only accepts GET method, you tried: ${method}`);
+        return methodNotAllowed(`getAllThumbnails only accepts GET method, you tried: ${method}`, event);
     }
     // All log statements are written to CloudWatch
     console.info('received:', event);
@@ -23,7 +23,7 @@ export const getAllThumbnailsHandler = async (event) => {
     // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#scan-property
     // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
     const params = {
-        TableName: lookupTableName
+        TableName: getLookupTableName()
     };
 
     let items = [];
@@ -34,7 +34,7 @@ export const getAllThumbnailsHandler = async (event) => {
     } catch (err) {
         console.error('Error scanning table:', err);
         // Return a 500 if scan fails
-        return serverError('Failed to scan table');
+        return serverError('Failed to scan table', event);
     }
 
     // Map items to an array of thumbnail filenames expected by the front: "thumbnail-<hex>.jpeg"
@@ -47,7 +47,7 @@ export const getAllThumbnailsHandler = async (event) => {
         })
         .filter(Boolean);
 
-    const response = jsonResponse(200, thumbnails);
+    const response = jsonResponse(200, thumbnails, event);
 
     // All log statements are written to CloudWatch
     const path = event?.path || event?.rawPath || '';

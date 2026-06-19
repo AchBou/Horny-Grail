@@ -1,7 +1,7 @@
 // Import getByIdHandler function from get-by-id.mjs 
 import { getByIdHandler } from '../../../src/handlers/get-by-id.mjs'; 
 // Import dynamodb from aws-sdk 
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from "aws-sdk-client-mock";
  
 // This includes all tests for getByIdHandler() 
@@ -53,6 +53,23 @@ describe('Test getByIdHandler', () => {
         });
 
         expect(result.statusCode).toEqual(400);
+    });
+
+    it('should fall back to the list handler for an empty id', async () => {
+        const items = [{ id: 'a'.repeat(64), ext: 'jpg' }];
+        ddbMock.on(ScanCommand).resolves({
+            Items: items
+        });
+
+        const result = await getByIdHandler({
+            httpMethod: 'GET',
+            pathParameters: {
+                id: ''
+            }
+        });
+
+        expect(result.statusCode).toEqual(200);
+        expect(result.body).toEqual(JSON.stringify(items));
     });
 }); 
  
