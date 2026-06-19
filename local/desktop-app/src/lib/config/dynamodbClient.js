@@ -1,8 +1,6 @@
 // Create the DynamoDB service client module using ES6 syntax.
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { getAwsClientOptions, REGION } from "./awsEnv.js";
 
-// Set the AWS Region.
-export const REGION = "us-east-1"; // Same as in the original config
-
-// Create an Amazon DynamoDB service client object.
-export const ddbClient = new DynamoDBClient({ region: REGION });
+// Create an Amazon DynamoDB service client object using shared AWS options.
+export const ddbClient = new DynamoDBClient(getAwsClientOptions());
