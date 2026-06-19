@@ -34,6 +34,25 @@ describe('Test signUploadHandler', () => {
     expect(body.key).toEqual(`files/${id}.png`);
   });
 
+  it('should issue a signed URL for webm uploads', async () => {
+    const id = 'd'.repeat(64);
+    const result = await signUploadHandler({
+      httpMethod: 'POST',
+      headers: {
+        'x-api-key': 'test-write-api-key'
+      },
+      body: JSON.stringify({
+        path: 'files',
+        id,
+        ext: 'webm'
+      })
+    });
+
+    expect(result.statusCode).toEqual(200);
+    const body = JSON.parse(result.body);
+    expect(body.key).toEqual(`files/${id}.webm`);
+  });
+
   it('should reject unauthorized requests', async () => {
     const result = await signUploadHandler({
       httpMethod: 'POST',

@@ -1,5 +1,5 @@
 const HASH_RE = /^[a-fA-F0-9]{64}$/;
-const EXT_RE = /^(jpe?g|png|gif|webp|bmp|tiff?|jpeg)$/i;
+const EXT_RE = /^(jpe?g|png|gif|webp|bmp|tiff?|webm)$/i;
 
 export function isValidImageId(id) {
   return typeof id === 'string' && HASH_RE.test(id);
