@@ -72,7 +72,7 @@ export async function uploadFile(filePath) {
     const hex = hash.toString(CryptoJS.enc.Hex);
     
     // Get file extension
-    const fileExtension = filePath.split('.').pop() || 'bin';
+    const fileExtension = filePath.split('.').pop()?.toLowerCase() || 'bin';
     
     try {
         const uploadTarget = await requestUploadTarget("files", hex, fileExtension);

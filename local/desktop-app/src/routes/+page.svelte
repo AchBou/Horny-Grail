@@ -31,11 +31,11 @@
   let fileHashes = $state<{[key: string]: string}>({});
   let fileExists = $state<{[key: string]: boolean}>({});
 
-  // Only process and show image files
-  const imageExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif'];
-  function isImageFile(name: string): boolean {
+  // Only process and show supported media files.
+  const mediaExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','webm'];
+  function isMediaFile(name: string): boolean {
     const ext = name.split('.').pop()?.toLowerCase() || '';
-    return imageExtensions.includes(ext);
+    return mediaExtensions.includes(ext);
   }
 
   // Map image file extensions to simple emoji icons
@@ -197,7 +197,7 @@
       }));
       
       // Show only image files (skip folders and non-images)
-      files = mapped.filter(f => !f.isDirectory && isImageFile(f.name));
+      files = mapped.filter(f => !f.isDirectory && isMediaFile(f.name));
 
       // Reset existence map for current directory files only
       const newExists = {} as {[key:string]: boolean};
@@ -263,8 +263,8 @@
     if (file.isDirectory) {
       return; // Skip directories
     }
-    if (!isImageFile(file.name)) {
-      return; // Skip non-image files
+    if (!isMediaFile(file.name)) {
+      return; // Skip unsupported files
     }
     try {
       // Update status
@@ -277,10 +277,10 @@
       fileHashes[file.path] = fileHash;
       fileExists[file.path] = true;
       
-      // If it's an image file, also upload a thumbnail
+      // Upload a thumbnail preview for every supported media file.
       const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
       
-      if (imageExtensions.includes(fileExt)) {
+      if (mediaExtensions.includes(fileExt)) {
         try {
           await uploadThumbnail(file.path, fileHash);
         } catch (thumbnailError) {
@@ -308,7 +308,7 @@
 
   // Compute list of files eligible for bulk upload
   function getEligibleFiles(): FileEntry[] {
-    return files.filter(f => !f.isDirectory && isImageFile(f.name) && !fileExists[f.path] && uploadStatus[f.path] !== "completed");
+    return files.filter(f => !f.isDirectory && isMediaFile(f.name) && !fileExists[f.path] && uploadStatus[f.path] !== "completed");
   }
 
   // Upload all eligible files sequentially
