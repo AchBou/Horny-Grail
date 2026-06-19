@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  horny-grail-app
+Transform:
+- AWS::Serverless-2016-10-31
+
+Parameters:
+  LookupTableName:
+    Type: String
+    Description: Name of the existing DynamoDB table to use
+    Default: horny-grail-name-lookup
+
+# Resources declares the AWS resources that you want to include in the stack
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
+Resources:
+  # Each Lambda function is defined by properties:
+  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+
+  # This is a Lambda function config associated with the source code: get-all-items.js
+  getAllThumbnailsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/thumbnails/get-all-thumbnails.getAllThumbnailsHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 100
+      Description: A simple example includes a HTTP get method to get all items 
+        from a DynamoDB table.
+      Policies:
+        # Give Create/Read/Update/Delete Permissions to the SampleTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LookupTableName
+      Environment:
+        Variables:
+          # Make table name accessible as environment variable from function code during execution
+          LOOKUP_TABLE: !Ref LookupTableName
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/thumbnails
+            Method: GET
+  # Each Lambda function is defined by properties:
+  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+
+  # This is a Lambda function config associated with the source code: get-by-id.js
+  getByIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/get-by-id.getByIdHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 100
+      Description: A simple example includes a HTTP get method to get one item 
+        by id from a DynamoDB table.
+      Policies:
+        # Give Create/Read/Update/Delete Permissions to the SampleTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LookupTableName
+      Environment:
+        Variables:
+          # Make table name accessible as environment variable from function code during execution
+          LOOKUP_TABLE: !Ref LookupTableName
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/{id}
+            Method: GET
+  # Each Lambda function is defined by properties:
+  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+
+  # This is a Lambda function config associated with the source code: put-item.js
+  putItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/put-item.putItemHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 100
+      Description: A simple example includes a HTTP post method to add one item 
+        to a DynamoDB table.
+      Policies:
+        # Give Create/Read/Update/Delete Permissions to the SampleTable
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LookupTableName
+      Environment:
+        Variables:
+          # Make table name accessible as environment variable from function code during execution
+          LOOKUP_TABLE: !Ref LookupTableName
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api
+            Method: POST
+
+  getAllItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/get-all-items.getAllItemsHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 100
+      Description: A simple example includes a HTTP get method to get all items 
+        from a DynamoDB table.
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LookupTableName
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTableName
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api
+            Method: GET
+
+  GetRandomImage:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/images/get-random-image.getRandomImageHandler
+      Runtime: nodejs22.x
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LookupTableName
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTableName
+      Architectures:
+        - x86_64
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/get-random-image
+            Method: GET
+
+
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+Outputs:
+  WebEndpoint:
+    Description: HTTP API default endpoint URL with /api base path
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/"
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    LoggingConfig:
+      LogFormat: JSON
+  HttpApi:
+    CorsConfiguration:
+      AllowMethods:
+        - GET
+        - POST
+        - OPTIONS
+      AllowHeaders:
+        - Content-Type
+        - Authorization
+        - X-Requested-With
+      AllowOrigins:
+        - '*'
+      AllowCredentials: false
