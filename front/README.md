@@ -9,7 +9,7 @@ Copy `.env.example` to `.env` and provide values for:
 - `PUBLIC_API_BASE_URL`
 - `PUBLIC_CLOUDFRONT_BASE_URL`
 
-If no env values are set, the app falls back to the currently deployed API and CloudFront endpoints embedded in the config helper.
+These values are required. The app no longer keeps source-code URL fallbacks.
 
 ## Commands
 

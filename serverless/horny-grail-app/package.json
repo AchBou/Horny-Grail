@@ -28,6 +28,9 @@
             "/node_modules/",
             "/.aws-sam/"
         ],
+        "setupFiles": [
+            "<rootDir>/jest.setup.mjs"
+        ],
         "moduleFileExtensions": [
             "mjs",
             "js"

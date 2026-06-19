@@ -1,13 +1,20 @@
 import { env } from "$env/dynamic/public";
 
 const trimTrailingSlash = (value) => value.replace(/\/+$/, "");
+const requirePublicEnv = (name, value) => {
+  if (!value) {
+    throw new Error(`Missing required public environment variable: ${name}`);
+  }
+
+  return value;
+};
 
 export const API_BASE_URL = trimTrailingSlash(
-  env.PUBLIC_API_BASE_URL || "https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api"
+  requirePublicEnv("PUBLIC_API_BASE_URL", env.PUBLIC_API_BASE_URL)
 );
 
 export const CLOUDFRONT_BASE_URL = trimTrailingSlash(
-  env.PUBLIC_CLOUDFRONT_BASE_URL || "https://dqvs0hmo3wpp7.cloudfront.net"
+  requirePublicEnv("PUBLIC_CLOUDFRONT_BASE_URL", env.PUBLIC_CLOUDFRONT_BASE_URL)
 );
 
 export function buildApiUrl(path = "") {

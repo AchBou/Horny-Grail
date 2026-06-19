@@ -23,6 +23,8 @@ The SAM template also exposes matching deploy-time parameters:
 - `LookupTableName`
 - `CloudFrontBaseUrl`
 
+These values are required. The runtime config helper does not apply source defaults anymore.
+
 If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
 The AWS Toolkit is an open-source plugin for popular IDEs that uses the AWS SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds step-through debugging for Lambda function code. 
 

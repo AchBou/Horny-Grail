@@ -54,9 +54,9 @@ sam deploy --guided
 - DynamoDB items use `id` as the content hash. Some frontend normalization still accepts `hex` for backward compatibility.
 - Original files are expected at CloudFront path `files/<hash>.<ext>`.
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
-- The frontend reads `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` from public env, with deployed values used as current fallbacks.
-- The serverless app reads `LOOKUP_TABLE` and `CLOUDFRONT_BASE_URL` from runtime env or SAM parameters.
-- The desktop uploader defaults to bucket `horny-grail-bucket` and table `horny-grail-table` unless Vite env vars override them.
+- The frontend requires `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` from public env.
+- The serverless app requires `LOOKUP_TABLE` and `CLOUDFRONT_BASE_URL` from runtime env or SAM parameters.
+- The desktop uploader requires `VITE_AWS_REGION`, `VITE_BUCKET_NAME`, and `VITE_DYNAMO_TABLE`.
 
 ## Environment And AWS Notes
 
