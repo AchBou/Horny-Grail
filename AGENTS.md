@@ -5,7 +5,7 @@ This repository contains the HornyGrail image app. Use this file as the first st
 ## Repository Layout
 
 - `front/` is the public SvelteKit frontend for browsing images, viewing a single image, and loading a random image.
-- `local/desktop-app/` is the Tauri 2 desktop uploader app. It watches a local folder, hashes image files, checks DynamoDB for duplicates, uploads originals to S3, and uploads thumbnails.
+- `local/desktop-app/` is the Tauri 2 desktop uploader app. It watches a local folder, hashes image files, checks backend metadata for duplicates, uploads originals and thumbnails through server-issued presigned URLs, and never talks to AWS directly.
 - `serverless/horny-grail-app/` is the AWS SAM backend. It defines Lambda handlers, API Gateway HTTP routes, DynamoDB access, sample events, and Jest tests.
 - `docs/` contains project planning notes and improvement tasks.
 - `.junie/` contains IDE/assistant-facing development guidelines.
@@ -56,20 +56,16 @@ sam deploy --guided
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
 - The frontend requires `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` from public env.
 - The serverless app requires `LOOKUP_TABLE` and `CLOUDFRONT_BASE_URL` from runtime env or SAM parameters.
-- The desktop uploader requires `VITE_AWS_REGION`, `VITE_BUCKET_NAME`, and `VITE_DYNAMO_TABLE`.
+- The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.
 
 ## Environment And AWS Notes
 
-Desktop app AWS config is centralized in `local/desktop-app/src/lib/config/awsEnv.js`.
+Desktop app API config is centralized in `local/desktop-app/src/lib/config/apiEnv.js`.
 
 Supported Vite env vars:
 
-- `VITE_AWS_REGION`
-- `VITE_AWS_ACCESS_KEY_ID`
-- `VITE_AWS_SECRET_ACCESS_KEY`
-- `VITE_AWS_SESSION_TOKEN`
-- `VITE_BUCKET_NAME`
-- `VITE_DYNAMO_TABLE`
+- `VITE_API_BASE_URL`
+- `VITE_WRITE_API_KEY`
 
 Do not commit real AWS credentials, local `.env` files, generated SAM build folders, `node_modules`, or Tauri build output. If adding config examples, use placeholder values.
 

@@ -1,11 +1,60 @@
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { PutItemCommand } from "@aws-sdk/client-dynamodb";
-import { s3Client } from "../config/s3Client.js";
-import { ddbClient } from "../config/dynamodbClient.js";
-import { BUCKET_NAME, DYNAMO_TABLE } from "../config/awsEnv.js";
 import { readFile } from '@tauri-apps/plugin-fs';
 import CryptoJS from 'crypto-js';
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { API_BASE_URL, WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
+
+/**
+ * @typedef {{ uploadUrl: string, key: string, headers?: Record<string, string> }} UploadTarget
+ */
+
+/**
+ * @param {string} path
+ * @param {string} id
+ * @param {string} ext
+ * @returns {Promise<UploadTarget>}
+ */
+async function requestUploadTarget(path, id, ext) {
+    const response = await fetch(buildApiUrl("/uploads/sign"), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-api-key": WRITE_API_KEY
+        },
+        body: JSON.stringify({
+            path,
+            id,
+            ext
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to request upload URL: ${response.status}`);
+    }
+
+    return response.json();
+}
+
+/**
+ * @param {string} id
+ * @param {string} ext
+ * @returns {Promise<void>}
+ */
+async function registerUploadedFile(id, ext) {
+    const response = await fetch(API_BASE_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-api-key": WRITE_API_KEY
+        },
+        body: JSON.stringify({
+            id,
+            ext
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to register uploaded file: ${response.status}`);
+    }
+}
 
 /**
  * @param {string} filePath
@@ -25,35 +74,14 @@ export async function uploadFile(filePath) {
     // Get file extension
     const fileExtension = filePath.split('.').pop() || 'bin';
     
-    // S3 object key
-    const key = 'files/' + hex + '.' + fileExtension;
-
-    // Prepare parameters for DynamoDB
-    const logInDBParams = {
-        Item: {
-            id: {
-                S: hex
-            },
-            ext: {
-                S: fileExtension
-            },
-            date: {
-                S: new Date().toString()
-            }
-        },
-        TableName: DYNAMO_TABLE
-    };
-
     try {
-        // Generate a presigned URL for S3 PUT operation
-        const command = new PutObjectCommand({ Bucket: BUCKET_NAME, Key: key });
-        const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 minutes
+        const uploadTarget = await requestUploadTarget("files", hex, fileExtension);
 
         // Upload file using the presigned URL
-        const res = await fetch(presignedUrl, {
+        const res = await fetch(uploadTarget.uploadUrl, {
             method: 'PUT',
             body: fileData,
-            // Note: Do not set Content-Type unless it was included when signing
+            headers: uploadTarget.headers || {}
         });
 
         if (!res.ok) {
@@ -61,9 +89,7 @@ export async function uploadFile(filePath) {
         }
         console.log("Upload Success via presigned URL");
         
-        // Log in DynamoDB
-        const ddbCommand = new PutItemCommand(logInDBParams);
-        await ddbClient.send(ddbCommand);
+        await registerUploadedFile(hex, fileExtension);
         
         return hex;
     } catch (err) {

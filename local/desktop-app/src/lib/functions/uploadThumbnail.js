@@ -1,8 +1,5 @@
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { s3Client } from "../config/s3Client.js";
 import { readFile } from '@tauri-apps/plugin-fs';
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { BUCKET_NAME } from "../config/awsEnv.js";
+import { WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
 
 // Rollback to simple JS thumbnail generation (max 150px, JPEG)
 const MAX_DIMENSION = 150;
@@ -109,15 +106,29 @@ export async function uploadThumbnail(filePath, hex) {
   // Create small JPEG thumbnail (150px max side)
   const thumbBytes = await makeJpegThumbnailBytes(srcBytes, MAX_DIMENSION, JPEG_QUALITY);
 
-  // Upload to S3 via presigned URL
-  const key = 'thumbnails/thumbnail-' + hex + '.jpeg';
-  const command = new PutObjectCommand({ Bucket: BUCKET_NAME, Key: key, ContentType: 'image/jpeg' });
-  const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 });
+  const signResponse = await fetch(buildApiUrl("/uploads/sign"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": WRITE_API_KEY
+    },
+    body: JSON.stringify({
+      path: "thumbnails",
+      id: hex,
+      ext: "jpeg"
+    })
+  });
 
-  const res = await fetch(presignedUrl, {
+  if (!signResponse.ok) {
+    throw new Error(`Failed to request thumbnail upload URL: ${signResponse.status}`);
+  }
+
+  const uploadTarget = await signResponse.json();
+
+  const res = await fetch(uploadTarget.uploadUrl, {
     method: 'PUT',
     body: new Blob([toArrayBuffer(thumbBytes)], { type: 'image/jpeg' }),
-    headers: { 'Content-Type': 'image/jpeg' }
+    headers: uploadTarget.headers || { 'Content-Type': 'image/jpeg' }
   });
 
   if (!res.ok) {

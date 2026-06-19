@@ -17,6 +17,10 @@ export function getWriteApiKey() {
   return requireEnv('WRITE_API_KEY', process.env.WRITE_API_KEY);
 }
 
+export function getBucketName() {
+  return requireEnv('BUCKET_NAME', process.env.BUCKET_NAME);
+}
+
 export function buildCloudFrontFileUrl(key) {
   return `${cloudFrontBaseUrl}/files/${key}`;
 }

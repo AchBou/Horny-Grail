@@ -1,6 +1,4 @@
-import { GetItemCommand } from "@aws-sdk/client-dynamodb";
-import { ddbClient } from "../config/dynamodbClient.js";
-import { DYNAMO_TABLE } from "../config/awsEnv.js";
+import { buildApiUrl } from "../config/apiEnv.js";
 
 // Check if an item with primary key id === hex exists in DynamoDB
 /**
@@ -9,17 +7,15 @@ import { DYNAMO_TABLE } from "../config/awsEnv.js";
  */
 export async function checkFileExistsByHex(hex) {
   if (!hex) return false;
-  const params = {
-    TableName: DYNAMO_TABLE,
-    Key: {
-      id: { S: hex }
-    },
-    ProjectionExpression: "id"
-  };
+
   try {
-    const cmd = new GetItemCommand(params);
-    const res = await ddbClient.send(cmd);
-    return !!(res && res.Item && res.Item.id && res.Item.id.S);
+    const response = await fetch(buildApiUrl(`/${hex}`));
+    if (!response.ok) {
+      throw new Error(`Metadata request failed with status ${response.status}`);
+    }
+
+    const item = await response.json();
+    return !!(item && item.id);
   } catch (e) {
     console.error("checkFileExistsByHex error", e);
     // Fail-open (assume it doesn't exist) to avoid blocking uploads due to transient errors

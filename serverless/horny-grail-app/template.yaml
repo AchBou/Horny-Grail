@@ -13,6 +13,10 @@ Parameters:
     Type: String
     Description: CloudFront base URL used to build public image URLs
     Default: https://dqvs0hmo3wpp7.cloudfront.net
+  BucketName:
+    Type: String
+    Description: Existing S3 bucket used for full images and thumbnails
+    Default: horny-grail-bucket
   WriteApiKey:
     Type: String
     Description: Shared API key required for write endpoints
@@ -103,6 +107,7 @@ Resources:
         Variables:
           # Make table name accessible as environment variable from function code during execution
           LOOKUP_TABLE: !Ref LookupTableName
+          BUCKET_NAME: !Ref BucketName
           WRITE_API_KEY: !Ref WriteApiKey
       Events:
         Api:
@@ -148,6 +153,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTableName
+          BUCKET_NAME: !Ref BucketName
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
       Architectures:
         - x86_64
@@ -157,6 +163,34 @@ Resources:
           Properties:
             Path: /api/get-random-image
             Method: GET
+
+  signUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/uploads/sign-upload.signUploadHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 30
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:PutObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          WRITE_API_KEY: !Ref WriteApiKey
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/uploads/sign
+            Method: POST
 
 
   ApplicationResourceGroup:
