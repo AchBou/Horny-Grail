@@ -1,9 +1,9 @@
 import { readFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
 import { WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
 
-// Rollback to simple JS thumbnail generation (max 150px, JPEG)
-const MAX_DIMENSION = 150;
-const JPEG_QUALITY = 0.85; // 0..1
+const MAX_DIMENSION = 320;
+const JPEG_QUALITY = 90; // 1..100 for native encoder, converted for canvas fallback
 
 /**
  * Normalize Uint8Array-backed data to a plain ArrayBuffer for DOM APIs.
@@ -46,7 +46,7 @@ async function bytesToImage(srcBytes) {
  * @returns {Promise<Uint8Array>}
  */
 async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality = JPEG_QUALITY) {
-  // Prefer high-quality resize/encode via @squoosh/lib when available
+  // Canvas fallback used if the native Tauri path is unavailable.
   try {
     const { ImagePool } = await import('@squoosh/lib');
     const pool = new ImagePool(1);
@@ -57,7 +57,7 @@ async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality 
       resize: { width: maxDim, height: maxDim, method: 'lanczos3', premultiply: true, linearRGB: true }
     }).catch(() => {});
 
-    await image.encode({ mozjpeg: { quality: Math.round(quality * 100) } });
+    await image.encode({ mozjpeg: { quality } });
     const encoded = /** @type {{ mozjpeg: Promise<{ binary: ArrayBufferLike }> }} */ (image.encodedWith);
     const { binary } = await encoded.mozjpeg;
     await pool.close();
@@ -83,12 +83,14 @@ async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality 
     // Fill white to flatten any transparency before drawing
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, tw, th);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, tw, th);
 
     const blob = await new Promise(
       /** @returns {void} */
       (resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality)
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality / 100)
     );
     const buf = await blob.arrayBuffer();
     return new Uint8Array(buf);
@@ -101,10 +103,18 @@ async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality 
  * @returns {Promise<string>}
  */
 export async function uploadThumbnail(filePath, hex) {
-  // Read original image bytes
-  const srcBytes = await readFile(filePath);
-  // Create small JPEG thumbnail (150px max side)
-  const thumbBytes = await makeJpegThumbnailBytes(srcBytes, MAX_DIMENSION, JPEG_QUALITY);
+  let thumbBytes;
+  try {
+    const nativeThumbBytes = await invoke('generate_thumbnail', {
+      path: filePath,
+      maxDimension: MAX_DIMENSION,
+      qualityHint: JPEG_QUALITY
+    });
+    thumbBytes = Uint8Array.from(/** @type {number[]} */ (nativeThumbBytes));
+  } catch {
+    const srcBytes = await readFile(filePath);
+    thumbBytes = await makeJpegThumbnailBytes(srcBytes, MAX_DIMENSION, JPEG_QUALITY);
+  }
 
   const signResponse = await fetch(buildApiUrl("/uploads/sign"), {
     method: "POST",

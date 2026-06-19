@@ -1,6 +1,5 @@
 use std::fs::{File};
 use std::io::{BufReader, Read, Cursor};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use image::{DynamicImage, ImageOutputFormat, imageops::FilterType, GenericImageView, RgbaImage, RgbImage};
@@ -41,7 +40,7 @@ fn flatten_to_white(img: &DynamicImage) -> RgbImage {
 }
 
 #[tauri::command]
-fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<String, String> {
+fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
     let max_dim = max_dimension.unwrap_or(150);
     let quality = quality_hint.unwrap_or(88);
 
@@ -72,13 +71,7 @@ fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Op
             .map_err(|e| format!("failed to encode jpeg: {}", e))?;
     }
 
-    // Write to a temp file and return its path
-    let epoch_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| format!("time error: {}", e))?.as_millis();
-    let mut tmp_path = std::env::temp_dir();
-    tmp_path.push(format!("hornygrail-thumb-{}.jpeg", epoch_ms));
-    std::fs::write(&tmp_path, &jpeg_bytes).map_err(|e| format!("failed to write temp thumbnail: {}", e))?;
-
-    Ok(tmp_path.to_string_lossy().to_string())
+    Ok(jpeg_bytes)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
