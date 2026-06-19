@@ -1,8 +1,10 @@
 <script>
     import { onMount } from 'svelte';
     import { buildApiUrl, buildFileUrl } from '$lib/config/publicEnv.js';
+    import { getMediaKindFromExt } from '$lib/models/image.js';
 
     let imageUrl = '';
+    let mediaKind = 'image';
     let isLoading = true;
     let error = null;
 
@@ -33,6 +35,7 @@
             // With hex-as-id, we can rely on id directly for object keys
             const hex = id;
             const ext = item?.ext || 'jpeg';
+            mediaKind = getMediaKindFromExt(ext);
 
             // Build CloudFront URL
             imageUrl = buildFileUrl(hex, ext);
@@ -46,7 +49,7 @@
 </script>
 
 <div class="image-container-page">
-    <h2>Image</h2>
+    <h2>{mediaKind === 'video' ? 'Video' : 'Image'}</h2>
 
     <div class="img-box">
         {#if isLoading}
@@ -61,7 +64,14 @@
             </div>
         {:else if imageUrl}
             <div class="image-wrapper">
-                <img class="image" src={imageUrl} alt="selected image" />
+                {#if mediaKind === 'video'}
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <video class="media" controls preload="metadata" playsinline>
+                        <source src={imageUrl} type="video/webm" />
+                    </video>
+                {:else}
+                    <img class="media" src={imageUrl} alt="Selected file" />
+                {/if}
             </div>
         {/if}
     </div>
@@ -112,7 +122,7 @@
         justify-content: center;
     }
 
-    .image {
+    .media {
         display: block;
         max-width: 100%;
         max-height: 70vh;
@@ -190,7 +200,7 @@
         .img-box {
             width: 100%;
         }
-        .image {
+        .media {
             max-height: 60vh;
         }
     }

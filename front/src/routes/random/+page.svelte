@@ -3,15 +3,30 @@
     import { onMount } from "svelte";
     import { fade, fly } from 'svelte/transition';
     import { buildApiUrl } from "$lib/config/publicEnv.js";
+    import { getMediaKindFromExt } from "$lib/models/image.js";
 
     let randomSrc = "";
+    let mediaKind = "image";
     let isLoading = true;
     let error = null;
+
+    function inferExtFromUrl(url) {
+        try {
+            const pathname = new URL(url).pathname;
+            const ext = pathname.split('.').pop();
+            return ext ? ext.toLowerCase() : null;
+        } catch {
+            const base = url.split('?')[0];
+            const ext = base.split('.').pop();
+            return ext ? ext.toLowerCase() : null;
+        }
+    }
 
     async function generateRandomPic() {
         try {
             isLoading = true;
             randomSrc = "";
+            mediaKind = "image";
             error = null;
 
             let response = await fetch(buildApiUrl("/get-random-image"));
@@ -33,6 +48,7 @@
                 // Strip surrounding quotes if any
                 randomSrc = text.replace(/^\"|\"$/g, '');
             }
+            mediaKind = getMediaKindFromExt(inferExtFromUrl(randomSrc));
             isLoading = false;
         } catch (err) {
             console.error(err);
@@ -45,7 +61,7 @@
 </script>
 
 <div class="random-container">
-    <h2>Random Image</h2>
+    <h2>Random {mediaKind === 'video' ? 'Video' : 'Image'}</h2>
 
     <div class="img-container">
         {#if isLoading}
@@ -60,7 +76,14 @@
             </div>
         {:else if randomSrc}
             <div class="image-wrapper" in:fade={{ duration: 300 }}>
-                <img class="random-image" src={randomSrc} alt="random" />
+                {#if mediaKind === 'video'}
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <video class="random-media" controls preload="metadata" playsinline>
+                        <source src={randomSrc} type="video/webm" />
+                    </video>
+                {:else}
+                    <img class="random-media" src={randomSrc} alt="Random selection" />
+                {/if}
             </div>
         {/if}
     </div>
@@ -111,7 +134,7 @@
         justify-content: center;
     }
 
-    .random-image {
+    .random-media {
         display: block;
         max-width: 100%;
         max-height: 70vh;
@@ -197,7 +220,7 @@
             width: 100%;
         }
 
-        .random-image {
+        .random-media {
             max-height: 60vh;
         }
     }
