@@ -2,19 +2,13 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { s3Client } from "../config/s3Client.js";
 import { ddbClient } from "../config/dynamodbClient.js";
-import { v4 as uuid4 } from 'uuid';
+import { BUCKET_NAME, DYNAMO_TABLE } from "../config/awsEnv.js";
 import { readFile } from '@tauri-apps/plugin-fs';
 import CryptoJS from 'crypto-js';
-
-// Environment variables
-const BUCKET_NAME = "horny-grail-bucket"; // Replace with your actual bucket name
-const DYNAMO_TABLE = "horny-grail-table"; // Replace with your actual table name
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export async function uploadFile(filePath) {
     // Read the file as binary data
-
-    console.log(filePath);
-
     const fileData = await readFile(filePath);
     
     // Convert the binary data to a format that can be hashed
@@ -27,20 +21,13 @@ export async function uploadFile(filePath) {
     // Get file extension
     const fileExtension = filePath.split('.').pop();
     
-    // Prepare upload parameters for S3
-    const uploadParams = {
-        Bucket: BUCKET_NAME,
-        Key: 'files/' + hex + '.' + fileExtension,
-        Body: fileData,
-    };
-    
+    // S3 object key
+    const key = 'files/' + hex + '.' + fileExtension;
+
     // Prepare parameters for DynamoDB
     const logInDBParams = {
         Item: {
             id: {
-                S: uuid4()
-            },
-            hex: {
                 S: hex
             },
             ext: {
@@ -54,16 +41,26 @@ export async function uploadFile(filePath) {
         TableName: DYNAMO_TABLE
     };
 
-    const key = import.meta.env.AWS_SECRET_ACCESS_KEY;
-    console.log(key)
     try {
-        // Upload to S3
-        await s3Client.send(new PutObjectCommand(uploadParams));
-        console.log("Upload Success");
+        // Generate a presigned URL for S3 PUT operation
+        const command = new PutObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+        const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // 15 minutes
+
+        // Upload file using the presigned URL
+        const res = await fetch(presignedUrl, {
+            method: 'PUT',
+            body: fileData,
+            // Note: Do not set Content-Type unless it was included when signing
+        });
+
+        if (!res.ok) {
+            throw new Error(`S3 upload via presigned URL failed with status ${res.status}`);
+        }
+        console.log("Upload Success via presigned URL");
         
         // Log in DynamoDB
-        const command = new PutItemCommand(logInDBParams);
-        await ddbClient.send(command);
+        const ddbCommand = new PutItemCommand(logInDBParams);
+        await ddbClient.send(ddbCommand);
         
         return hex;
     } catch (err) {
