@@ -4,6 +4,10 @@ import CryptoJS from 'crypto-js';
 
 // Compute SHA-256 hex hash of a file at filePath using a streaming Tauri command when available,
 // falling back to JS hashing if invoking fails for any reason.
+/**
+ * @param {string} filePath
+ * @returns {Promise<string>}
+ */
 export async function computeFileHash(filePath) {
   try {
     const hex = await invoke('compute_sha256_streaming', { path: filePath });

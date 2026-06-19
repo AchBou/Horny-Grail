@@ -3,6 +3,10 @@ import { ddbClient } from "../config/dynamodbClient.js";
 import { DYNAMO_TABLE } from "../config/awsEnv.js";
 
 // Check if an item with primary key id === hex exists in DynamoDB
+/**
+ * @param {string} hex
+ * @returns {Promise<boolean>}
+ */
 export async function checkFileExistsByHex(hex) {
   if (!hex) return false;
   const params = {

@@ -8,10 +8,23 @@ import { BUCKET_NAME } from "../config/awsEnv.js";
 const MAX_DIMENSION = 150;
 const JPEG_QUALITY = 0.85; // 0..1
 
+/**
+ * Normalize Uint8Array-backed data to a plain ArrayBuffer for DOM APIs.
+ * @param {Uint8Array} bytes
+ * @returns {ArrayBuffer}
+ */
+function toArrayBuffer(bytes) {
+  return new Uint8Array(bytes).buffer;
+}
+
+/**
+ * @param {Uint8Array} srcBytes
+ * @returns {Promise<HTMLImageElement>}
+ */
 async function bytesToImage(srcBytes) {
   return new Promise((resolve, reject) => {
     try {
-      const blob = new Blob([srcBytes]);
+      const blob = new Blob([toArrayBuffer(srcBytes)]);
       const url = URL.createObjectURL(blob);
       const img = new Image();
       img.onload = () => {
@@ -29,6 +42,12 @@ async function bytesToImage(srcBytes) {
   });
 }
 
+/**
+ * @param {Uint8Array} srcBytes
+ * @param {number} [maxDim]
+ * @param {number} [quality]
+ * @returns {Promise<Uint8Array>}
+ */
 async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality = JPEG_QUALITY) {
   // Prefer high-quality resize/encode via @squoosh/lib when available
   try {
@@ -42,7 +61,8 @@ async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality 
     }).catch(() => {});
 
     await image.encode({ mozjpeg: { quality: Math.round(quality * 100) } });
-    const { binary } = await image.encodedWith.mozjpeg;
+    const encoded = /** @type {{ mozjpeg: Promise<{ binary: ArrayBufferLike }> }} */ (image.encodedWith);
+    const { binary } = await encoded.mozjpeg;
     await pool.close();
     return new Uint8Array(binary);
   } catch (err) {
@@ -68,7 +88,9 @@ async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality 
     ctx.fillRect(0, 0, tw, th);
     ctx.drawImage(img, 0, 0, tw, th);
 
-    const blob = await new Promise((resolve, reject) =>
+    const blob = await new Promise(
+      /** @returns {void} */
+      (resolve, reject) =>
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality)
     );
     const buf = await blob.arrayBuffer();
@@ -76,6 +98,11 @@ async function makeJpegThumbnailBytes(srcBytes, maxDim = MAX_DIMENSION, quality 
   }
 }
 
+/**
+ * @param {string} filePath
+ * @param {string} hex
+ * @returns {Promise<string>}
+ */
 export async function uploadThumbnail(filePath, hex) {
   // Read original image bytes
   const srcBytes = await readFile(filePath);
@@ -89,7 +116,7 @@ export async function uploadThumbnail(filePath, hex) {
 
   const res = await fetch(presignedUrl, {
     method: 'PUT',
-    body: thumbBytes,
+    body: new Blob([toArrayBuffer(thumbBytes)], { type: 'image/jpeg' }),
     headers: { 'Content-Type': 'image/jpeg' }
   });
 

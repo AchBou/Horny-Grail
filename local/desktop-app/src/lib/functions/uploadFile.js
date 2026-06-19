@@ -7,6 +7,10 @@ import { readFile } from '@tauri-apps/plugin-fs';
 import CryptoJS from 'crypto-js';
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+/**
+ * @param {string} filePath
+ * @returns {Promise<string>}
+ */
 export async function uploadFile(filePath) {
     // Read the file as binary data
     const fileData = await readFile(filePath);
@@ -19,7 +23,7 @@ export async function uploadFile(filePath) {
     const hex = hash.toString(CryptoJS.enc.Hex);
     
     // Get file extension
-    const fileExtension = filePath.split('.').pop();
+    const fileExtension = filePath.split('.').pop() || 'bin';
     
     // S3 object key
     const key = 'files/' + hex + '.' + fileExtension;
@@ -37,7 +41,6 @@ export async function uploadFile(filePath) {
                 S: new Date().toString()
             }
         },
-        ReturnConsumedCapacity: "TOTAL",
         TableName: DYNAMO_TABLE
     };
 
