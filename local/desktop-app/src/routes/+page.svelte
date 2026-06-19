@@ -5,6 +5,9 @@
   import { onDestroy } from "svelte";
   import { uploadFile } from "$lib/functions/uploadFile.js";
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
+  import { computeFileHash } from "$lib/functions/computeFileHash.js";
+  import { checkFileExistsByHex } from "$lib/functions/checkFileExists.js";
+  import { join } from "@tauri-apps/api/path";
 
 
   interface FileEntry {
@@ -25,6 +28,36 @@
   let isUploading = $state(false);
   let uploadStatus = $state<{[key: string]: string}>({});
   let uploadedFiles = $state<string[]>([]);
+  let fileHashes = $state<{[key: string]: string}>({});
+  let fileExists = $state<{[key: string]: boolean}>({});
+
+  // Only process and show image files
+  const imageExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif'];
+  function isImageFile(name: string): boolean {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    return imageExtensions.includes(ext);
+  }
+
+  // Map image file extensions to simple emoji icons
+  const extIconMap: { [key: string]: string } = {
+    jpg: '📷',
+    jpeg: '📷',
+    png: '🖼️',
+    gif: '🎞️',
+    webp: '🧩',
+    bmp: '🧱',
+    tiff: '📐',
+    tif: '📐'
+  };
+
+  function getFileExt(name: string): string {
+    return name.split('.').pop()?.toLowerCase() || '';
+  }
+
+  function getIconForFile(name: string): string {
+    const ext = getFileExt(name);
+    return extIconMap[ext] || '🖼️';
+  }
 
   async function selectFolder(): Promise<void> {
     try {
@@ -141,22 +174,61 @@
       const normalizedPath = path.replace(/\//g, '\\');
       const entries = await readDir(normalizedPath);
       
-      files = entries.map(entry => {
-        //  TODO: Fix this
-        // Ensure we have the full path by combining the directory path with the file name if entry.path is not available
-        let entryPath = (entry as any).path ? (entry as any).path.replace(/\//g, '\\') : '';
-        
-        // If the path is not complete, construct it from the current directory and file name
-        if (!entryPath || !entryPath.includes(':\\')) {
-          entryPath = normalizedPath + '\\' + (entry.name || '');
+      const mapped = await Promise.all(entries.map(async (entry) => {
+        // Resolve entry path robustly:
+        // - Use entry.path if provided by readDir
+        // - Otherwise, join the directory path and entry name using Tauri's path API
+        let entryPath = (entry as any).path || "";
+        if (!entryPath || !/^[A-Za-z]:[\\\/]/.test(entryPath)) {
+          try {
+            entryPath = await join(normalizedPath, entry.name || "");
+          } catch {
+            entryPath = normalizedPath + '\\' + (entry.name || '');
+          }
         }
-        
+        // Normalize to backslashes for Windows
+        entryPath = entryPath.replace(/\//g, '\\');
+
         return {
           name: entry.name || '',
           path: entryPath,
           isDirectory: entry.isDirectory
         };
-      });
+      }));
+      
+      // Show only image files (skip folders and non-images)
+      files = mapped.filter(f => !f.isDirectory && isImageFile(f.name));
+
+      // Reset existence map for current directory files only
+      const newExists = {} as {[key:string]: boolean};
+      const newHashes = {} as {[key:string]: string};
+
+      // For each image file, compute hash and check existence with limited concurrency
+      const filesToCheck = files;
+      // Determine concurrency: half of logical cores up to 2, min 1
+      const derived = (typeof navigator !== 'undefined' && (navigator).hardwareConcurrency) ? Math.floor(navigator.hardwareConcurrency / 2) : 2;
+      const maxConcurrency = Math.max(1, Math.min(2, derived || 2));
+      let idx = 0;
+      const worker = async () => {
+        while (true) {
+          const i = idx++;
+          if (i >= filesToCheck.length) break;
+          const f = filesToCheck[i];
+          try {
+            const hex = await computeFileHash(f.path);
+            newHashes[f.path] = hex;
+            const exists = await checkFileExistsByHex(hex);
+            newExists[f.path] = exists;
+          } catch (e) {
+            console.error('Existence check failed for', f.path, e);
+          }
+        }
+      };
+      const workerCount = Math.min(maxConcurrency, filesToCheck.length || 1);
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+      fileHashes = { ...fileHashes, ...newHashes };
+      fileExists = { ...fileExists, ...newExists };
     } catch (error) {
       console.error("Error loading files:", error);
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
@@ -191,6 +263,9 @@
     if (file.isDirectory) {
       return; // Skip directories
     }
+    if (!isImageFile(file.name)) {
+      return; // Skip non-image files
+    }
     try {
       // Update status
       uploadStatus[file.path] = "uploading";
@@ -198,9 +273,11 @@
       
       // Upload the file
       const fileHash = await uploadFile(file.path);
+      // Mark as existing now that it's uploaded
+      fileHashes[file.path] = fileHash;
+      fileExists[file.path] = true;
       
       // If it's an image file, also upload a thumbnail
-      const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
       const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
       
       if (imageExtensions.includes(fileExt)) {
@@ -229,6 +306,26 @@
     }
   }
 
+  // Compute list of files eligible for bulk upload
+  function getEligibleFiles(): FileEntry[] {
+    return files.filter(f => !f.isDirectory && isImageFile(f.name) && !fileExists[f.path] && uploadStatus[f.path] !== "completed");
+  }
+
+  // Upload all eligible files sequentially
+  async function handleUploadAll(): Promise<void> {
+    try {
+      errorMessage = "";
+      const eligible = getEligibleFiles();
+      for (const f of eligible) {
+        await handleFileUpload(f);
+      }
+    } catch (e) {
+      console.error("Error in Upload All:", e);
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      errorMessage = `Upload All failed: ${msg}`;
+    }
+  }
+
   // Clean up watcher and any pending timeouts when component is destroyed
   onDestroy(() => {
     if (unwatchFn) {
@@ -250,7 +347,7 @@
 
   <div class="file-explorer">
     <div class="controls">
-      <button onclick={selectFolder} class="sync-button">Sync Folder</button>
+      <button onclick={selectFolder} class="sync-button" title="Choose a folder to watch and upload">🔄 Sync Folder</button>
       {#if selectedPath}
         <p class="selected-path">Sync folder: {selectedPath}</p>
         {#if isWatching}
@@ -291,39 +388,63 @@
                 onclick={() => navigateToDirectory(file)}
                 class="file-button"
               >
-                {file.isDirectory ? '📁' : '📄'} {file.name}
+                <span class="file-icon" title={file.name.split('.').pop()?.toUpperCase()}>{getIconForFile(file.name)}</span>
+                <span class="file-name" title={file.name}>{file.name}</span>
               </button>
               
               {#if !file.isDirectory}
-                <button 
-                  onclick={() => handleFileUpload(file)}
-                  class="upload-button"
-                  disabled={isUploading && uploadStatus[file.path] === "uploading"}
-                >
-                  {#if uploadStatus[file.path] === "uploading"}
-                    Uploading...
-                  {:else if uploadStatus[file.path] === "completed"}
-                    ✓ Uploaded
-                  {:else if uploadStatus[file.path] === "failed"}
-                    ❌ Failed
-                  {:else}
-                    Upload
-                  {/if}
-                </button>
+                {#if fileExists[file.path]}
+                  <span class="exists-badge" title="This file's hash already exists in the database">Already exists</span>
+                {:else}
+                  <button 
+                    onclick={() => handleFileUpload(file)}
+                    class="upload-button"
+                    disabled={isUploading && uploadStatus[file.path] === "uploading"}
+                  >
+                    {#if uploadStatus[file.path] === "uploading"}
+                      Uploading...
+                    {:else if uploadStatus[file.path] === "completed"}
+                      ✓ Uploaded
+                    {:else if uploadStatus[file.path] === "failed"}
+                      ❌ Failed
+                    {:else}
+                      Upload
+                    {/if}
+                  </button>
+                {/if}
               {/if}
             </li>
           {/each}
         </ul>
       {/if}
     </div>
+
+    {#if selectedPath && getEligibleFiles().length > 0}
+      <div class="bottom-actions">
+        <button onclick={handleUploadAll} class="upload-all-button" disabled={isUploading} title="Upload all new images in this folder">
+          ⬆️ Upload All ({getEligibleFiles().length})
+        </button>
+      </div>
+    {/if}
   </div>
 </main>
 
 <style>
+  :global(html, body) {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
   .container {
     margin: 0 auto;
     padding: 2rem;
     max-width: 1200px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 
   h1 {
@@ -363,6 +484,8 @@
     padding: 1rem;
     background-color: #fff;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    flex: 1 1 auto;
+    min-height: 0; /* allow inner flex children to shrink */
   }
 
   .controls {
@@ -490,7 +613,8 @@
     padding: 1rem;
     overflow-y: auto;
     background-color: #f9f9f9;
-    height: 400px;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .file-list ul {
@@ -512,6 +636,7 @@
 
   .file-button {
     flex: 1;
+    min-width: 0;
     text-align: left;
     padding: 0.5rem;
     cursor: pointer;
@@ -525,6 +650,18 @@
     color: inherit;
     font-size: inherit;
     box-shadow: none;
+  }
+
+  .file-icon {
+    flex: 0 0 auto;
+  }
+
+  .file-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   
   .upload-button {
@@ -550,6 +687,16 @@
     opacity: 0.7;
   }
 
+  .exists-badge {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    color: #1f2937;
+    background-color: #fde68a;
+    border: 1px solid #f59e0b;
+    border-radius: 9999px;
+    white-space: nowrap;
+  }
+
   .file-button:hover {
     background-color: #eee;
   }
@@ -567,6 +714,31 @@
 
   button:hover {
     background-color: #2563eb;
+  }
+
+  .upload-all-button {
+    margin-left: 0.5rem;
+    min-width: 130px;
+  }
+
+  .upload-all-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .bottom-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    margin-top: 0.5rem;
+    border-top: 1px solid #eee;
+    background-color: #fff;
+    flex: 0 0 auto;
+  }
+
+  .upload-all-button {
+    font-weight: 600;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -637,6 +809,11 @@
     
     .app-title::after {
       background: linear-gradient(90deg, transparent, #60a5fa, transparent);
+    }
+    
+    .bottom-actions {
+      border-top-color: #444;
+      background-color: #333;
     }
   }
 </style>
