@@ -31,6 +31,9 @@ describe('Test getAllThumbnailsHandler', () => {
  
         // Compare the result with the expected result 
         expect(result.statusCode).toEqual(200);
+        expect(result.headers).toEqual({
+            'Content-Type': 'application/json'
+        });
         expect(result.body).toEqual(expectedBody);
     }); 
 }); 

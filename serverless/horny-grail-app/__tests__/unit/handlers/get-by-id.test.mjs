@@ -14,7 +14,8 @@ describe('Test getByIdHandler', () => {
  
     // This test invokes getByIdHandler() and compare the result  
     it('should get item by id', async () => { 
-        const item = { id: 'id1' }; 
+        const id = 'a'.repeat(64);
+        const item = { id, ext: 'jpg' }; 
  
         // Return the specified value whenever the spied get function is called 
         ddbMock.on(GetCommand).resolves({
@@ -24,7 +25,7 @@ describe('Test getByIdHandler', () => {
         const event = { 
             httpMethod: 'GET', 
             pathParameters: { 
-                id: 'id1' 
+                id 
             } 
         };
  
@@ -33,11 +34,25 @@ describe('Test getByIdHandler', () => {
  
         const expectedResult = { 
             statusCode: 200, 
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(item) 
         }; 
  
         // Compare the result with the expected result 
         expect(result).toEqual(expectedResult); 
     }); 
+
+    it('should reject invalid ids', async () => {
+        const result = await getByIdHandler({
+            httpMethod: 'GET',
+            pathParameters: {
+                id: 'not-a-valid-id'
+            }
+        });
+
+        expect(result.statusCode).toEqual(400);
+    });
 }); 
  

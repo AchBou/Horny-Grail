@@ -4,6 +4,9 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { lookupTableName } from '../config/env.mjs';
+import { requireWriteApiKey } from '../lib/auth.mjs';
+import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
+import { isValidImageExt, isValidImageId, parseJsonBody } from '../lib/validation.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
 
@@ -13,34 +16,53 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
 export const putItemHandler = async (event) => {
     const method = event?.httpMethod || event?.requestContext?.http?.method || '';
     if (method !== 'POST') {
-        throw new Error(`postMethod only accepts POST method, you tried: ${method} method.`);
+        return methodNotAllowed(`postMethod only accepts POST method, you tried: ${method} method.`);
     }
+
+    const authError = requireWriteApiKey(event);
+    if (authError) {
+        return authError;
+    }
+
     // All log statements are written to CloudWatch
     console.info('received:', event);
 
-    // Get id and name from the body of the request
-    const body = JSON.parse(event.body);
+    const body = parseJsonBody(event);
+    if (!body) {
+        return badRequest('Invalid JSON body');
+    }
+
     const id = body.id;
-    const name = body.name;
+    const ext = body.ext;
+
+    if (!isValidImageId(id)) {
+        return badRequest('Invalid image id');
+    }
+
+    if (!isValidImageExt(ext)) {
+        return badRequest('Invalid image extension');
+    }
 
     // Creates a new item, or replaces an old item with a new item
     // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#put-property
     var params = {
         TableName : lookupTableName,
-        Item: { id : id, name: name }
+        Item: {
+            id,
+            ext,
+            date: body.date || new Date().toISOString()
+        }
     };
 
     try {
         const data = await ddbDocClient.send(new PutCommand(params));
         console.log("Success - item added or updated", data);
       } catch (err) {
-        console.log("Error", err.stack);
+        console.error("Error", err);
+        return serverError('Failed to write item');
       }
 
-    const response = {
-        statusCode: 200,
-        body: JSON.stringify(body)
-    };
+    const response = jsonResponse(200, params.Item);
 
     // All log statements are written to CloudWatch
     console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);

@@ -17,11 +17,14 @@ Relevant variables:
 
 - `LOOKUP_TABLE`
 - `CLOUDFRONT_BASE_URL`
+- `WRITE_API_KEY` for write endpoints
 
 The SAM template also exposes matching deploy-time parameters:
 
 - `LookupTableName`
 - `CloudFrontBaseUrl`
+- `WriteApiKey`
+- `AllowedCorsOrigins`
 
 These values are required. The runtime config helper does not apply source defaults anymore.
 

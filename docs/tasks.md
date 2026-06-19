@@ -5,17 +5,17 @@ This document contains a comprehensive list of actionable improvement tasks for 
 ## Architecture Improvements
 
 ### Configuration Management
-- [ ] Implement a centralized configuration management system
-- [ ] Move hardcoded values to environment variables
-- [ ] Standardize AWS region usage across services (currently using both us-east-1 and us-west-2)
+- [x] Implement a centralized configuration management system
+- [x] Move hardcoded values to environment variables
+- [x] Standardize AWS region usage across services
 - [ ] Create separate configuration files for development, testing, and production environments
 
 ### Security
-- [ ] Implement proper authentication and authorization for API endpoints
+- [x] Implement proper authentication and authorization for API write endpoints
 - [ ] Review and secure S3 bucket permissions
-- [ ] Implement CORS policies for API endpoints
+- [x] Implement CORS policies for API endpoints
 - [ ] Remove sensitive information from code (e.g., "my-awesome-very-secret-upload-bucket")
-- [ ] Implement input validation for all user inputs
+- [x] Implement input validation for API inputs
 - [ ] Add rate limiting to API endpoints to prevent abuse
 
 ### Performance

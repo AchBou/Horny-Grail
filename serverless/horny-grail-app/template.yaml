@@ -13,6 +13,14 @@ Parameters:
     Type: String
     Description: CloudFront base URL used to build public image URLs
     Default: https://dqvs0hmo3wpp7.cloudfront.net
+  WriteApiKey:
+    Type: String
+    Description: Shared API key required for write endpoints
+    NoEcho: true
+  AllowedCorsOrigins:
+    Type: String
+    Description: Comma-separated list of allowed CORS origins
+    Default: http://localhost:5173
 
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
@@ -33,8 +41,7 @@ Resources:
       Description: A simple example includes a HTTP get method to get all items 
         from a DynamoDB table.
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
-      - DynamoDBCrudPolicy:
+      - DynamoDBReadPolicy:
           TableName: !Ref LookupTableName
       Environment:
         Variables:
@@ -62,8 +69,7 @@ Resources:
       Description: A simple example includes a HTTP get method to get one item 
         by id from a DynamoDB table.
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
-      - DynamoDBCrudPolicy:
+      - DynamoDBReadPolicy:
           TableName: !Ref LookupTableName
       Environment:
         Variables:
@@ -91,13 +97,13 @@ Resources:
       Description: A simple example includes a HTTP post method to add one item 
         to a DynamoDB table.
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
-      - DynamoDBCrudPolicy:
+      - DynamoDBWritePolicy:
           TableName: !Ref LookupTableName
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
           LOOKUP_TABLE: !Ref LookupTableName
+          WRITE_API_KEY: !Ref WriteApiKey
       Events:
         Api:
           Type: HttpApi
@@ -117,7 +123,7 @@ Resources:
       Description: A simple example includes a HTTP get method to get all items 
         from a DynamoDB table.
       Policies:
-      - DynamoDBCrudPolicy:
+      - DynamoDBReadPolicy:
           TableName: !Ref LookupTableName
       Environment:
         Variables:
@@ -137,11 +143,12 @@ Resources:
       Runtime: nodejs22.x
       Timeout: 60
       Policies:
-        - DynamoDBCrudPolicy:
+        - DynamoDBReadPolicy:
             TableName: !Ref LookupTableName
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTableName
+          CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
       Architectures:
         - x86_64
       Events:
@@ -183,7 +190,10 @@ Globals:
       AllowHeaders:
         - Content-Type
         - Authorization
+        - X-Api-Key
         - X-Requested-With
       AllowOrigins:
-        - '*'
+        Fn::Split:
+          - ','
+          - !Ref AllowedCorsOrigins
       AllowCredentials: false

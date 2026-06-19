@@ -4,6 +4,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { lookupTableName } from '../../config/env.mjs';
+import { jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
 
@@ -13,7 +14,7 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
 export const getAllThumbnailsHandler = async (event) => {
     const method = event?.httpMethod || event?.requestContext?.http?.method || '';
     if (method !== 'GET') {
-        throw new Error(`getAllThumbnails only accept GET method, you tried: ${method}`);
+        return methodNotAllowed(`getAllThumbnails only accepts GET method, you tried: ${method}`);
     }
     // All log statements are written to CloudWatch
     console.info('received:', event);
@@ -33,13 +34,7 @@ export const getAllThumbnailsHandler = async (event) => {
     } catch (err) {
         console.error('Error scanning table:', err);
         // Return a 500 if scan fails
-        return {
-            statusCode: 500,
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message: 'Failed to scan table' })
-        };
+        return serverError('Failed to scan table');
     }
 
     // Map items to an array of thumbnail filenames expected by the front: "thumbnail-<hex>.jpeg"
@@ -52,13 +47,7 @@ export const getAllThumbnailsHandler = async (event) => {
         })
         .filter(Boolean);
 
-    const response = {
-        statusCode: 200,
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(thumbnails)
-    };
+    const response = jsonResponse(200, thumbnails);
 
     // All log statements are written to CloudWatch
     const path = event?.path || event?.rawPath || '';
