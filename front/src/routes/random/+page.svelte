@@ -2,6 +2,7 @@
     import Button from "../../components/Button.svelte";
     import { onMount } from "svelte";
     import { fade, fly } from 'svelte/transition';
+    import { buildApiUrl } from "$lib/config/publicEnv.js";
 
     let randomSrc = "";
     let isLoading = true;
@@ -13,7 +14,7 @@
             randomSrc = "";
             error = null;
 
-            let response = await fetch("https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api/get-random-image");
+            let response = await fetch(buildApiUrl("/get-random-image"));
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }

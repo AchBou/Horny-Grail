@@ -3,11 +3,9 @@
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { lookupTableName } from '../config/env.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
-
-// Get the DynamoDB table name from environment variables
-const tableName = process.env.LOOKUP_TABLE;
 
 /**
  * A simple example includes a HTTP post method to add one item to a DynamoDB table.
@@ -28,7 +26,7 @@ export const putItemHandler = async (event) => {
     // Creates a new item, or replaces an old item with a new item
     // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#put-property
     var params = {
-        TableName : tableName,
+        TableName : lookupTableName,
         Item: { id : id, name: name }
     };
 

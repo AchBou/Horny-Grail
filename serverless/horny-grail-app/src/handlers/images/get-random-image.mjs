@@ -1,11 +1,9 @@
 // Create clients and set shared const values outside of the handler.
 import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
+import { buildCloudFrontFileUrl, lookupTableName } from '../../config/env.mjs';
 
 const dynamoClient = new DynamoDBClient({});
 import { randomBytes } from 'crypto';
-
-// Get the DynamoDB table name from environment variables or use a default
-const tableName = process.env.LOOKUP_TABLE || 'horny-grail-name-lookup';
 
 // Generate a random hex string to use as a hash-like id
 const randomHash = (length = 64) => randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
@@ -39,7 +37,7 @@ export const getRandomImageHandler = async (event) => {
 
     try {
         const params = {
-            TableName: tableName,
+            TableName: lookupTableName,
             Limit: 1,
             ExclusiveStartKey: {
                 'id': {
@@ -65,7 +63,7 @@ export const getRandomImageHandler = async (event) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                url: 'https://dqvs0hmo3wpp7.cloudfront.net/files/' + key
+                url: buildCloudFrontFileUrl(key)
             })
         };
         

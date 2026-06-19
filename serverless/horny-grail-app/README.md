@@ -9,6 +9,20 @@ This project contains source code and supporting files for a serverless applicat
 
 The application uses several AWS resources, including Lambda functions, an API Gateway API, and Amazon DynamoDB tables. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
 
+## Configuration
+
+Use `env.example.json` as the starting point for local SAM environment values.
+
+Relevant variables:
+
+- `LOOKUP_TABLE`
+- `CLOUDFRONT_BASE_URL`
+
+The SAM template also exposes matching deploy-time parameters:
+
+- `LookupTableName`
+- `CloudFrontBaseUrl`
+
 If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
 The AWS Toolkit is an open-source plugin for popular IDEs that uses the AWS SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds step-through debugging for Lambda function code. 
 

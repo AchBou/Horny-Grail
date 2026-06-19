@@ -1,5 +1,6 @@
 <script>
     import { onMount } from 'svelte';
+    import { buildApiUrl, buildFileUrl } from '$lib/config/publicEnv.js';
 
     let imageUrl = '';
     let isLoading = true;
@@ -24,7 +25,7 @@
 
             // Fetch metadata for this id
             console.log(id)
-            const resp = await fetch(`https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api/${id}`);
+            const resp = await fetch(buildApiUrl(`/${id}`));
             if (!resp.ok) {
                 throw new Error(`Failed to load image metadata (status ${resp.status})`);
             }
@@ -34,7 +35,7 @@
             const ext = item?.ext || 'jpeg';
 
             // Build CloudFront URL
-            imageUrl = `https://dqvs0hmo3wpp7.cloudfront.net/files/${hex}.${ext}`;
+            imageUrl = buildFileUrl(hex, ext);
             isLoading = false;
         } catch (e) {
             console.error(e);

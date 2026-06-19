@@ -9,6 +9,10 @@ Parameters:
     Type: String
     Description: Name of the existing DynamoDB table to use
     Default: horny-grail-name-lookup
+  CloudFrontBaseUrl:
+    Type: String
+    Description: CloudFront base URL used to build public image URLs
+    Default: https://dqvs0hmo3wpp7.cloudfront.net
 
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
@@ -118,6 +122,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTableName
+          CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
       Events:
         Api:
           Type: HttpApi

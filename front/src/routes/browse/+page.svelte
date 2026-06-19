@@ -1,6 +1,7 @@
 <script>
     import Thumbnail from '../../components/Thumbnail.svelte';
     import { onMount } from 'svelte';
+    import { buildApiUrl, buildThumbnailUrl } from '$lib/config/publicEnv.js';
     import { normalizeImages } from '$lib/models/image.js';
 
     /** @type {import('$lib/models/image.js').ImageItem[]} */
@@ -10,7 +11,7 @@
 
     onMount(async () => {
         try {
-            const response = await fetch("https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api");
+            const response = await fetch(buildApiUrl());
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
@@ -47,7 +48,7 @@
         <div class="gallery">
             {#each images as img (img.id)}
                 <a class="thumbnail-wrapper" href={`/image/${img.id}`} data-id={img.id} aria-label={`Open image ${img.id}`}>
-                    <Thumbnail src={`https://dqvs0hmo3wpp7.cloudfront.net/thumbnails/thumbnail-${img.id}.jpeg`} />
+                    <Thumbnail src={buildThumbnailUrl(img.id)} />
                 </a>
             {/each}
         </div>

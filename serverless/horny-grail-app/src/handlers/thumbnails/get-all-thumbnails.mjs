@@ -3,11 +3,9 @@
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { lookupTableName } from '../../config/env.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
-
-// Get the DynamoDB table name from environment variables
-const tableName = process.env.LOOKUP_TABLE;
 
 /**
  * HTTP GET method to get all thumbnails (id.ext) from a DynamoDB table.
@@ -24,7 +22,7 @@ export const getAllThumbnailsHandler = async (event) => {
     // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#scan-property
     // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
     const params = {
-        TableName: tableName
+        TableName: lookupTableName
     };
 
     let items = [];

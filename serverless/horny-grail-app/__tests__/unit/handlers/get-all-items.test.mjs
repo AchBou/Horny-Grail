@@ -4,15 +4,15 @@ import { getAllThumbnailsHandler } from '../../../src/handlers/thumbnails/get-al
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from "aws-sdk-client-mock";
  
-// This includes all tests for getAllItemsHandler() 
-describe('Test getAllItemsHandler', () => { 
+// This includes all tests for getAllThumbnailsHandler()
+describe('Test getAllThumbnailsHandler', () => { 
     const ddbMock = mockClient(DynamoDBDocumentClient);
  
     beforeEach(() => {
         ddbMock.reset();
       });
  
-    it('should return array of id.ext strings', async () => { 
+    it('should return thumbnail filenames derived from ids', async () => { 
         const items = [{ id: 'id1', ext: 'png' }, { id: 'id2', ext: 'jpg' }]; 
  
         // Return the specified value whenever the spied scan function is called 
@@ -27,7 +27,7 @@ describe('Test getAllItemsHandler', () => {
         // Invoke handler
         const result = await getAllThumbnailsHandler(event); 
  
-        const expectedBody = JSON.stringify(['id1.png','id2.jpg']);
+        const expectedBody = JSON.stringify(['thumbnail-id1.jpeg', 'thumbnail-id2.jpeg']);
  
         // Compare the result with the expected result 
         expect(result.statusCode).toEqual(200);

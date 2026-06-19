@@ -3,11 +3,9 @@
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { lookupTableName } from '../config/env.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
-
-// Get the DynamoDB table name from environment variables
-const tableName = process.env.LOOKUP_TABLE;
 
 /**
  * A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
@@ -26,7 +24,7 @@ export const getByIdHandler = async (event) => {
   // Get the item from the table
   // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#get-property
   var params = {
-    TableName : tableName,
+    TableName : lookupTableName,
     Key: { id: id },
   };
 

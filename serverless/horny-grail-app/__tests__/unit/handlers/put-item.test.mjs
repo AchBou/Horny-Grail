@@ -13,11 +13,9 @@ describe('Test putItemHandler', function () {
  
     // This test invokes putItemHandler() and compare the result  
     it('should add id to the table', async () => { 
-        const returnedItem = { id: 'id1', name: 'name1' }; 
- 
         // Return the specified value whenever the spied put function is called 
         ddbMock.on(PutCommand).resolves({
-            returnedItem
+            Attributes: undefined
         }); 
  
         const event = { 
@@ -30,7 +28,7 @@ describe('Test putItemHandler', function () {
         
         const expectedResult = { 
             statusCode: 200, 
-            body: JSON.stringify(returnedItem) 
+            body: JSON.stringify({ id: 'id1', name: 'name1' }) 
         }; 
  
         // Compare the result with the expected result 
