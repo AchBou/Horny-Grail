@@ -1,76 +1,77 @@
 <script>
-    import Button from "../../components/Button.svelte";
-    import { onMount } from "svelte";
-    import { fade, fly } from 'svelte/transition';
+    import { onMount } from 'svelte';
 
-    let randomSrc = "";
+    let imageUrl = '';
     let isLoading = true;
     let error = null;
 
-    async function generateRandomPic() {
+    // Read the id from the URL path on mount
+    let id = '';
+
+    onMount(async () => {
         try {
             isLoading = true;
-            randomSrc = "";
             error = null;
+            imageUrl = '';
 
-            let response = await fetch("https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api/get-random-image");
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+            // Extract id from the current path: /image/<id>
+            const segments = (typeof window !== 'undefined' ? window.location.pathname : '').split('/');
+            id = segments[segments.length - 1] || '';
+
+            if (!id) {
+                throw new Error('Missing image id in the URL');
             }
 
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                const data = await response.json();
-                if (data && typeof data.url === 'string') {
-                    randomSrc = data.url;
-                } else {
-                    throw new Error('Invalid response format: missing url');
-                }
-            } else {
-                // Fallback: API returned plain text URL
-                const text = await response.text();
-                // Strip surrounding quotes if any
-                randomSrc = text.replace(/^\"|\"$/g, '');
+            // Fetch metadata for this id
+            console.log(id)
+            const resp = await fetch(`https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api/${id}`);
+            if (!resp.ok) {
+                throw new Error(`Failed to load image metadata (status ${resp.status})`);
             }
+            const item = await resp.json();
+            // With hex-as-id, we can rely on id directly for object keys
+            const hex = id;
+            const ext = item?.ext || 'jpeg';
+
+            // Build CloudFront URL
+            imageUrl = `https://dqvs0hmo3wpp7.cloudfront.net/files/${hex}.${ext}`;
             isLoading = false;
-        } catch (err) {
-            console.error(err);
-            error = err.message || 'Unknown error';
+        } catch (e) {
+            console.error(e);
+            error = e?.message || 'Unknown error';
             isLoading = false;
         }
-    }
-
-    onMount(generateRandomPic);
+    });
 </script>
 
-<div class="random-container">
-    <h2>Random Image</h2>
+<div class="image-container-page">
+    <h2>Image</h2>
 
-    <div class="img-container">
+    <div class="img-box">
         {#if isLoading}
-            <div class="loading" in:fade>
+            <div class="loading">
                 <div class="spinner"></div>
-                <p>Loading a random image...</p>
+                <p>Loading image...</p>
             </div>
         {:else if error}
-            <div class="error" in:fade>
+            <div class="error">
                 <p>Error loading image: {error}</p>
-                <button on:click={generateRandomPic}>Try Again</button>
+                <a class="btn" href="/browse">Back to Browse</a>
             </div>
-        {:else if randomSrc}
-            <div class="image-wrapper" in:fade={{ duration: 300 }}>
-                <img class="random-image" src={randomSrc} alt="random" />
+        {:else if imageUrl}
+            <div class="image-wrapper">
+                <img class="image" src={imageUrl} alt="selected image" />
             </div>
         {/if}
     </div>
 
     <div class="controls">
-        <Button on:click={generateRandomPic} text="Get Another" primary={true} size="medium"/>
+        <a class="btn" href="/browse">Back to Browse</a>
     </div>
 </div>
 
 <style>
-    .random-container {
+    .image-container-page {
         padding: 20px 0;
         display: flex;
         flex-direction: column;
@@ -87,7 +88,7 @@
         text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
     }
 
-    .img-container {
+    .img-box {
         background-color: #fff;
         text-align: center;
         display: flex;
@@ -110,7 +111,7 @@
         justify-content: center;
     }
 
-    .random-image {
+    .image {
         display: block;
         max-width: 100%;
         max-height: 70vh;
@@ -122,6 +123,26 @@
         margin-top: 30px;
         display: flex;
         justify-content: center;
+    }
+
+    .btn {
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        font-family: 'Montserrat', sans-serif;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        transition: all 0.3s;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-decoration: none;
+    }
+
+    .btn:hover {
+        background-color: #c0392b;
     }
 
     .loading {
@@ -164,39 +185,11 @@
         letter-spacing: 0.3px;
     }
 
-    .loading p {
-        margin-top: 15px;
-        font-size: 1.1em;
-        font-weight: 300;
-        letter-spacing: 0.3px;
-        color: #555;
-    }
-
-    .error button {
-        background-color: #e74c3c;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-weight: 600;
-        font-family: 'Montserrat', sans-serif;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        transition: all 0.3s;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-
-    .error button:hover {
-        background-color: #c0392b;
-    }
-
     @media (max-width: 768px) {
-        .img-container {
+        .img-box {
             width: 100%;
         }
-
-        .random-image {
+        .image {
             max-height: 60vh;
         }
     }
