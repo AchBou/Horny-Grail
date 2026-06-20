@@ -7,6 +7,7 @@
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
   import { checkFileExistsByHex } from "$lib/functions/checkFileExists.js";
+  import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
   import { join } from "@tauri-apps/api/path";
 
 
@@ -31,6 +32,8 @@
   let fileHashes = $state<{[key: string]: string}>({});
   let fileExists = $state<{[key: string]: boolean}>({});
   let fileCheckStatus = $state<{[key: string]: 'pending' | 'done'}>({});
+  let fileRepairNeeded = $state<{[key: string]: boolean}>({});
+  let fileMissingParts = $state<{[key: string]: string[]}>({});
   let isScanningMetadata = $state(false);
   let scannedMetadataCount = $state(0);
   let totalMetadataCount = $state(0);
@@ -70,16 +73,22 @@
     const nextHashes = { ...fileHashes };
     const nextExists = { ...fileExists };
     const nextStatus = { ...fileCheckStatus };
+    const nextRepairNeeded = { ...fileRepairNeeded };
+    const nextMissingParts = { ...fileMissingParts };
     for (const rawPath of paths) {
       const normalized = rawPath.replace(/\//g, '\\');
       delete nextHashes[normalized];
       delete nextExists[normalized];
       delete nextStatus[normalized];
+      delete nextRepairNeeded[normalized];
+      delete nextMissingParts[normalized];
     }
 
     fileHashes = nextHashes;
     fileExists = nextExists;
     fileCheckStatus = nextStatus;
+    fileRepairNeeded = nextRepairNeeded;
+    fileMissingParts = nextMissingParts;
   }
 
   async function hydrateFileMetadata(filesToCheck: FileEntry[], generation: number): Promise<void> {
@@ -113,17 +122,22 @@
         try {
           const hex = await computeFileHash(f.path);
           const exists = await checkFileExistsByHex(hex);
+          const integrity = exists ? await checkAssetIntegrityByHex(hex) : null;
           if (generation !== scanGeneration) return;
 
           fileHashes[f.path] = hex;
           fileExists[f.path] = exists;
           fileCheckStatus[f.path] = 'done';
+          fileRepairNeeded[f.path] = Boolean(exists && integrity?.repairRequired);
+          fileMissingParts[f.path] = Array.isArray(integrity?.missing) ? integrity.missing : [];
         } catch (e) {
           console.error('Existence check failed for', f.path, e);
           if (generation !== scanGeneration) return;
 
           fileExists[f.path] = false;
           fileCheckStatus[f.path] = 'done';
+          fileRepairNeeded[f.path] = false;
+          fileMissingParts[f.path] = [];
         } finally {
           if (generation === scanGeneration) {
             scannedMetadataCount += 1;
@@ -156,6 +170,8 @@
     for (const file of visibleFiles) {
       delete fileHashes[file.path];
       delete fileExists[file.path];
+      delete fileRepairNeeded[file.path];
+      delete fileMissingParts[file.path];
       nextStatus[file.path] = 'pending';
     }
 
@@ -370,6 +386,8 @@
       fileHashes[file.path] = fileHash;
       fileExists[file.path] = true;
       fileCheckStatus[file.path] = "done";
+      fileRepairNeeded[file.path] = false;
+      fileMissingParts[file.path] = [];
       
       // Upload a thumbnail preview for every supported media file.
       const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
@@ -394,6 +412,49 @@
     } finally {
       // Check if all uploads are complete
       const activeUploads = Object.values(uploadStatus).filter(status => status === "uploading");
+      if (activeUploads.length === 0) {
+        isUploading = false;
+      }
+    }
+  }
+
+  async function handleFileRepair(file: FileEntry): Promise<void> {
+    if (file.isDirectory || !isMediaFile(file.name)) {
+      return;
+    }
+
+    try {
+      uploadStatus[file.path] = "repairing";
+      isUploading = true;
+
+      const fileHash = fileHashes[file.path] || await computeFileHash(file.path);
+      const integrity = await checkAssetIntegrityByHex(fileHash);
+
+      if (!integrity?.metadataExists) {
+        await handleFileUpload(file);
+        return;
+      }
+
+      if (!integrity.originalExists) {
+        await uploadFile(file.path);
+      }
+
+      if (!integrity.thumbnailExists) {
+        await uploadThumbnail(file.path, fileHash);
+      }
+
+      fileHashes[file.path] = fileHash;
+      fileExists[file.path] = true;
+      fileCheckStatus[file.path] = "done";
+      fileRepairNeeded[file.path] = false;
+      fileMissingParts[file.path] = [];
+      uploadStatus[file.path] = "completed";
+    } catch (error) {
+      console.error("Error repairing file:", error);
+      uploadStatus[file.path] = "failed";
+      errorMessage = `Failed to repair ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`;
+    } finally {
+      const activeUploads = Object.values(uploadStatus).filter((status) => status === "uploading" || status === "repairing");
       if (activeUploads.length === 0) {
         isUploading = false;
       }
@@ -512,8 +573,25 @@
               {#if !file.isDirectory}
                 {#if fileCheckStatus[file.path] !== "done"}
                   <span class="checking-badge" title="Computing hash and checking whether this file already exists">Checking...</span>
+                {:else if fileExists[file.path] && fileRepairNeeded[file.path]}
+                  <div class="repair-actions">
+                    <span class="repair-badge" title={`Metadata exists but this asset is missing: ${(fileMissingParts[file.path] || []).join(', ')}`}>
+                      Missing {(fileMissingParts[file.path] || []).join(' + ')}
+                    </span>
+                    <button
+                      onclick={() => handleFileRepair(file)}
+                      class="repair-button"
+                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing")}
+                    >
+                      {#if uploadStatus[file.path] === "repairing"}
+                        Repairing...
+                      {:else}
+                        Repair
+                      {/if}
+                    </button>
+                  </div>
                 {:else if fileExists[file.path]}
-                  <span class="exists-badge" title="This file's hash already exists in the database">Already exists</span>
+                  <span class="exists-badge" title="This file's hash already exists in the database and its stored assets look complete">Already exists</span>
                 {:else}
                   <button 
                     onclick={() => handleFileUpload(file)}
@@ -837,6 +915,39 @@
     border: 1px solid #f59e0b;
     border-radius: 9999px;
     white-space: nowrap;
+  }
+
+  .repair-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .repair-badge {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    color: #7c2d12;
+    background-color: #fed7aa;
+    border: 1px solid #fb923c;
+    border-radius: 9999px;
+    white-space: nowrap;
+  }
+
+  .repair-button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 80px;
+    text-align: center;
+    background-color: #ea580c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .repair-button:hover:not(:disabled) {
+    background-color: #c2410c;
   }
 
   .checking-badge {

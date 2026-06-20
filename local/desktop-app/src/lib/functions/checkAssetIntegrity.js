@@ -1,0 +1,31 @@
+import { buildApiUrl } from "../config/apiEnv.js";
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   metadataExists: boolean,
+ *   originalExists: boolean,
+ *   thumbnailExists: boolean,
+ *   repairRequired: boolean,
+ *   missing: string[]
+ * }} AssetIntegrity
+ */
+
+/**
+ * @param {string} hex
+ * @returns {Promise<AssetIntegrity | null>}
+ */
+export async function checkAssetIntegrityByHex(hex) {
+  if (!hex) return null;
+
+  try {
+    const response = await fetch(buildApiUrl(`/assets/${hex}/integrity`));
+    if (!response.ok) {
+      throw new Error(`Integrity request failed with status ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error("checkAssetIntegrityByHex error", error);
+    return null;
+  }
+}
