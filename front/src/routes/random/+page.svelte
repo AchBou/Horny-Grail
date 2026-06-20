@@ -1,7 +1,7 @@
 <script>
     import Button from "../../components/Button.svelte";
     import { onMount } from "svelte";
-    import { fade, fly } from 'svelte/transition';
+    import { fade } from 'svelte/transition';
     import { buildApiUrl } from "$lib/config/publicEnv.js";
     import { getMediaKindFromExt } from "$lib/models/image.js";
 
@@ -29,7 +29,7 @@
             mediaKind = "image";
             error = null;
 
-            let response = await fetch(buildApiUrl("/get-random-image"));
+            const response = await fetch(buildApiUrl("/get-random-image"));
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
@@ -37,22 +37,20 @@
             const contentType = response.headers.get('content-type') || '';
             if (contentType.includes('application/json')) {
                 const data = await response.json();
-                if (data && typeof data.url === 'string') {
-                    randomSrc = data.url;
-                } else {
+                if (!data || typeof data.url !== 'string') {
                     throw new Error('Invalid response format: missing url');
                 }
+                randomSrc = data.url;
             } else {
-                // Fallback: API returned plain text URL
                 const text = await response.text();
-                // Strip surrounding quotes if any
                 randomSrc = text.replace(/^\"|\"$/g, '');
             }
+
             mediaKind = getMediaKindFromExt(inferExtFromUrl(randomSrc));
-            isLoading = false;
         } catch (err) {
             console.error(err);
             error = err.message || 'Unknown error';
+        } finally {
             isLoading = false;
         }
     }
@@ -78,9 +76,7 @@
             <div class="image-wrapper" in:fade={{ duration: 300 }}>
                 {#if mediaKind === 'video'}
                     <!-- svelte-ignore a11y_media_has_caption -->
-                    <video class="random-media" controls preload="metadata" playsinline>
-                        <source src={randomSrc} type="video/webm" />
-                    </video>
+                    <video class="random-media" src={randomSrc} autoplay loop muted playsinline preload="auto"></video>
                 {:else}
                     <img class="random-media" src={randomSrc} alt="Random selection" />
                 {/if}

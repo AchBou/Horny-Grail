@@ -7,17 +7,41 @@
     let mediaKind = 'image';
     let isLoading = true;
     let error = null;
-
-    // Read the id from the URL path on mount
     let id = '';
+    let videoElement;
+    let videoControlsEnabled = false;
+
+    async function toggleVideoPlaybackMode() {
+        videoControlsEnabled = !videoControlsEnabled;
+
+        if (!videoElement) {
+            return;
+        }
+
+        if (videoControlsEnabled) {
+            try {
+                await videoElement.play();
+            } catch (playError) {
+                console.error('Unable to start video playback with sound.', playError);
+            }
+            return;
+        }
+
+        videoElement.currentTime = 0;
+        try {
+            await videoElement.play();
+        } catch (playError) {
+            console.error('Unable to resume muted video preview.', playError);
+        }
+    }
 
     onMount(async () => {
         try {
             isLoading = true;
             error = null;
             imageUrl = '';
+            videoControlsEnabled = false;
 
-            // Extract id from the current path: /image/<id>
             const segments = (typeof window !== 'undefined' ? window.location.pathname : '').split('/');
             id = segments[segments.length - 1] || '';
 
@@ -25,24 +49,19 @@
                 throw new Error('Missing image id in the URL');
             }
 
-            // Fetch metadata for this id
-            console.log(id)
             const resp = await fetch(buildApiUrl(`/${id}`));
             if (!resp.ok) {
                 throw new Error(`Failed to load image metadata (status ${resp.status})`);
             }
+
             const item = await resp.json();
-            // With hex-as-id, we can rely on id directly for object keys
-            const hex = id;
             const ext = item?.ext || 'jpeg';
             mediaKind = getMediaKindFromExt(ext);
-
-            // Build CloudFront URL
-            imageUrl = buildFileUrl(hex, ext);
-            isLoading = false;
+            imageUrl = buildFileUrl(id, ext);
         } catch (e) {
             console.error(e);
             error = e?.message || 'Unknown error';
+        } finally {
             isLoading = false;
         }
     });
@@ -66,9 +85,17 @@
             <div class="image-wrapper">
                 {#if mediaKind === 'video'}
                     <!-- svelte-ignore a11y_media_has_caption -->
-                    <video class="media" controls preload="metadata" playsinline>
-                        <source src={imageUrl} type="video/webm" />
-                    </video>
+                    <video
+                        bind:this={videoElement}
+                        class="media"
+                        src={imageUrl}
+                        autoplay
+                        controls={videoControlsEnabled}
+                        loop={!videoControlsEnabled}
+                        muted={!videoControlsEnabled}
+                        playsinline
+                        preload="auto"
+                    ></video>
                 {:else}
                     <img class="media" src={imageUrl} alt="Selected file" />
                 {/if}
@@ -77,6 +104,11 @@
     </div>
 
     <div class="controls">
+        {#if mediaKind === 'video' && imageUrl && !isLoading && !error}
+            <button class="btn secondary-btn" type="button" on:click={toggleVideoPlaybackMode}>
+                {videoControlsEnabled ? 'Hide Controls + Mute' : 'Enable Controls + Sound'}
+            </button>
+        {/if}
         <a class="btn" href="/browse">Back to Browse</a>
     </div>
 </div>
@@ -134,6 +166,8 @@
         margin-top: 30px;
         display: flex;
         justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
     }
 
     .btn {
@@ -154,6 +188,14 @@
 
     .btn:hover {
         background-color: #c0392b;
+    }
+
+    .secondary-btn {
+        background-color: #1f6f8b;
+    }
+
+    .secondary-btn:hover {
+        background-color: #175569;
     }
 
     .loading {
@@ -200,6 +242,7 @@
         .img-box {
             width: 100%;
         }
+
         .media {
             max-height: 60vh;
         }
