@@ -37,13 +37,13 @@ export const getAllThumbnailsHandler = async (event) => {
         return serverError('Failed to scan table', event);
     }
 
-    // Map items to an array of thumbnail filenames expected by the front: "thumbnail-<hex>.jpeg"
+    // Map items to an array of thumbnail filenames expected by the front: "thumbnail-<id>.jpeg"
     const thumbnails = items
         .map((item) => {
             // With DynamoDBDocumentClient, items are plain JS objects
-            const hex = item?.id || item?.hex;
-            if (!hex || typeof hex !== 'string') return null;
-            return `thumbnail-${hex}.jpeg`;
+            const id = item?.id;
+            if (!id || typeof id !== 'string') return null;
+            return `thumbnail-${id}.jpeg`;
         })
         .filter(Boolean);
 
