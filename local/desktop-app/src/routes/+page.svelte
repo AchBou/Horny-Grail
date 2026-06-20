@@ -30,6 +30,11 @@
   let uploadedFiles = $state<string[]>([]);
   let fileHashes = $state<{[key: string]: string}>({});
   let fileExists = $state<{[key: string]: boolean}>({});
+  let fileCheckStatus = $state<{[key: string]: 'pending' | 'done'}>({});
+  let isScanningMetadata = $state(false);
+  let scannedMetadataCount = $state(0);
+  let totalMetadataCount = $state(0);
+  let scanGeneration = 0;
 
   // Only process and show supported media files.
   const mediaExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','webm'];
@@ -57,6 +62,105 @@
   function getIconForFile(name: string): string {
     const ext = getFileExt(name);
     return extIconMap[ext] || '🖼️';
+  }
+
+  function resetFileMetadata(paths: string[]): void {
+    if (paths.length === 0) return;
+
+    const nextHashes = { ...fileHashes };
+    const nextExists = { ...fileExists };
+    const nextStatus = { ...fileCheckStatus };
+    for (const rawPath of paths) {
+      const normalized = rawPath.replace(/\//g, '\\');
+      delete nextHashes[normalized];
+      delete nextExists[normalized];
+      delete nextStatus[normalized];
+    }
+
+    fileHashes = nextHashes;
+    fileExists = nextExists;
+    fileCheckStatus = nextStatus;
+  }
+
+  async function hydrateFileMetadata(filesToCheck: FileEntry[], generation: number): Promise<void> {
+    if (filesToCheck.length === 0) {
+      if (generation === scanGeneration) {
+        isScanningMetadata = false;
+        scannedMetadataCount = 0;
+        totalMetadataCount = 0;
+      }
+      return;
+    }
+
+    isScanningMetadata = true;
+    scannedMetadataCount = 0;
+    totalMetadataCount = filesToCheck.length;
+
+    const derived = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+      ? Math.floor(navigator.hardwareConcurrency / 2)
+      : 4;
+    const maxConcurrency = Math.max(2, Math.min(6, derived || 4));
+    let idx = 0;
+
+    const worker = async () => {
+      while (true) {
+        if (generation !== scanGeneration) return;
+
+        const i = idx++;
+        if (i >= filesToCheck.length) return;
+
+        const f = filesToCheck[i];
+        try {
+          const hex = await computeFileHash(f.path);
+          const exists = await checkFileExistsByHex(hex);
+          if (generation !== scanGeneration) return;
+
+          fileHashes[f.path] = hex;
+          fileExists[f.path] = exists;
+          fileCheckStatus[f.path] = 'done';
+        } catch (e) {
+          console.error('Existence check failed for', f.path, e);
+          if (generation !== scanGeneration) return;
+
+          fileExists[f.path] = false;
+          fileCheckStatus[f.path] = 'done';
+        } finally {
+          if (generation === scanGeneration) {
+            scannedMetadataCount += 1;
+          }
+        }
+      }
+    };
+
+    try {
+      const workerCount = Math.min(maxConcurrency, filesToCheck.length);
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    } finally {
+      if (generation === scanGeneration) {
+        isScanningMetadata = false;
+      }
+    }
+  }
+
+  async function recheckExistingFiles(): Promise<void> {
+    if (!selectedPath || files.length === 0) {
+      return;
+    }
+
+    errorMessage = "";
+    scanGeneration += 1;
+    const currentGeneration = scanGeneration;
+    const visibleFiles = files.filter((file) => !file.isDirectory && isMediaFile(file.name));
+    const nextStatus = { ...fileCheckStatus };
+
+    for (const file of visibleFiles) {
+      delete fileHashes[file.path];
+      delete fileExists[file.path];
+      nextStatus[file.path] = 'pending';
+    }
+
+    fileCheckStatus = nextStatus;
+    await hydrateFileMetadata(visibleFiles, currentGeneration);
   }
 
   async function selectFolder(): Promise<void> {
@@ -120,6 +224,7 @@
           }
           
           console.log(`Detected ${eventType} event for:`, event.paths);
+          resetFileMetadata((event.paths || []).map((path) => path.replace(/\//g, '\\')));
           
           // Increment pending updates counter
           pendingUpdates++;
@@ -170,6 +275,11 @@
     try {
       errorMessage = "";
       isLoading = true;
+      scanGeneration += 1;
+      const currentGeneration = scanGeneration;
+      isScanningMetadata = false;
+      scannedMetadataCount = 0;
+      totalMetadataCount = 0;
       
       const normalizedPath = path.replace(/\//g, '\\');
       const entries = await readDir(normalizedPath);
@@ -197,38 +307,21 @@
       }));
       
       // Show only image files (skip folders and non-images)
-      files = mapped.filter(f => !f.isDirectory && isMediaFile(f.name));
+      const visibleFiles = mapped.filter(f => !f.isDirectory && isMediaFile(f.name));
+      files = visibleFiles;
 
-      // Reset existence map for current directory files only
-      const newExists = {} as {[key:string]: boolean};
-      const newHashes = {} as {[key:string]: string};
-
-      // For each image file, compute hash and check existence with limited concurrency
-      const filesToCheck = files;
-      // Determine concurrency: half of logical cores up to 2, min 1
-      const derived = (typeof navigator !== 'undefined' && (navigator).hardwareConcurrency) ? Math.floor(navigator.hardwareConcurrency / 2) : 2;
-      const maxConcurrency = Math.max(1, Math.min(2, derived || 2));
-      let idx = 0;
-      const worker = async () => {
-        while (true) {
-          const i = idx++;
-          if (i >= filesToCheck.length) break;
-          const f = filesToCheck[i];
-          try {
-            const hex = await computeFileHash(f.path);
-            newHashes[f.path] = hex;
-            const exists = await checkFileExistsByHex(hex);
-            newExists[f.path] = exists;
-          } catch (e) {
-            console.error('Existence check failed for', f.path, e);
-          }
+      const nextStatus = {} as {[key: string]: 'pending' | 'done'};
+      const filesToCheck: FileEntry[] = [];
+      for (const file of visibleFiles) {
+        const hasCachedMetadata = typeof fileHashes[file.path] === 'string' && typeof fileExists[file.path] === 'boolean';
+        nextStatus[file.path] = hasCachedMetadata ? 'done' : 'pending';
+        if (!hasCachedMetadata) {
+          filesToCheck.push(file);
         }
-      };
-      const workerCount = Math.min(maxConcurrency, filesToCheck.length || 1);
-      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+      }
+      fileCheckStatus = nextStatus;
 
-      fileHashes = { ...fileHashes, ...newHashes };
-      fileExists = { ...fileExists, ...newExists };
+      void hydrateFileMetadata(filesToCheck, currentGeneration);
     } catch (error) {
       console.error("Error loading files:", error);
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
@@ -276,6 +369,7 @@
       // Mark as existing now that it's uploaded
       fileHashes[file.path] = fileHash;
       fileExists[file.path] = true;
+      fileCheckStatus[file.path] = "done";
       
       // Upload a thumbnail preview for every supported media file.
       const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
@@ -308,7 +402,14 @@
 
   // Compute list of files eligible for bulk upload
   function getEligibleFiles(): FileEntry[] {
-    return files.filter(f => !f.isDirectory && isMediaFile(f.name) && !fileExists[f.path] && uploadStatus[f.path] !== "completed");
+    return files.filter(
+      (f) =>
+        !f.isDirectory &&
+        isMediaFile(f.name) &&
+        fileCheckStatus[f.path] === "done" &&
+        !fileExists[f.path] &&
+        uploadStatus[f.path] !== "completed"
+    );
   }
 
   // Upload all eligible files sequentially
@@ -347,7 +448,19 @@
 
   <div class="file-explorer">
     <div class="controls">
-      <button onclick={selectFolder} class="sync-button" title="Choose a folder to watch and upload">🔄 Sync Folder</button>
+      <div class="control-buttons">
+        <button onclick={selectFolder} class="sync-button" title="Choose a folder to watch and upload">🔄 Sync Folder</button>
+        {#if selectedPath}
+          <button
+            onclick={recheckExistingFiles}
+            class="recheck-button"
+            disabled={isScanningMetadata || isLoading}
+            title="Re-run the duplicate check for the files in this folder"
+          >
+            Recheck Existing Files
+          </button>
+        {/if}
+      </div>
       {#if selectedPath}
         <p class="selected-path">Sync folder: {selectedPath}</p>
         {#if isWatching}
@@ -375,9 +488,13 @@
       </div>
     {/if}
 
+    {#if isScanningMetadata}
+      <p class="scan-status">Checking existing files... {scannedMetadataCount}/{totalMetadataCount}</p>
+    {/if}
+
     <div class="file-list">
       {#if isLoading}
-        <p>Loading...</p>
+        <p>Loading files...</p>
       {:else if files.length === 0}
         <p>No files found. Select a folder to view its contents.</p>
       {:else}
@@ -393,7 +510,9 @@
               </button>
               
               {#if !file.isDirectory}
-                {#if fileExists[file.path]}
+                {#if fileCheckStatus[file.path] !== "done"}
+                  <span class="checking-badge" title="Computing hash and checking whether this file already exists">Checking...</span>
+                {:else if fileExists[file.path]}
                   <span class="exists-badge" title="This file's hash already exists in the database">Already exists</span>
                 {:else}
                   <button 
@@ -496,8 +615,24 @@
     margin-bottom: 1rem;
   }
 
+  .control-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
   .sync-button {
     min-width: 150px;
+  }
+
+  .recheck-button {
+    min-width: 190px;
+    background-color: #0f766e;
+  }
+
+  .recheck-button:hover:not(:disabled) {
+    background-color: #0d5f59;
   }
 
   .selected-path {
@@ -594,6 +729,13 @@
   .error-message p {
     margin: 0;
     flex: 1;
+  }
+
+  .scan-status {
+    margin: -0.25rem 0 0;
+    font-size: 0.85rem;
+    color: #666;
+    text-align: center;
   }
 
   .close-error {
@@ -697,6 +839,16 @@
     white-space: nowrap;
   }
 
+  .checking-badge {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    color: #1f2937;
+    background-color: #dbeafe;
+    border: 1px solid #60a5fa;
+    border-radius: 9999px;
+    white-space: nowrap;
+  }
+
   .file-button:hover {
     background-color: #eee;
   }
@@ -774,6 +926,10 @@
     
     .watch-status {
       color: #888;
+    }
+
+    .scan-status {
+      color: #aaa;
     }
     
     .watch-status.watching {

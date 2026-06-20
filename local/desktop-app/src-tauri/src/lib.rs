@@ -39,6 +39,27 @@ fn flatten_to_white(img: &DynamicImage) -> RgbImage {
     out
 }
 
+fn fit_on_square_canvas(img: &DynamicImage, size: u32) -> RgbImage {
+    let (w, h) = img.dimensions();
+    let scale_w = size as f32 / w as f32;
+    let scale_h = size as f32 / h as f32;
+    let scale = scale_w.min(scale_h);
+    let tw = (w as f32 * scale).round().max(1.0) as u32;
+    let th = (h as f32 * scale).round().max(1.0) as u32;
+
+    let resized = img.resize(tw, th, FilterType::Lanczos3);
+    let rgb = flatten_to_white(&resized);
+    let mut canvas = RgbImage::from_pixel(size, size, image::Rgb([255, 255, 255]));
+    let x_offset = (size - tw) / 2;
+    let y_offset = (size - th) / 2;
+
+    for (x, y, pixel) in rgb.enumerate_pixels() {
+        canvas.put_pixel(x + x_offset, y + y_offset, *pixel);
+    }
+
+    canvas
+}
+
 #[tauri::command]
 fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
     let max_dim = max_dimension.unwrap_or(150);
@@ -47,19 +68,7 @@ fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Op
     // Decode image
     let img = image::open(&path).map_err(|e| format!("failed to decode image: {}", e))?;
 
-    // Compute target size (do not upscale)
-    let (w, h) = img.dimensions();
-    let scale_w = max_dim as f32 / w as f32;
-    let scale_h = max_dim as f32 / h as f32;
-    let scale = scale_w.min(scale_h).min(1.0);
-    let tw = (w as f32 * scale).round().max(1.0) as u32;
-    let th = (h as f32 * scale).round().max(1.0) as u32;
-
-    // Resize with high-quality filter
-    let resized = img.resize(tw, th, FilterType::Lanczos3);
-
-    // Flatten any alpha onto white background
-    let rgb = flatten_to_white(&resized);
+    let rgb = fit_on_square_canvas(&img, max_dim);
 
     // Encode JPEG into memory
     let mut jpeg_bytes: Vec<u8> = Vec::new();

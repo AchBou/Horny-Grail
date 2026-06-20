@@ -89,11 +89,31 @@ async function bytesToVideo(srcBytes) {
 }
 
 /**
- * Wait until the video can render a stable frame, then seek slightly past the first frame.
+ * @param {number} duration
+ * @returns {number[]}
+ */
+function getVideoSampleTimes(duration) {
+  if (!Number.isFinite(duration) || duration <= 0.15) {
+    return [0];
+  }
+
+  if (duration < 2) {
+    return [duration * 0.5, duration * 0.75, duration * 0.25];
+  }
+
+  const maxTime = Math.max(0, duration - 0.1);
+  return [0.15, duration * 0.1, duration * 0.25, duration * 0.5, duration * 0.75]
+    .map((time) => Math.min(Math.max(time, 0), maxTime))
+    .filter((time, index, times) => index === 0 || Math.abs(time - times[index - 1]) > 0.05);
+}
+
+/**
+ * Wait until the video can render a stable frame at the requested timestamp.
  * @param {HTMLVideoElement} video
+ * @param {number} targetTime
  * @returns {Promise<void>}
  */
-async function prepareVideoFrame(video) {
+async function prepareVideoFrame(video, targetTime) {
   if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     await new Promise((resolve, reject) => {
       /** @returns {void} */
@@ -115,9 +135,8 @@ async function prepareVideoFrame(video) {
     });
   }
 
-  const duration = Number.isFinite(video.duration) ? video.duration : 0;
-  const targetTime = duration > 0.2 ? Math.min(0.1, Math.max(duration - 0.05, 0)) : 0;
   if (targetTime <= 0) {
+    await waitForPaintedVideoFrame(video);
     return;
   }
 
@@ -140,6 +159,103 @@ async function prepareVideoFrame(video) {
     video.addEventListener('error', onError, { once: true });
     video.currentTime = targetTime;
   });
+
+  await waitForPaintedVideoFrame(video);
+}
+
+/**
+ * @param {HTMLVideoElement} video
+ * @returns {Promise<void>}
+ */
+async function waitForPaintedVideoFrame(video) {
+  await new Promise((resolve) => {
+    if ('requestVideoFrameCallback' in video) {
+      video.requestVideoFrameCallback(() => resolve(undefined));
+      return;
+    }
+    requestAnimationFrame(() => resolve(undefined));
+  });
+}
+
+/**
+ * @param {CanvasImageSource} source
+ * @param {number} sourceWidth
+ * @param {number} sourceHeight
+ * @returns {boolean}
+ */
+function isMostlyBlackFrame(source, sourceWidth, sourceHeight) {
+  if (!sourceWidth || !sourceHeight) {
+    return true;
+  }
+
+  const sampleSize = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = sampleSize;
+  canvas.height = sampleSize;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return false;
+  }
+
+  ctx.drawImage(source, 0, 0, sampleSize, sampleSize);
+  const pixels = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
+  let luminanceTotal = 0;
+  let visiblePixels = 0;
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+    const luminance = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+    luminanceTotal += luminance;
+    if (luminance > 18) {
+      visiblePixels += 1;
+    }
+  }
+
+  const pixelCount = sampleSize * sampleSize;
+  const averageLuminance = luminanceTotal / pixelCount;
+  const visibleRatio = visiblePixels / pixelCount;
+  return averageLuminance < 10 && visibleRatio < 0.02;
+}
+
+/**
+ * @param {CanvasImageSource} source
+ * @param {number} sourceWidth
+ * @param {number} sourceHeight
+ * @param {number} maxDim
+ * @param {number} quality
+ * @param {string} background
+ * @returns {Promise<Uint8Array>}
+ */
+async function drawContainedJpeg(source, sourceWidth, sourceHeight, maxDim, quality, background = '#ffffff') {
+  if (!sourceWidth || !sourceHeight) throw new Error('Invalid media dimensions');
+
+  const scale = Math.min(maxDim / sourceWidth, maxDim / sourceHeight);
+  const tw = Math.max(1, Math.round(sourceWidth * scale));
+  const th = Math.max(1, Math.round(sourceHeight * scale));
+  const dx = Math.floor((maxDim - tw) / 2);
+  const dy = Math.floor((maxDim - th) / 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = maxDim;
+  canvas.height = maxDim;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context not available');
+
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, maxDim, maxDim);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, dx, dy, tw, th);
+
+  const blob = await new Promise(
+    /** @returns {void} */
+    (resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality / 100)
+  );
+  const buf = await blob.arrayBuffer();
+  return new Uint8Array(buf);
 }
 
 /**
@@ -153,32 +269,28 @@ async function makeJpegThumbnailBytes(srcBytes, mimeType = 'application/octet-st
   if (mimeType === 'video/webm') {
     const { video, revoke } = await bytesToVideo(srcBytes);
     try {
-      await prepareVideoFrame(video);
-
       const iw = video.videoWidth;
       const ih = video.videoHeight;
-      if (!iw || !ih) throw new Error('Invalid video dimensions');
+      let fallbackThumb = null;
 
-      const scale = Math.min(maxDim / iw, maxDim / ih, 1);
-      const tw = Math.max(1, Math.round(iw * scale));
-      const th = Math.max(1, Math.round(ih * scale));
+      for (const sampleTime of getVideoSampleTimes(video.duration)) {
+        await prepareVideoFrame(video, sampleTime);
+        const thumb = await drawContainedJpeg(video, iw, ih, maxDim, quality, '#111827');
 
-      const canvas = document.createElement('canvas');
-      canvas.width = tw;
-      canvas.height = th;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas 2D context not available');
+        if (!fallbackThumb) {
+          fallbackThumb = thumb;
+        }
 
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, tw, th);
-      ctx.drawImage(video, 0, 0, tw, th);
+        if (!isMostlyBlackFrame(video, iw, ih)) {
+          return thumb;
+        }
+      }
 
-      const blob = await new Promise(
-        (resolve, reject) =>
-          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality / 100)
-      );
-      const buf = await blob.arrayBuffer();
-      return new Uint8Array(buf);
+      if (fallbackThumb) {
+        return fallbackThumb;
+      }
+
+      throw new Error('Failed to capture a video thumbnail frame');
     } finally {
       revoke();
       video.removeAttribute('src');
@@ -186,55 +298,15 @@ async function makeJpegThumbnailBytes(srcBytes, mimeType = 'application/octet-st
     }
   }
 
-  // Canvas fallback used if the native Tauri path is unavailable.
-  try {
-    const { ImagePool } = await import('@squoosh/lib');
-    const pool = new ImagePool(1);
-    const image = pool.ingestImage(srcBytes);
-
-    // Resize to fit within maxDim x maxDim, preserving aspect ratio (no upscaling)
-    await image.preprocess({
-      resize: { width: maxDim, height: maxDim, method: 'lanczos3', premultiply: true, linearRGB: true }
-    }).catch(() => {});
-
-    await image.encode({ mozjpeg: { quality } });
-    const encoded = /** @type {{ mozjpeg: Promise<{ binary: ArrayBufferLike }> }} */ (image.encodedWith);
-    const { binary } = await encoded.mozjpeg;
-    await pool.close();
-    return new Uint8Array(binary);
-  } catch (err) {
-    // Fallback to simple Canvas-based thumbnail (kept intentionally straightforward)
-    const img = await bytesToImage(srcBytes);
-    const iw = img.naturalWidth || img.width;
-    const ih = img.naturalHeight || img.height;
-    if (!iw || !ih) throw new Error('Invalid image dimensions');
-
-    // Compute target size, preserving aspect ratio, no upscale
-    const scale = Math.min(maxDim / iw, maxDim / ih, 1);
-    const tw = Math.max(1, Math.round(iw * scale));
-    const th = Math.max(1, Math.round(ih * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = tw;
-    canvas.height = th;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas 2D context not available');
-
-    // Fill white to flatten any transparency before drawing
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, tw, th);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, tw, th);
-
-    const blob = await new Promise(
-      /** @returns {void} */
-      (resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality / 100)
-    );
-    const buf = await blob.arrayBuffer();
-    return new Uint8Array(buf);
-  }
+  const img = await bytesToImage(srcBytes);
+  return drawContainedJpeg(
+    img,
+    img.naturalWidth || img.width,
+    img.naturalHeight || img.height,
+    maxDim,
+    quality,
+    '#ffffff'
+  );
 }
 
 /**
