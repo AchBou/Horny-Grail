@@ -1,6 +1,7 @@
 import { readFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import { WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
+import { httpFetch } from "../config/httpClient.js";
 
 const MAX_DIMENSION = 320;
 const JPEG_QUALITY = 90; // 1..100 for native encoder, converted for canvas fallback
@@ -339,7 +340,7 @@ export async function uploadThumbnail(filePath, hex) {
     );
   }
 
-  const signResponse = await fetch(buildApiUrl("/uploads/sign"), {
+  const signResponse = await httpFetch(buildApiUrl("/uploads/sign"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -358,7 +359,7 @@ export async function uploadThumbnail(filePath, hex) {
 
   const uploadTarget = await signResponse.json();
 
-  const res = await fetch(uploadTarget.uploadUrl, {
+  const res = await httpFetch(uploadTarget.uploadUrl, {
     method: 'PUT',
     body: new Blob([toArrayBuffer(thumbBytes)], { type: 'image/jpeg' }),
     headers: uploadTarget.headers || { 'Content-Type': 'image/jpeg' }

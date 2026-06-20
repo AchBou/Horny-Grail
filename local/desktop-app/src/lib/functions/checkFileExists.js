@@ -1,4 +1,5 @@
 import { buildApiUrl } from "../config/apiEnv.js";
+import { httpFetch } from "../config/httpClient.js";
 
 // Check if an item with primary key id === hex exists in DynamoDB
 /**
@@ -9,7 +10,7 @@ export async function checkFileExistsByHex(hex) {
   if (!hex) return false;
 
   try {
-    const response = await fetch(buildApiUrl(`/${hex}`));
+    const response = await httpFetch(buildApiUrl(`/${hex}`));
     if (!response.ok) {
       throw new Error(`Metadata request failed with status ${response.status}`);
     }

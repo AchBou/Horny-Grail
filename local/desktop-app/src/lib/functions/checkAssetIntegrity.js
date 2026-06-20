@@ -1,4 +1,5 @@
 import { buildApiUrl } from "../config/apiEnv.js";
+import { httpFetch } from "../config/httpClient.js";
 
 /**
  * @typedef {{
@@ -19,7 +20,7 @@ export async function checkAssetIntegrityByHex(hex) {
   if (!hex) return null;
 
   try {
-    const response = await fetch(buildApiUrl(`/assets/${hex}/integrity`));
+    const response = await httpFetch(buildApiUrl(`/assets/${hex}/integrity`));
     if (!response.ok) {
       throw new Error(`Integrity request failed with status ${response.status}`);
     }

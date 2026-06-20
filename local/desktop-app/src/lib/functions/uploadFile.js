@@ -1,6 +1,7 @@
 import { readFile } from '@tauri-apps/plugin-fs';
 import CryptoJS from 'crypto-js';
 import { API_BASE_URL, WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
+import { httpFetch } from "../config/httpClient.js";
 
 /**
  * @typedef {{ uploadUrl: string, key: string, headers?: Record<string, string> }} UploadTarget
@@ -13,7 +14,7 @@ import { API_BASE_URL, WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
  * @returns {Promise<UploadTarget>}
  */
 async function requestUploadTarget(path, id, ext) {
-    const response = await fetch(buildApiUrl("/uploads/sign"), {
+    const response = await httpFetch(buildApiUrl("/uploads/sign"), {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -39,7 +40,7 @@ async function requestUploadTarget(path, id, ext) {
  * @returns {Promise<void>}
  */
 async function registerUploadedFile(id, ext) {
-    const response = await fetch(API_BASE_URL, {
+    const response = await httpFetch(API_BASE_URL, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -78,7 +79,7 @@ export async function uploadFile(filePath) {
         const uploadTarget = await requestUploadTarget("files", hex, fileExtension);
 
         // Upload file using the presigned URL
-        const res = await fetch(uploadTarget.uploadUrl, {
+        const res = await httpFetch(uploadTarget.uploadUrl, {
             method: 'PUT',
             body: fileData,
             headers: uploadTarget.headers || {}
