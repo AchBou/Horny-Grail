@@ -5,6 +5,32 @@ import { httpFetch } from "../config/httpClient.js";
 
 const MAX_DIMENSION = 320;
 const JPEG_QUALITY = 90; // 1..100 for native encoder, converted for canvas fallback
+const NATIVE_THUMB_TIMEOUT_MS = 8000;
+const MEDIA_DECODE_TIMEOUT_MS = 10000;
+const NETWORK_TIMEOUT_MS = 20000;
+
+/**
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} timeoutMs
+ * @param {string} label
+ * @returns {Promise<T>}
+ */
+function withTimeout(promise, timeoutMs, label) {
+  let timeoutId = 0;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
 
 /**
  * Normalize Uint8Array-backed data to a plain ArrayBuffer for DOM APIs.
@@ -28,7 +54,7 @@ function getFileExt(filePath) {
  * @returns {Promise<HTMLImageElement>}
  */
 async function bytesToImage(srcBytes) {
-  return new Promise((resolve, reject) => {
+  return withTimeout(new Promise((resolve, reject) => {
     try {
       const blob = new Blob([toArrayBuffer(srcBytes)]);
       const url = URL.createObjectURL(blob);
@@ -45,7 +71,7 @@ async function bytesToImage(srcBytes) {
     } catch (e) {
       reject(e);
     }
-  });
+  }), MEDIA_DECODE_TIMEOUT_MS, 'Image decode');
 }
 
 /**
@@ -53,7 +79,7 @@ async function bytesToImage(srcBytes) {
  * @returns {Promise<{ video: HTMLVideoElement, revoke: () => void }>}
  */
 async function bytesToVideo(srcBytes) {
-  return new Promise((resolve, reject) => {
+  return withTimeout(new Promise((resolve, reject) => {
     try {
       const blob = new Blob([toArrayBuffer(srcBytes)], { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
@@ -86,7 +112,7 @@ async function bytesToVideo(srcBytes) {
     } catch (e) {
       reject(e);
     }
-  });
+  }), MEDIA_DECODE_TIMEOUT_MS, 'Video decode');
 }
 
 /**
@@ -319,18 +345,31 @@ export async function uploadThumbnail(filePath, hex) {
   const fileExt = getFileExt(filePath);
   const isWebm = fileExt === 'webm';
   let thumbBytes;
-  try {
-    if (isWebm) {
-      throw new Error('Use JS thumbnail generation for webm');
+  if (isWebm) {
+    try {
+      const nativeVideoThumbBytes = await withTimeout(invoke('generate_video_thumbnail', {
+        path: filePath,
+        maxDimension: MAX_DIMENSION,
+        qualityHint: JPEG_QUALITY
+      }), NATIVE_THUMB_TIMEOUT_MS, 'Native video thumbnail generation');
+      thumbBytes = Uint8Array.from(/** @type {number[]} */ (nativeVideoThumbBytes));
+    } catch (error) {
+      console.warn('Falling back to JS video thumbnail generation:', error);
     }
+  } else {
+    try {
+      const nativeThumbBytes = await withTimeout(invoke('generate_thumbnail', {
+        path: filePath,
+        maxDimension: MAX_DIMENSION,
+        qualityHint: JPEG_QUALITY
+      }), NATIVE_THUMB_TIMEOUT_MS, 'Native thumbnail generation');
+      thumbBytes = Uint8Array.from(/** @type {number[]} */ (nativeThumbBytes));
+    } catch (error) {
+      console.warn('Falling back to JS thumbnail generation:', error);
+    }
+  }
 
-    const nativeThumbBytes = await invoke('generate_thumbnail', {
-      path: filePath,
-      maxDimension: MAX_DIMENSION,
-      qualityHint: JPEG_QUALITY
-    });
-    thumbBytes = Uint8Array.from(/** @type {number[]} */ (nativeThumbBytes));
-  } catch {
+  if (!thumbBytes) {
     const srcBytes = await readFile(filePath);
     thumbBytes = await makeJpegThumbnailBytes(
       srcBytes,
@@ -340,7 +379,7 @@ export async function uploadThumbnail(filePath, hex) {
     );
   }
 
-  const signResponse = await httpFetch(buildApiUrl("/uploads/sign"), {
+  const signResponse = await withTimeout(httpFetch(buildApiUrl("/uploads/sign"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -351,7 +390,7 @@ export async function uploadThumbnail(filePath, hex) {
       id: hex,
       ext: "jpeg"
     })
-  });
+  }), NETWORK_TIMEOUT_MS, 'Thumbnail sign request');
 
   if (!signResponse.ok) {
     throw new Error(`Failed to request thumbnail upload URL: ${signResponse.status}`);
@@ -359,11 +398,11 @@ export async function uploadThumbnail(filePath, hex) {
 
   const uploadTarget = await signResponse.json();
 
-  const res = await httpFetch(uploadTarget.uploadUrl, {
+  const res = await withTimeout(httpFetch(uploadTarget.uploadUrl, {
     method: 'PUT',
     body: new Blob([toArrayBuffer(thumbBytes)], { type: 'image/jpeg' }),
     headers: uploadTarget.headers || { 'Content-Type': 'image/jpeg' }
-  });
+  }), NETWORK_TIMEOUT_MS, 'Thumbnail upload');
 
   if (!res.ok) {
     throw new Error(`S3 thumbnail upload via presigned URL failed with status ${res.status}`);

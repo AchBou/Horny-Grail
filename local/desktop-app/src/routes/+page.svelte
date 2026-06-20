@@ -461,6 +461,52 @@
     }
   }
 
+  async function refreshFileIntegrity(filePath: string, fileHash: string): Promise<void> {
+    try {
+      const integrity = await checkAssetIntegrityByHex(fileHash);
+      fileHashes[filePath] = fileHash;
+      fileExists[filePath] = true;
+      fileCheckStatus[filePath] = "done";
+      fileRepairNeeded[filePath] = Boolean(integrity?.repairRequired);
+      fileMissingParts[filePath] = Array.isArray(integrity?.missing) ? integrity.missing : [];
+    } catch (error) {
+      console.error("Error refreshing file integrity:", error);
+    }
+  }
+
+  async function handleThumbnailRegeneration(file: FileEntry): Promise<void> {
+    if (file.isDirectory || !isMediaFile(file.name)) {
+      return;
+    }
+
+    try {
+      uploadStatus[file.path] = "thumbnailing";
+      isUploading = true;
+
+      const fileHash = fileHashes[file.path] || await computeFileHash(file.path);
+      await uploadThumbnail(file.path, fileHash);
+
+      fileHashes[file.path] = fileHash;
+      fileExists[file.path] = true;
+      fileCheckStatus[file.path] = "done";
+      fileRepairNeeded[file.path] = false;
+      fileMissingParts[file.path] = [];
+      uploadStatus[file.path] = "completed";
+      void refreshFileIntegrity(file.path, fileHash);
+    } catch (error) {
+      console.error("Error regenerating thumbnail:", error);
+      uploadStatus[file.path] = "failed";
+      errorMessage = `Failed to regenerate thumbnail for ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`;
+    } finally {
+      const activeUploads = Object.values(uploadStatus).filter((status) =>
+        status === "uploading" || status === "repairing" || status === "thumbnailing"
+      );
+      if (activeUploads.length === 0) {
+        isUploading = false;
+      }
+    }
+  }
+
   // Compute list of files eligible for bulk upload
   function getEligibleFiles(): FileEntry[] {
     return files.filter(
@@ -581,7 +627,7 @@
                     <button
                       onclick={() => handleFileRepair(file)}
                       class="repair-button"
-                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing")}
+                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
                     >
                       {#if uploadStatus[file.path] === "repairing"}
                         Repairing...
@@ -589,9 +635,33 @@
                         Repair
                       {/if}
                     </button>
+                    <button
+                      onclick={() => handleThumbnailRegeneration(file)}
+                      class="thumbnail-button"
+                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
+                    >
+                      {#if uploadStatus[file.path] === "thumbnailing"}
+                        Regenerating...
+                      {:else}
+                        Regenerate Thumbnail
+                      {/if}
+                    </button>
                   </div>
                 {:else if fileExists[file.path]}
-                  <span class="exists-badge" title="This file's hash already exists in the database and its stored assets look complete">Already exists</span>
+                  <div class="repair-actions">
+                    <span class="exists-badge" title="This file's hash already exists in the database and its stored assets look complete">Already exists</span>
+                    <button
+                      onclick={() => handleThumbnailRegeneration(file)}
+                      class="thumbnail-button"
+                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
+                    >
+                      {#if uploadStatus[file.path] === "thumbnailing"}
+                        Regenerating...
+                      {:else}
+                        Regenerate Thumbnail
+                      {/if}
+                    </button>
+                  </div>
                 {:else}
                   <button 
                     onclick={() => handleFileUpload(file)}
@@ -948,6 +1018,23 @@
 
   .repair-button:hover:not(:disabled) {
     background-color: #c2410c;
+  }
+
+  .thumbnail-button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 150px;
+    text-align: center;
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .thumbnail-button:hover:not(:disabled) {
+    background-color: #1d4ed8;
   }
 
   .checking-badge {
