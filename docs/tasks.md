@@ -20,7 +20,7 @@ This document contains a comprehensive list of actionable improvement tasks for 
 
 ### Performance
 - [ ] Implement caching for frequently accessed resources
-- [ ] Optimize image processing pipeline
+- [x] Optimize thumbnail processing pipeline for local desktop uploads
 - [x] Use AWS CloudFront for content delivery
 - [ ] Implement pagination for listing resources
 - [ ] Review and optimize DynamoDB queries
@@ -82,6 +82,7 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Implement proper error handling and recovery
 - [ ] Add validation for uploaded files
 - [ ] Improve logging with structured log format
+- [x] Add repair flow for partial assets where metadata exists but S3 objects are missing
 
 #### File Upload
 - [ ] Refactor to use asynchronous file reading for better performance
@@ -90,10 +91,14 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Implement retry logic for failed uploads
 
 #### Thumbnail Generation
-- [ ] Review Sharp cache configuration for optimal performance
-- [ ] Consider maintaining aspect ratio for thumbnails
+- [x] Generate image thumbnails with native Tauri code
+- [x] Generate WebM thumbnails with native bundled ffmpeg
+- [x] Add manual thumbnail regeneration for existing files
+- [x] Maintain aspect ratio for square thumbnails
 - [ ] Add support for different thumbnail sizes
-- [ ] Implement error handling for unsupported image formats
+- [x] Implement bounded timeouts and fallback handling for thumbnail generation and upload
+- [ ] Add automated tests or fixtures for image and WebM thumbnail generation
+- [ ] Decide whether to bundle smaller ffmpeg builds per platform to reduce installer size
 
 ## Testing and Documentation
 
@@ -109,6 +114,7 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Add inline code documentation
 - [ ] Create user documentation
 - [ ] Document deployment procedures
+- [x] Document desktop thumbnail generation and bundled ffmpeg behavior
 
 ## Build and Deployment
 

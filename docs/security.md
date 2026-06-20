@@ -10,6 +10,17 @@
 - Browser uploads to presigned S3 URLs also require S3 bucket CORS on `my-awesome-very-secret-upload-bucket`.
 - Handlers validate image IDs as 64-character hex strings and image extensions against supported image formats.
 
+## Desktop Binary Dependencies
+
+The desktop app bundles `src-tauri/binaries/ffmpeg.exe` so WebM thumbnails can be generated natively without requiring users to install ffmpeg.
+
+Security and distribution notes:
+
+- Treat the bundled ffmpeg binary as a third-party executable dependency.
+- Replace it only from a trusted ffmpeg distribution source.
+- Rebuild the Tauri app after replacement to verify the binary is packaged into the installer.
+- The currently bundled ffmpeg build is GPL-enabled; distribution must account for ffmpeg's license obligations.
+
 ## S3
 
 The image bucket is external to the SAM stack, so bucket policy and IAM role permissions must be managed in AWS.
