@@ -2,6 +2,8 @@
 
 Public SvelteKit app for browsing images, viewing a single image, and loading a random image.
 
+The frontend now builds as an explicit static single-page app for S3 + CloudFront deployment.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and provide values for:
@@ -20,3 +22,26 @@ npm run build
 npm run preview
 npm run test
 ```
+
+## Deployment
+
+The GitHub Actions workflow at `.github/workflows/front-deploy.yml` builds `front/`, uploads the static output to S3, and invalidates CloudFront.
+
+Configure these GitHub Actions repository variables:
+
+- `PUBLIC_API_BASE_URL`
+- `PUBLIC_CLOUDFRONT_BASE_URL`
+- `FRONTEND_AWS_REGION`
+- `FRONTEND_S3_BUCKET`
+- `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID`
+- `FRONTEND_DEPLOY_ROLE_ARN`
+
+The workflow triggers on pushes to `main` that touch `front/**`, and it can also be run manually with `workflow_dispatch`.
+
+The workflow uses GitHub Actions OIDC to assume the AWS role referenced by `FRONTEND_DEPLOY_ROLE_ARN`. No long-lived AWS access keys are required.
+
+### Deep-link routing
+
+The app is deployed as a static SPA with a `200.html` fallback. The workflow also copies that fallback to `404.html` to support static-hosting error fallbacks.
+
+CloudFront still needs to be configured so deep links such as `/browse` and `/image/<id>` resolve to the SPA shell instead of returning an origin error. If CloudFront is in front of the S3 bucket, configure custom error handling to serve `/200.html` for missing routes.

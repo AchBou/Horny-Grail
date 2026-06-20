@@ -1,0 +1,59 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "front/**"
+      - ".github/workflows/front-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    env:
+      PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
+      PUBLIC_CLOUDFRONT_BASE_URL: ${{ vars.PUBLIC_CLOUDFRONT_BASE_URL }}
+      AWS_REGION: ${{ vars.FRONTEND_AWS_REGION }}
+      FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
+      FRONTEND_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.FRONTEND_CLOUDFRONT_DISTRIBUTION_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static frontend
+        run: npm run build
+
+      - name: Mirror SPA fallback to 404.html
+        run: cp build/200.html build/404.html
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.FRONTEND_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync site to S3
+        run: aws s3 sync build/ "s3://${FRONTEND_S3_BUCKET}" --delete
+
+      - name: Invalidate CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id "${FRONTEND_CLOUDFRONT_DISTRIBUTION_ID}" --paths "/*"

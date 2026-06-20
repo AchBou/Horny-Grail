@@ -1,4 +1,7 @@
-import { env } from "$env/dynamic/public";
+import {
+  PUBLIC_API_BASE_URL,
+  PUBLIC_CLOUDFRONT_BASE_URL
+} from "$env/static/public";
 
 const trimTrailingSlash = (value) => value.replace(/\/+$/, "");
 const requirePublicEnv = (name, value) => {
@@ -10,11 +13,11 @@ const requirePublicEnv = (name, value) => {
 };
 
 export const API_BASE_URL = trimTrailingSlash(
-  requirePublicEnv("PUBLIC_API_BASE_URL", env.PUBLIC_API_BASE_URL)
+  requirePublicEnv("PUBLIC_API_BASE_URL", PUBLIC_API_BASE_URL)
 );
 
 export const CLOUDFRONT_BASE_URL = trimTrailingSlash(
-  requirePublicEnv("PUBLIC_CLOUDFRONT_BASE_URL", env.PUBLIC_CLOUDFRONT_BASE_URL)
+  requirePublicEnv("PUBLIC_CLOUDFRONT_BASE_URL", PUBLIC_CLOUDFRONT_BASE_URL)
 );
 
 export function buildApiUrl(path = "") {
