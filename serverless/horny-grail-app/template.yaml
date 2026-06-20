@@ -219,6 +219,38 @@ Resources:
             Path: /api/uploads/sign
             Method: OPTIONS
 
+  getAssetIntegrityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/assets/get-asset-integrity.getAssetIntegrityHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 30
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref LookupTableName
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTableName
+          BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/integrity
+            Method: GET
+
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
