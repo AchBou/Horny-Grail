@@ -397,7 +397,9 @@
           await uploadThumbnail(file.path, fileHash);
         } catch (thumbnailError) {
           console.error("Error uploading thumbnail:", thumbnailError);
-          // Continue even if thumbnail upload fails
+          fileRepairNeeded[file.path] = true;
+          fileMissingParts[file.path] = ["thumbnail"];
+          errorMessage = `Uploaded ${file.name}, but thumbnail generation/upload failed: ${thumbnailError instanceof Error ? thumbnailError.message : "Unknown error"}`;
         }
       }
       
