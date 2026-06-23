@@ -216,6 +216,33 @@ Resources:
             Path: /api/get-random-image
             Method: GET
 
+  getRandomBrowseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/browse/get-random-browse.getRandomBrowseHandler
+      Runtime: nodejs22.x
+      Timeout: 60
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref LookupTable
+        - Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:Query
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LookupTable}/index/RandomImageIndex
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTable
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Architectures:
+        - x86_64
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/browse/random
+            Method: GET
+
   signUploadFunction:
     Type: AWS::Serverless::Function
     Properties:
