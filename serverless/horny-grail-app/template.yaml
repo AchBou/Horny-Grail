@@ -7,7 +7,7 @@ Transform:
 Parameters:
   LookupTableName:
     Type: String
-    Description: Name of the existing DynamoDB table to use
+    Description: Name of the DynamoDB table managed by this stack
     Default: horny-grail-name-lookup
   CloudFrontBaseUrl:
     Type: String
@@ -33,6 +33,33 @@ Parameters:
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
 Resources:
+  LookupTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref LookupTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: id
+        AttributeType: S
+      - AttributeName: status
+        AttributeType: S
+      - AttributeName: randomKey
+        AttributeType: N
+      KeySchema:
+      - AttributeName: id
+        KeyType: HASH
+      GlobalSecondaryIndexes:
+      - IndexName: RandomImageIndex
+        KeySchema:
+        - AttributeName: status
+          KeyType: HASH
+        - AttributeName: randomKey
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+
   # Each Lambda function is defined by properties:
   # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
 
@@ -50,11 +77,11 @@ Resources:
         from a DynamoDB table.
       Policies:
       - DynamoDBReadPolicy:
-          TableName: !Ref LookupTableName
+          TableName: !Ref LookupTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          LOOKUP_TABLE: !Ref LookupTableName
+          LOOKUP_TABLE: !Ref LookupTable
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -79,11 +106,11 @@ Resources:
         by id from a DynamoDB table.
       Policies:
       - DynamoDBReadPolicy:
-          TableName: !Ref LookupTableName
+          TableName: !Ref LookupTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          LOOKUP_TABLE: !Ref LookupTableName
+          LOOKUP_TABLE: !Ref LookupTable
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -108,11 +135,11 @@ Resources:
         to a DynamoDB table.
       Policies:
       - DynamoDBWritePolicy:
-          TableName: !Ref LookupTableName
+          TableName: !Ref LookupTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          LOOKUP_TABLE: !Ref LookupTableName
+          LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           WRITE_API_KEY: !Ref WriteApiKey
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -141,10 +168,10 @@ Resources:
         from a DynamoDB table.
       Policies:
       - DynamoDBReadPolicy:
-          TableName: !Ref LookupTableName
+          TableName: !Ref LookupTable
       Environment:
         Variables:
-          LOOKUP_TABLE: !Ref LookupTableName
+          LOOKUP_TABLE: !Ref LookupTable
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
@@ -167,10 +194,15 @@ Resources:
       Timeout: 60
       Policies:
         - DynamoDBReadPolicy:
-            TableName: !Ref LookupTableName
+            TableName: !Ref LookupTable
+        - Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:Query
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LookupTable}/index/RandomImageIndex
       Environment:
         Variables:
-          LOOKUP_TABLE: !Ref LookupTableName
+          LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
@@ -230,7 +262,7 @@ Resources:
       Timeout: 30
       Policies:
       - DynamoDBReadPolicy:
-          TableName: !Ref LookupTableName
+          TableName: !Ref LookupTable
       - Statement:
         - Effect: Allow
           Action:
@@ -240,7 +272,7 @@ Resources:
           - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
       Environment:
         Variables:
-          LOOKUP_TABLE: !Ref LookupTableName
+          LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -266,6 +298,12 @@ Resources:
         Ref: ApplicationResourceGroup
       AutoConfigurationEnabled: 'true'
 Outputs:
+  LookupTableName:
+    Description: DynamoDB table name used for image metadata
+    Value: !Ref LookupTable
+  RandomImageIndexName:
+    Description: DynamoDB GSI for random active image queries
+    Value: RandomImageIndex
   WebEndpoint:
     Description: HTTP API default endpoint URL with /api base path
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/"

@@ -13,7 +13,7 @@ The application uses several AWS resources, including Lambda functions, an API G
 
 Use `env.example.json` as the starting point for local SAM environment values.
 
-Relevant variables:
+Relevant local variables:
 
 - `LOOKUP_TABLE`
 - `CLOUDFRONT_BASE_URL`
@@ -23,7 +23,7 @@ Relevant variables:
 
 The SAM template also exposes matching deploy-time parameters:
 
-- `LookupTableName`
+- `LookupTableName` for the DynamoDB table created and managed by this stack
 - `CloudFrontBaseUrl`
 - `BucketName`
 - `BucketRegion`
@@ -31,6 +31,8 @@ The SAM template also exposes matching deploy-time parameters:
 - `AllowedCorsOrigins`
 
 These values are required. The runtime config helper does not apply source defaults anymore.
+
+The stack owns the DynamoDB metadata table. It uses `id` as the primary key and defines a `RandomImageIndex` GSI on `status` and `randomKey` for efficient random active-image queries. If a table with the configured `LookupTableName` already exists outside CloudFormation, import it into the stack or deploy with a new table name; CloudFormation cannot create a managed table over an existing unmanaged table with the same name.
 
 The current CloudFront distribution `dqvs0hmo3wpp7.cloudfront.net` points at the S3 bucket `my-awesome-very-secret-upload-bucket` in `us-west-2`. Browser uploads through presigned URLs also require S3 bucket CORS allowing the local Tauri origin `http://localhost:1420`.
 

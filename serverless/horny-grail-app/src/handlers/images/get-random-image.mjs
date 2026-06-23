@@ -1,77 +1,53 @@
-// Create clients and set shared const values outside of the handler.
-import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { buildCloudFrontFileUrl, getLookupTableName } from '../../config/env.mjs';
 import { jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
 
-const dynamoClient = new DynamoDBClient({});
-import { randomBytes } from 'crypto';
+const RANDOM_IMAGE_INDEX = 'RandomImageIndex';
+const ACTIVE_STATUS = 'active';
+const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
-// Generate a random hex string to use as a hash-like id
-const randomHash = (length = 64) => randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
+async function queryRandomImage(randomKey) {
+  const data = await ddbDocClient.send(new QueryCommand({
+    TableName: getLookupTableName(),
+    IndexName: RANDOM_IMAGE_INDEX,
+    KeyConditionExpression: '#status = :status AND randomKey >= :randomKey',
+    ExpressionAttributeNames: {
+      '#status': 'status'
+    },
+    ExpressionAttributeValues: {
+      ':status': ACTIVE_STATUS,
+      ':randomKey': randomKey
+    },
+    Limit: 1,
+    ScanIndexForward: true
+  }));
 
-/**
- * Scans the DynamoDB table with a random starting point to get a random item
- */
-const scanTable = async (params) => {
-    try {
-        console.info('ExclusiveStartKey id:', params.ExclusiveStartKey.id.S);
-        const command = new ScanCommand(params);
-        const data = await dynamoClient.send(command);
-        return data.Items;
-    } catch (err) {
-        console.error("Error scanning table:", err);
-        throw err;
-    }
-};
+  return data.Items?.[0] || null;
+}
 
-
-/**
- * A function that returns a random image URL from the DynamoDB table
- */
 export const getRandomImageHandler = async (event) => {
-    const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-    if (method && method !== 'GET') {
-        return methodNotAllowed(`getRandomImage only accepts GET method, you tried: ${method}`, event);
-    }
-    // All log statements are written to CloudWatch
-    console.info('received:', event);
+  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+  if (method && method !== 'GET') {
+    return methodNotAllowed(`getRandomImage only accepts GET method, you tried: ${method}`, event);
+  }
 
-    try {
-        const params = {
-            TableName: getLookupTableName(),
-            Limit: 1,
-            ExclusiveStartKey: {
-                'id': {
-                    S: randomHash(64)
-                }
-            },
-            ReturnConsumedCapacity: 'TOTAL'
-        };
-        
-        let items = await scanTable(params);
-        while (items[0] === undefined) {
-            params.ExclusiveStartKey.id.S = randomHash(64);
-            items = await scanTable(params);
-        }
-        console.log('items',items)
-        const key = items[0].id.S + '.' + items[0].ext.S;
-        console.info("Random key is:", key);
+  try {
+    const randomKey = Math.random();
+    const item = await queryRandomImage(randomKey) || await queryRandomImage(0);
 
-        // Return the CloudFront URL
-        const response = jsonResponse(200, {
-            url: buildCloudFrontFileUrl(key)
-        }, event);
-        
-        // All log statements are written to CloudWatch
-        console.info(`Response: statusCode: ${response.statusCode} body: ${response.body}`);
-        return response;
-    } catch (err) {
-        console.error("Error:", err);
-        
-        // Create a user-friendly error response
-        const response = serverError('Error getting random image. Please try again later.', event);
-        
-        console.info(`Error response: statusCode: ${response.statusCode} body: ${response.body}`);
-        return response;
+    if (!item) {
+      return jsonResponse(404, { message: 'No active images found' }, event);
     }
+
+    const key = `${item.id}.${item.ext}`;
+    return jsonResponse(200, {
+      id: item.id,
+      ext: item.ext,
+      url: buildCloudFrontFileUrl(key)
+    }, event);
+  } catch (err) {
+    console.error('Error getting random image:', err);
+    return serverError('Error getting random image. Please try again later.', event);
+  }
 };

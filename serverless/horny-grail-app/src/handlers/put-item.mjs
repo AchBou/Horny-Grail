@@ -54,7 +54,9 @@ export const putItemHandler = async (event) => {
         Item: {
             id,
             ext,
-            date: body.date || new Date().toISOString()
+            date: body.date || new Date().toISOString(),
+            status: 'active',
+            randomKey: Math.random()
         }
     };
 
