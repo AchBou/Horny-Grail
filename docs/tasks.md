@@ -22,8 +22,8 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Implement caching for frequently accessed resources
 - [x] Optimize thumbnail processing pipeline for local desktop uploads
 - [x] Use AWS CloudFront for content delivery
-- [ ] Implement pagination for listing resources
-- [ ] Review and optimize DynamoDB queries
+- [x] Implement pagination for randomized browse resources
+- [x] Review and optimize DynamoDB queries for random selection and randomized browse
 
 ### Scalability
 - [ ] Implement a proper error handling and logging strategy
@@ -39,7 +39,7 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Implement a state management solution (e.g., Svelte stores)
 - [ ] Create a consistent design system and component library
 - [ ] Implement responsive design for all pages
-- [ ] Add loading states for asynchronous operations
+- [x] Add loading states for randomized browse and random image flows
 - [ ] Implement proper error handling and user feedback
 
 #### Components
@@ -65,10 +65,16 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [x] Implement proper HTTP status codes for responses
 
 #### get-random-image
-- [ ] Refactor to use a more efficient method for getting random items from DynamoDB
-- [ ] Remove unused code (e.g., invokeSecondLambda function)
+- [x] Refactor to use a more efficient method for getting random items from DynamoDB
+- [x] Remove scan-loop-based random selection logic
 - [ ] Improve error handling with specific error messages
-- [ ] Fix potential infinite loop in random item selection
+- [x] Fix potential infinite loop in random item selection
+
+#### randomized browse
+- [x] Add cursor-based randomized browse endpoint backed by a DynamoDB random index
+- [x] Implement infinite scroll in the frontend using the randomized browse cursor
+- [ ] Backfill `status` and `randomKey` for existing table items before relying on randomized browse in production
+- [ ] Add a secondary browse mode for stable chronological listing if product needs change
 
 #### image retrieval
 - [ ] Implement content type detection based on file extension where raw image responses are served
@@ -113,8 +119,8 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Document the architecture and design decisions
 - [ ] Add inline code documentation
 - [ ] Create user documentation
-- [ ] Document deployment procedures
-- [x] Document desktop thumbnail generation and bundled ffmpeg behavior
+- [x] Document deployment procedures
+- [x] Document desktop thumbnail generation and local ffmpeg fetch behavior
 
 ## Build and Deployment
 
@@ -125,7 +131,7 @@ This document contains a comprehensive list of actionable improvement tasks for 
 - [ ] Implement versioning strategy
 
 ### Deployment
-- [ ] Automate deployment process
+- [x] Automate frontend deployment process
 - [ ] Implement blue-green deployment for zero downtime
 - [ ] Set up staging environment for testing before production
 - [ ] Implement rollback procedures
