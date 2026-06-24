@@ -52,12 +52,13 @@ sam deploy --guided
 ## Current Runtime Contracts
 
 - DynamoDB items use `id` as the content hash. `id` is the only canonical identifier in current frontend and backend contracts.
+- The SAM stack now owns the DynamoDB metadata table. The table uses `id` as the primary key and defines `RandomImageIndex` on `status` + `randomKey`.
 - Original files are expected at CloudFront path `files/<hash>.<ext>`.
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
 - The frontend requires `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` from public env.
 - The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
 - The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.
-- The desktop uploader bundles `src-tauri/binaries/ffmpeg.exe` for native WebM thumbnail generation. If the bundled binary cannot be resolved, the Rust command falls back to `ffmpeg` on `PATH`.
+- The desktop uploader fetches `src-tauri/binaries/ffmpeg.exe` on demand via `npm run ffmpeg:ensure` before Tauri dev/build. If the local binary cannot be resolved, the Rust command falls back to `ffmpeg` on `PATH`.
 - The current upload bucket is `my-awesome-very-secret-upload-bucket` in `us-west-2`; browser uploads require S3 bucket CORS for `http://localhost:1420`.
 
 ## Environment And AWS Notes
@@ -69,15 +70,19 @@ Supported Vite env vars:
 - `VITE_API_BASE_URL`
 - `VITE_WRITE_API_KEY`
 
+Frontend deployment is automated through `.github/workflows/front-deploy.yml`. It builds `front/`, syncs `front/build/` to the frontend S3 bucket, and invalidates the frontend CloudFront distribution using the GitHub OIDC role in `FRONTEND_DEPLOY_ROLE_ARN`.
+
 Do not commit real AWS credentials, local `.env` files, generated SAM build folders, `node_modules`, or Tauri build output. If adding config examples, use placeholder values.
 
 ## Implementation Guidance
 
 - Prefer existing SvelteKit and Svelte 5 patterns in each app. The desktop uploader uses Svelte runes such as `$state`.
 - Keep frontend API response parsing compatible with both current object payloads and older string payloads where the code already does so.
+- The frontend browse page now uses `GET /api/browse/random` with cursor-based infinite scroll. Preserve the cursor contract when iterating on browse.
 - Keep desktop uploads hash-based. Duplicate detection depends on the uploaded DynamoDB `id` matching the SHA-256 content hash.
+- New metadata writes should preserve `status` and `randomKey` so random-image and randomized-browse queries stay indexable.
 - Use Tauri commands for large local-file work when available. `compute_sha256_streaming` exists for memory-safe hashing.
-- Keep WebM thumbnail generation native when possible. `generate_video_thumbnail` uses bundled ffmpeg and should remain the primary video path; browser/canvas generation is only a fallback.
+- Keep WebM thumbnail generation native when possible. `generate_video_thumbnail` uses the locally ensured ffmpeg binary and should remain the primary video path; browser/canvas generation is only a fallback.
 - Be careful changing S3 object key formats. Frontend, desktop uploader, and serverless handlers all assume the current `files/` and `thumbnails/` layout.
 - Keep SAM handlers compatible with HTTP API v2 events. Existing handlers read the method from either `event.httpMethod` or `event.requestContext.http.method`.
 - Do not reintroduce deleted legacy backend scripts unless there is a specific migration reason.

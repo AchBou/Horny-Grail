@@ -4,6 +4,12 @@ Public SvelteKit app for browsing images, viewing a single image, and loading a 
 
 The frontend now builds as an explicit static single-page app for S3 + CloudFront deployment.
 
+## Current Behavior
+
+- `/browse` uses randomized infinite scroll backed by `GET /api/browse/random`.
+- `/random` loads a single random active item from the backend random index.
+- `/image/[id]` fetches metadata by canonical hash `id` and builds the CloudFront file URL client-side.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and provide values for:
@@ -22,6 +28,22 @@ npm run build
 npm run preview
 npm run test
 ```
+
+## API Expectations
+
+The browse page expects the backend randomized browse response shape:
+
+```json
+{
+  "items": [],
+  "seed": 0.4721,
+  "cursor": "opaque-cursor",
+  "wrapped": false,
+  "hasMore": true
+}
+```
+
+The frontend treats `cursor` as opaque and passes it back unchanged on subsequent browse requests.
 
 ## Deployment
 

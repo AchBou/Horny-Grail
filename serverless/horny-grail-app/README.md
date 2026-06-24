@@ -34,7 +34,14 @@ These values are required. The runtime config helper does not apply source defau
 
 The stack owns the DynamoDB metadata table. It uses `id` as the primary key and defines a `RandomImageIndex` GSI on `status` and `randomKey` for efficient random active-image queries. If a table with the configured `LookupTableName` already exists outside CloudFormation, import it into the stack or deploy with a new table name; CloudFormation cannot create a managed table over an existing unmanaged table with the same name.
 
+Current read-paths built on that index:
+
+- `GET /api/get-random-image` returns one random active item.
+- `GET /api/browse/random` returns randomized, cursor-based browse pages for infinite scroll.
+
 The current CloudFront distribution `dqvs0hmo3wpp7.cloudfront.net` points at the S3 bucket `my-awesome-very-secret-upload-bucket` in `us-west-2`. Browser uploads through presigned URLs also require S3 bucket CORS allowing the local Tauri origin `http://localhost:1420`.
+
+Upload clients must follow the shared desktop/mobile contract in `docs/upload-contract.md`. `POST /api/uploads/sign` validates path, SHA-256 id, extension, MIME type, and byte length before issuing a presigned S3 URL.
 
 If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
 The AWS Toolkit is an open-source plugin for popular IDEs that uses the AWS SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds step-through debugging for Lambda function code. 

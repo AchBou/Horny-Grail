@@ -11,7 +11,16 @@ Copy `.env.example` to `.env` and provide:
 - `VITE_API_BASE_URL`
 - `VITE_WRITE_API_KEY`
 
+Current `.env` shape:
+
+```env
+VITE_API_BASE_URL=https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api
+VITE_WRITE_API_KEY=replace-with-write-api-key
+```
+
 The desktop app no longer needs direct AWS credentials for S3 or DynamoDB access.
+
+Upload request shape, supported MIME types, size limits, and object key rules are documented in `../../docs/upload-contract.md`. Keep desktop and mobile clients aligned with that contract before changing backend upload validation.
 
 ## Thumbnail Generation
 
