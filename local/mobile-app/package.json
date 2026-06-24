@@ -12,7 +12,7 @@
     "preview": "vite preview --host",
     "check": "npm run build",
     "cap:sync": "npm run build && npx cap sync android",
-    "cap:open:android": "npx cap open android"
+    "cap:open:android": "node ./scripts/open-android-studio.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.4.0",

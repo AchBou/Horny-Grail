@@ -12,6 +12,16 @@ function isRetryableStatus(status) {
   return RETRYABLE_STATUS_CODES.has(status);
 }
 
+export function isAbortError(error) {
+  return error?.name === 'AbortError';
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    throw new DOMException('Operation cancelled', 'AbortError');
+  }
+}
+
 async function parseJsonSafely(response) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -29,6 +39,8 @@ export async function requestJson(url, init = {}, { retries = DEFAULT_RETRIES } 
   let lastError = null;
 
   for (let attempt = 0; attempt < retries; attempt += 1) {
+    throwIfAborted(init.signal);
+
     try {
       const response = await fetch(url, init);
       if (response.ok) {
@@ -47,6 +59,10 @@ export async function requestJson(url, init = {}, { retries = DEFAULT_RETRIES } 
 
       lastError = error;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
       if (error?.status && !isRetryableStatus(error.status)) {
         throw error;
       }
@@ -63,15 +79,18 @@ export async function requestJson(url, init = {}, { retries = DEFAULT_RETRIES } 
   throw lastError || new Error('Request failed');
 }
 
-export async function putBinary(uploadUrl, body, headers = {}, { retries = DEFAULT_RETRIES } = {}) {
+export async function putBinary(uploadUrl, body, headers = {}, { retries = DEFAULT_RETRIES, signal = null } = {}) {
   let lastError = null;
 
   for (let attempt = 0; attempt < retries; attempt += 1) {
+    throwIfAborted(signal);
+
     try {
       const response = await fetch(uploadUrl, {
         method: 'PUT',
         body,
-        headers
+        headers,
+        signal
       });
 
       if (response.ok) {
@@ -87,6 +106,10 @@ export async function putBinary(uploadUrl, body, headers = {}, { retries = DEFAU
 
       lastError = error;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
       lastError = error;
       if (attempt === retries - 1) {
         throw error;
@@ -106,32 +129,38 @@ function writeHeaders() {
   };
 }
 
-export function fetchRandomBrowsePage(cursor = null, limit = 18) {
+export function fetchRandomBrowsePage(cursor = null, limit = 18, { signal = null } = {}) {
   const url = new URL(buildApiUrl('/browse/random'));
   url.searchParams.set('limit', String(limit));
   if (cursor) {
     url.searchParams.set('cursor', cursor);
   }
 
-  return requestJson(url.toString(), {}, { retries: 2 });
+  return requestJson(url.toString(), { signal }, { retries: 2 });
 }
 
-export function fetchAssetIntegrity(id) {
-  return requestJson(buildApiUrl(`/assets/${id}/integrity`), {}, { retries: 2 });
+export function fetchItemById(id, { signal = null } = {}) {
+  return requestJson(buildApiUrl(`/${id}`), { signal }, { retries: 2 });
 }
 
-export function signUpload(body) {
+export function fetchAssetIntegrity(id, { signal = null } = {}) {
+  return requestJson(buildApiUrl(`/assets/${id}/integrity`), { signal }, { retries: 2 });
+}
+
+export function signUpload(body, { signal = null } = {}) {
   return requestJson(buildApiUrl('/uploads/sign'), {
     method: 'POST',
     headers: writeHeaders(),
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
 }
 
-export function registerMetadata(id, ext) {
+export function registerMetadata(id, ext, { signal = null } = {}) {
   return requestJson(buildApiUrl('/'), {
     method: 'POST',
     headers: writeHeaders(),
-    body: JSON.stringify({ id, ext })
+    body: JSON.stringify({ id, ext }),
+    signal
   });
 }

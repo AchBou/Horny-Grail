@@ -134,7 +134,9 @@ Mobile MVP decisions:
 
 Chosen implementation:
 
-- Use an ffmpeg-backed native path for WebM thumbnail generation on mobile.
+- Use a native path for WebM thumbnail generation on mobile.
+- The current Android MVP uses `MediaMetadataRetriever` through the `HornyGrailMedia` Capacitor plugin instead of bundling ffmpeg.
+- Keep the bridge boundary stable so the plugin internals can be replaced with an ffmpeg-backed implementation after licensing and binary distribution are reviewed.
 - Capture a single representative frame and encode it as JPEG before upload.
 - Reuse the desktop rule that video thumbnailing should stay outside the web layer because browser media events are the fragile part.
 - Treat JavaScript or WebView thumbnail generation as a last-resort fallback only after the native path exists and is proven necessary.

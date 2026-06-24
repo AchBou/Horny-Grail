@@ -24,3 +24,12 @@ export function buildCloudFrontFileUrl(id, ext) {
 export function buildCloudFrontThumbnailUrl(id) {
   return `${cloudFrontBaseUrl}/thumbnails/thumbnail-${id}.jpeg`;
 }
+
+export function getPrivateConfigSummary() {
+  return {
+    apiBaseUrl,
+    cloudFrontBaseUrl,
+    writeApiKeyLoaded: writeApiKey.length > 0,
+    writeApiKeyLength: writeApiKey.length
+  };
+}

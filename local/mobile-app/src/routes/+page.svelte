@@ -1,16 +1,14 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
-  import {
-    buildApiUrl,
-    buildCloudFrontFileUrl,
-    buildCloudFrontThumbnailUrl
-  } from '$lib/config/privateConfig.js';
-  import { fetchRandomBrowsePage } from '$lib/mobile/api.js';
+  import { buildApiUrl, getPrivateConfigSummary } from '$lib/config/privateConfig.js';
+  import { fetchRandomBrowsePage, isAbortError } from '$lib/mobile/api.js';
+  import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
 
   const BROWSE_PAGE_SIZE = 18;
   const ACCEPTED_TYPES = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.webm,image/*,video/webm';
   const STATUS_LABELS = {
+    preparing: 'Preparing',
     queued: 'Queued',
     hashing: 'Hashing',
     checking: 'Checking integrity',
@@ -22,8 +20,23 @@
     'repairing-thumbnail': 'Repairing thumbnail',
     registering: 'Registering metadata',
     complete: 'Complete',
+    cancelled: 'Cancelled',
     failed: 'Failed'
   };
+  const CANCELLABLE_STATUSES = new Set([
+    'preparing',
+    'queued',
+    'hashing',
+    'checking',
+    'uploading-original',
+    'repairing-original',
+    'thumbnailing',
+    'uploading-thumbnail',
+    'repairing-thumbnail',
+    'registering'
+  ]);
+
+  const configSummary = getPrivateConfigSummary();
 
   let browseItems = [];
   let browseCursor = null;
@@ -33,6 +46,7 @@
   let browseError = null;
   let browseSentinel;
   let browseObserver;
+  let browseAbortController = null;
 
   let uploadItems = [];
   let isProcessingQueue = false;
@@ -40,11 +54,19 @@
   let fileInput;
 
   function nextLocalId() {
-    return `upload-${crypto.randomUUID()}`;
+    return `upload-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
   }
 
   function createUploadPreview(file) {
     return URL.createObjectURL(file);
+  }
+
+  async function copyPickerFile(file) {
+    const buffer = await file.arrayBuffer();
+    return new File([buffer], file.name, {
+      type: file.type,
+      lastModified: file.lastModified
+    });
   }
 
   function releasePreview(url) {
@@ -53,67 +75,65 @@
     }
   }
 
+  function getUploadItem(localId) {
+    return uploadItems.find((item) => item.localId === localId);
+  }
+
   function updateUploadItem(localId, patch) {
     uploadItems = uploadItems.map((item) => item.localId === localId ? { ...item, ...patch } : item);
   }
 
-  function normalizeBrowseItem(item) {
-    if (!item?.id || !item?.ext) {
-      return null;
-    }
-
-    return {
-      id: item.id,
-      ext: item.ext,
-      thumbnailUrl: buildCloudFrontThumbnailUrl(item.id),
-      fileUrl: buildCloudFrontFileUrl(item.id, item.ext),
-      isVideo: item.ext.toLowerCase() === 'webm'
-    };
-  }
-
   function appendBrowseItems(items) {
     const seen = new Set(browseItems.map((item) => item.id));
-    const nextItems = items
-      .map(normalizeBrowseItem)
-      .filter(Boolean)
-      .filter((item) => {
-        if (seen.has(item.id)) {
-          return false;
-        }
+    const nextItems = normalizeMediaViews(items).filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
 
-        seen.add(item.id);
-        return true;
-      });
+      seen.add(item.id);
+      return true;
+    });
 
     browseItems = browseItems.concat(nextItems);
   }
 
   async function loadBrowsePage(cursor = null) {
-    if (cursor) {
-      browseLoadingMore = true;
-    } else {
+    const controller = new AbortController();
+
+    browseAbortController?.abort();
+    browseAbortController = controller;
+
+    if (!cursor) {
       browseLoading = true;
       browseError = null;
       browseItems = [];
       browseCursor = null;
       browseHasMore = false;
+    } else {
+      browseLoadingMore = true;
     }
 
     try {
-      const payload = await fetchRandomBrowsePage(cursor, BROWSE_PAGE_SIZE);
+      const payload = await fetchRandomBrowsePage(cursor, BROWSE_PAGE_SIZE, { signal: controller.signal });
       appendBrowseItems(payload?.items || []);
       browseCursor = payload?.cursor || null;
       browseHasMore = Boolean(payload?.hasMore);
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+
       console.error('Failed to load browse page', error);
       browseError = error?.message || 'Failed to load browse items';
     } finally {
-      browseLoading = false;
-      browseLoadingMore = false;
+      if (browseAbortController === controller) {
+        browseLoading = false;
+        browseLoadingMore = false;
+      }
     }
   }
 
-  function browseStatusText(item) {
+  function statusText(item) {
     if (!item.status) {
       return 'Pending';
     }
@@ -121,20 +141,32 @@
     return STATUS_LABELS[item.status] || item.status;
   }
 
-  function browseOutcomeText(item) {
-    if (item.outcome === 'duplicate') {
+  function outcomeText(outcome) {
+    if (outcome === 'duplicate') {
       return 'Duplicate detected';
     }
 
-    if (item.outcome === 'repaired') {
+    if (outcome === 'repaired') {
       return 'Repair completed';
     }
 
-    if (item.outcome === 'uploaded') {
+    if (outcome === 'uploaded') {
       return 'Upload completed';
     }
 
     return '';
+  }
+
+  function isVideoUpload(item) {
+    return item.file.type.startsWith('video/') || item.name.toLowerCase().endsWith('.webm');
+  }
+
+  function canCancel(item) {
+    return CANCELLABLE_STATUSES.has(item.status);
+  }
+
+  function detailUrlForUpload(item) {
+    return item.id ? `/image/${item.id}` : '';
   }
 
   async function processQueue() {
@@ -152,7 +184,9 @@
           break;
         }
 
+        const controller = nextItem.controller || new AbortController();
         updateUploadItem(nextItem.localId, {
+          controller,
           status: 'hashing',
           error: null,
           message: ''
@@ -162,10 +196,10 @@
           const result = await runUploadFlow(nextItem.file, (status, detail = null) => {
             updateUploadItem(nextItem.localId, {
               status,
-              id: detail?.id || nextItem.id,
-              integrity: detail?.integrity || nextItem.integrity
+              id: detail?.id || getUploadItem(nextItem.localId)?.id || null,
+              integrity: detail?.integrity || getUploadItem(nextItem.localId)?.integrity || null
             });
-          });
+          }, { signal: controller.signal });
 
           updateUploadItem(nextItem.localId, {
             status: result.outcome === 'duplicate' ? 'duplicate' : 'complete',
@@ -173,9 +207,18 @@
             ext: result.ext,
             outcome: result.outcome,
             integrity: result.integrity,
-            message: browseOutcomeText({ outcome: result.outcome })
+            message: outcomeText(result.outcome)
           });
         } catch (error) {
+          if (isAbortError(error)) {
+            updateUploadItem(nextItem.localId, {
+              status: 'cancelled',
+              error: null,
+              message: 'Upload cancelled between stages.'
+            });
+            continue;
+          }
+
           console.error('Upload flow failed', error);
           updateUploadItem(nextItem.localId, {
             status: 'failed',
@@ -186,26 +229,68 @@
       }
     } finally {
       isProcessingQueue = false;
+
+      if (uploadItems.some((item) => item.status === 'queued')) {
+        processQueue();
+      }
     }
   }
 
-  function enqueueFiles(fileList) {
-    const nextItems = Array.from(fileList || []).map((file) => ({
+  async function enqueueFiles(fileList) {
+    const pickerFiles = Array.from(fileList || []);
+    const placeholderItems = pickerFiles.map((file) => ({
       localId: nextLocalId(),
       file,
       name: file.name,
       size: file.size,
       previewUrl: createUploadPreview(file),
-      status: 'queued',
+      status: 'preparing',
       message: '',
       error: null,
       id: null,
       ext: null,
       outcome: null,
-      integrity: null
+      integrity: null,
+      controller: new AbortController()
     }));
 
-    uploadItems = uploadItems.concat(nextItems);
+    if (placeholderItems.length === 0) {
+      return;
+    }
+
+    uploadItems = uploadItems.concat(placeholderItems);
+
+    for (const item of placeholderItems) {
+      const current = getUploadItem(item.localId);
+      if (!current || current.status === 'cancelled') {
+        continue;
+      }
+
+      try {
+        const copiedFile = await copyPickerFile(item.file);
+        const latest = getUploadItem(item.localId);
+        if (!latest || latest.status === 'cancelled') {
+          continue;
+        }
+
+        const previewUrl = createUploadPreview(copiedFile);
+        releasePreview(item.previewUrl);
+        updateUploadItem(item.localId, {
+          file: copiedFile,
+          size: copiedFile.size,
+          previewUrl,
+          status: 'queued'
+        });
+      } catch (error) {
+        console.error('Failed to copy selected file', error);
+        updateUploadItem(item.localId, {
+          status: 'failed',
+          error: 'Android could not read the selected file. Try selecting it from local device storage instead of a cloud or recent-file provider.',
+          message: 'File read failed before upload.'
+        });
+      }
+    }
+
     processQueue();
   }
 
@@ -224,13 +309,25 @@
       status: 'queued',
       error: null,
       message: '',
-      outcome: null
+      outcome: null,
+      controller: new AbortController()
     });
     processQueue();
   }
 
+  function cancelUpload(localId) {
+    const item = getUploadItem(localId);
+    item?.controller?.abort();
+    updateUploadItem(localId, {
+      status: 'cancelled',
+      error: null,
+      message: 'Upload cancelled.'
+    });
+  }
+
   function removeUpload(localId) {
-    const item = uploadItems.find((entry) => entry.localId === localId);
+    const item = getUploadItem(localId);
+    item?.controller?.abort();
     releasePreview(item?.previewUrl);
     uploadItems = uploadItems.filter((entry) => entry.localId !== localId);
   }
@@ -261,8 +358,10 @@
   }
 
   onDestroy(() => {
+    browseAbortController?.abort();
     browseObserver?.disconnect();
     for (const item of uploadItems) {
+      item.controller?.abort();
       releasePreview(item.previewUrl);
     }
   });
@@ -280,10 +379,40 @@
   <main class="shell">
     <section class="hero">
       <p class="eyebrow">Private Mobile Client</p>
-      <h1>Browse and upload from the phone.</h1>
+      <h1>Browse, upload, and repair from the phone.</h1>
       <p class="lede">
-        This mobile client uses the same presigned upload contract as the desktop app, including
-        duplicate detection, repair checks, and retry handling between stages.
+        This mobile client uses the same presigned upload contract as the desktop app:
+        SHA-256 identifiers, duplicate detection, staged S3 uploads, and final integrity checks.
+      </p>
+    </section>
+
+    <section class="panel config-panel">
+      <div class="section-heading">
+        <div>
+          <p class="section-label">Configuration</p>
+          <h2>Private build config</h2>
+        </div>
+        <span class="status-pill complete">Loaded</span>
+      </div>
+
+      <dl class="config-grid">
+        <div>
+          <dt>API base</dt>
+          <dd>{configSummary.apiBaseUrl}</dd>
+        </div>
+        <div>
+          <dt>CloudFront base</dt>
+          <dd>{configSummary.cloudFrontBaseUrl}</dd>
+        </div>
+        <div>
+          <dt>Write key</dt>
+          <dd>{configSummary.writeApiKeyLoaded ? `Loaded (${configSummary.writeApiKeyLength} chars)` : 'Missing'}</dd>
+        </div>
+      </dl>
+
+      <p class="panel-copy">
+        Values are generated from <code>mobile.private.json</code> at build time. The write key is
+        intentionally not displayed in the app UI.
       </p>
     </section>
 
@@ -307,9 +436,8 @@
       </div>
 
       <p class="panel-copy">
-        Supported originals: JPEG, PNG, GIF, WebP, BMP, TIFF, and WebM. The client hashes the
-        original, checks integrity, uploads missing assets, and only registers metadata when both
-        objects exist.
+        Supported originals: JPEG, PNG, GIF, WebP, BMP, TIFF, and WebM. WebM thumbnailing uses a
+        native Capacitor bridge on mobile and a browser preview path only during local web testing.
       </p>
 
       {#if queueError}
@@ -319,14 +447,14 @@
       {#if uploadItems.length === 0}
         <div class="empty-state">
           <p>No pending uploads yet.</p>
-          <p class="muted">Selected files will queue and upload one by one.</p>
+          <p class="muted">Selected files queue and upload one by one so retries stay predictable.</p>
         </div>
       {:else}
         <div class="upload-list">
           {#each uploadItems as item (item.localId)}
             <article class="upload-card">
               <div class="upload-thumb">
-                {#if item.file.type.startsWith('video/')}
+                {#if isVideoUpload(item)}
                   <video src={item.previewUrl} muted playsinline preload="metadata"></video>
                 {:else}
                   <img src={item.previewUrl} alt={item.name} />
@@ -336,9 +464,9 @@
                 <div class="upload-header">
                   <div>
                     <h3>{item.name}</h3>
-                    <p class="meta">{Math.round(item.size / 1024)} KB</p>
+                    <p class="meta">{Math.max(1, Math.round(item.size / 1024))} KB</p>
                   </div>
-                  <span class={`status-pill ${item.status}`}>{browseStatusText(item)}</span>
+                  <span class={`status-pill ${item.status}`}>{statusText(item)}</span>
                 </div>
 
                 {#if item.id}
@@ -346,7 +474,7 @@
                 {/if}
 
                 {#if item.message}
-                  <p class="message success">{item.message}</p>
+                  <p class={`message ${item.status === 'failed' ? 'error-text' : item.status === 'cancelled' ? 'warning' : 'success'}`}>{item.message}</p>
                 {/if}
 
                 {#if item.error}
@@ -360,10 +488,18 @@
                 {/if}
 
                 <div class="upload-actions">
-                  {#if item.status === 'failed'}
+                  {#if canCancel(item)}
+                    <button class="ghost-button" type="button" on:click={() => cancelUpload(item.localId)}>
+                      Cancel
+                    </button>
+                  {/if}
+                  {#if item.status === 'failed' || item.status === 'cancelled'}
                     <button class="secondary-button" type="button" on:click={() => retryUpload(item.localId)}>
                       Retry
                     </button>
+                  {/if}
+                  {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
+                    <a class="secondary-link" href={detailUrlForUpload(item)}>Open</a>
                   {/if}
                   <button class="ghost-button" type="button" on:click={() => removeUpload(item.localId)}>
                     Remove
@@ -399,12 +535,12 @@
       {:else}
         <div class="browse-grid">
           {#each browseItems as item (item.id)}
-            <a class="browse-card" href={item.fileUrl} target="_blank" rel="noreferrer">
+            <a class="browse-card" href={item.detailUrl}>
               <div class="browse-thumb">
                 <img src={item.thumbnailUrl} alt={item.id} loading="lazy" />
               </div>
               <div class="browse-meta">
-                <span>{item.isVideo ? 'Video' : 'Image'}</span>
+                <span>{item.kind === 'video' ? 'Video' : 'Image'}</span>
                 <code>{item.id.slice(0, 12)}...</code>
               </div>
             </a>
@@ -471,13 +607,15 @@
   h1,
   h2,
   h3,
-  p {
+  p,
+  dl,
+  dd {
     margin: 0;
   }
 
   h1 {
-    max-width: 11ch;
-    font-size: clamp(2.5rem, 8vw, 4.4rem);
+    max-width: 13ch;
+    font-size: clamp(2.45rem, 8vw, 4.4rem);
     line-height: 0.95;
   }
 
@@ -497,13 +635,14 @@
   .meta,
   .message,
   .hash-line,
-  .browse-meta {
+  .browse-meta,
+  .config-grid {
     color: #5f4f42;
     line-height: 1.5;
   }
 
   .lede {
-    max-width: 40rem;
+    max-width: 43rem;
     margin-top: 0.85rem;
     font-size: 1rem;
   }
@@ -530,15 +669,48 @@
     font-size: 0.95rem;
   }
 
+  .config-grid {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  .config-grid div {
+    min-width: 0;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    background: rgba(29, 24, 20, 0.06);
+  }
+
+  .config-grid dt {
+    margin-bottom: 0.25rem;
+    color: #8a4a22;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  .config-grid dd {
+    overflow-wrap: anywhere;
+    font-family: Consolas, monospace;
+    font-size: 0.82rem;
+  }
+
   .primary-button,
   .secondary-button,
-  .ghost-button {
+  .ghost-button,
+  .secondary-link {
     border: none;
     border-radius: 0.7rem;
     padding: 0.78rem 1rem;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .primary-button {
@@ -546,7 +718,8 @@
     color: #fffaf4;
   }
 
-  .secondary-button {
+  .secondary-button,
+  .secondary-link {
     background: #0f766e;
     color: #f1fffd;
   }
@@ -629,7 +802,8 @@
     color: #0f5f56;
   }
 
-  .status-pill.failed {
+  .status-pill.failed,
+  .status-pill.cancelled {
     background: #f7d8d2;
     color: #8f3423;
   }
@@ -695,7 +869,8 @@
   }
 
   .browse-meta code,
-  .endpoint {
+  .endpoint,
+  .panel-copy code {
     font-family: Consolas, monospace;
   }
 
@@ -729,8 +904,28 @@
       padding: 1.5rem 1.5rem 3.5rem;
     }
 
+    .config-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     .browse-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 520px) {
+    .section-heading {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .upload-card {
+      grid-template-columns: 4.75rem minmax(0, 1fr);
+    }
+
+    .upload-thumb {
+      width: 4.75rem;
+      height: 4.75rem;
     }
   }
 </style>
