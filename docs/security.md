@@ -8,7 +8,8 @@
 - API Gateway CORS origins are controlled by the `AllowedCorsOrigins` SAM parameter.
 - Local development currently needs both `http://localhost:5173` for the Svelte frontend and `http://localhost:1420` for Tauri dev.
 - Browser uploads to presigned S3 URLs also require S3 bucket CORS on `my-awesome-very-secret-upload-bucket`.
-- Handlers validate image IDs as 64-character hex strings and image extensions against supported image formats.
+- Handlers validate image IDs as 64-character hex strings, extensions against supported media formats, MIME type against extension, and upload byte length before issuing presigned S3 URLs.
+- The shared desktop/mobile upload contract is documented in `docs/upload-contract.md`.
 
 ## Desktop Binary Dependencies
 

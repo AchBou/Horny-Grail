@@ -388,7 +388,9 @@ export async function uploadThumbnail(filePath, hex) {
     body: JSON.stringify({
       path: "thumbnails",
       id: hex,
-      ext: "jpeg"
+      ext: "jpeg",
+      sizeBytes: thumbBytes.byteLength,
+      contentType: "image/jpeg"
     })
   }), NETWORK_TIMEOUT_MS, 'Thumbnail sign request');
 

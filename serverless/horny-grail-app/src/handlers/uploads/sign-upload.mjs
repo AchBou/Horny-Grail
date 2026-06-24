@@ -2,7 +2,16 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getBucketName, getBucketRegion, getWriteApiKey } from '../../config/env.mjs';
 import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, serverError, unauthorized } from '../../lib/http.mjs';
-import { isValidImageExt, isValidImageId, parseJsonBody } from '../../lib/validation.mjs';
+import {
+  ORIGINAL_UPLOAD_MAX_BYTES,
+  THUMBNAIL_UPLOAD_MAX_BYTES,
+  getMimeTypeForImageExt,
+  isValidContentLength,
+  isValidImageExt,
+  isValidImageId,
+  normalizeImageExt,
+  parseJsonBody
+} from '../../lib/validation.mjs';
 
 const s3Client = new S3Client({ region: getBucketRegion() });
 const ALLOWED_PATHS = new Set(['files', 'thumbnails']);
@@ -39,6 +48,8 @@ export const signUploadHandler = async (event) => {
   const path = body.path;
   const id = body.id;
   const ext = body.ext;
+  const contentType = body.contentType;
+  const sizeBytes = body.sizeBytes;
 
   if (!ALLOWED_PATHS.has(path)) {
     return badRequest('Invalid upload path', event);
@@ -53,22 +64,37 @@ export const signUploadHandler = async (event) => {
   }
 
   const isThumbnail = path === 'thumbnails';
+  const maxBytes = isThumbnail ? THUMBNAIL_UPLOAD_MAX_BYTES : ORIGINAL_UPLOAD_MAX_BYTES;
+  if (!isValidContentLength(sizeBytes, maxBytes)) {
+    return badRequest(`Invalid upload size; max is ${maxBytes} bytes`, event);
+  }
+
+  if (typeof contentType !== 'string') {
+    return badRequest('Invalid content type', event);
+  }
+
+  const normalizedExt = normalizeImageExt(ext);
+  const expectedContentType = isThumbnail ? 'image/jpeg' : getMimeTypeForImageExt(normalizedExt);
+  if (contentType !== expectedContentType) {
+    return badRequest('Content type does not match upload extension', event);
+  }
+
   const objectKey = isThumbnail
     ? `${path}/thumbnail-${id}.jpeg`
-    : `${path}/${id}.${ext.toLowerCase()}`;
+    : `${path}/${id}.${normalizedExt}`;
 
   /** @type {import('@aws-sdk/client-s3').PutObjectCommandInput} */
   const commandInput = {
     Bucket: getBucketName(),
-    Key: objectKey
+    Key: objectKey,
+    ContentLength: sizeBytes,
+    ContentType: expectedContentType
   };
 
   /** @type {Record<string, string> | undefined} */
-  let headers;
-  if (isThumbnail) {
-    commandInput.ContentType = 'image/jpeg';
-    headers = { 'Content-Type': 'image/jpeg' };
-  }
+  const headers = {
+    'Content-Type': expectedContentType
+  };
 
   try {
     const uploadUrl = await createSignedUrl(commandInput);
