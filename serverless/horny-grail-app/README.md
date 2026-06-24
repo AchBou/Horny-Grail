@@ -39,7 +39,7 @@ Current read-paths built on that index:
 - `GET /api/get-random-image` returns one random active item.
 - `GET /api/browse/random` returns randomized, cursor-based browse pages for infinite scroll.
 
-The current CloudFront distribution `dqvs0hmo3wpp7.cloudfront.net` points at the S3 bucket `my-awesome-very-secret-upload-bucket` in `us-west-2`. Browser uploads through presigned URLs also require S3 bucket CORS allowing the local Tauri origin `http://localhost:1420`.
+The configured CloudFront distribution points at the configured S3 upload bucket in `us-west-2`. Browser uploads through presigned URLs also require S3 bucket CORS allowing the local Tauri origin `http://localhost:1420`.
 
 Upload clients must follow the shared desktop/mobile contract in `docs/upload-contract.md`. `POST /api/uploads/sign` validates path, SHA-256 id, extension, MIME type, and byte length before issuing a presigned S3 URL.
 

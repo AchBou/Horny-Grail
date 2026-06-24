@@ -12,9 +12,9 @@ This document contains a comprehensive list of actionable improvement tasks for 
 
 ### Security
 - [x] Implement proper authentication and authorization for API write endpoints
-- [ ] Review and secure S3 bucket permissions
+- [x] Review and secure S3 bucket permissions
 - [x] Implement CORS policies for API endpoints
-- [ ] Remove sensitive information from code (e.g., "my-awesome-very-secret-upload-bucket")
+- [x] Remove sensitive information from code (e.g., real bucket and distribution identifiers)
 - [x] Implement input validation for API inputs
 - [ ] Add rate limiting to API endpoints to prevent abuse
 

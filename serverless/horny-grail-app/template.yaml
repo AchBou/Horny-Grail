@@ -12,11 +12,11 @@ Parameters:
   CloudFrontBaseUrl:
     Type: String
     Description: CloudFront base URL used to build public image URLs
-    Default: https://dqvs0hmo3wpp7.cloudfront.net
+    Default: https://your-cloudfront-domain.cloudfront.net
   BucketName:
     Type: String
     Description: Existing S3 bucket used for full images and thumbnails
-    Default: my-awesome-very-secret-upload-bucket
+    Default: your-upload-bucket-name
   BucketRegion:
     Type: String
     Description: AWS region of the existing S3 bucket used for uploads

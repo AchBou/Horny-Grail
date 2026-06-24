@@ -14,7 +14,7 @@ Copy `.env.example` to `.env` and provide:
 Current `.env` shape:
 
 ```env
-VITE_API_BASE_URL=https://9k82wh6773.execute-api.us-east-1.amazonaws.com/api
+VITE_API_BASE_URL=https://your-api-id.execute-api.your-region.amazonaws.com/api
 VITE_WRITE_API_KEY=replace-with-write-api-key
 ```
 

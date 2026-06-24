@@ -59,7 +59,7 @@ sam deploy --guided
 - The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
 - The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.
 - The desktop uploader fetches `src-tauri/binaries/ffmpeg.exe` on demand via `npm run ffmpeg:ensure` before Tauri dev/build. If the local binary cannot be resolved, the Rust command falls back to `ffmpeg` on `PATH`.
-- The current upload bucket is `my-awesome-very-secret-upload-bucket` in `us-west-2`; browser uploads require S3 bucket CORS for `http://localhost:1420`.
+- The upload bucket is configured per environment through `BUCKET_NAME`/`BucketName` in `us-west-2`; browser uploads require S3 bucket CORS for `http://localhost:1420`.
 
 ## Environment And AWS Notes
 
