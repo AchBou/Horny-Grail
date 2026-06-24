@@ -15,6 +15,7 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
  */
 export const putItemHandler = async (event) => {
     const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+    const requestPath = event?.requestContext?.http?.path || event?.path || '/api/';
     if (method === 'OPTIONS') {
         return corsPreflight(event);
     }
@@ -27,9 +28,6 @@ export const putItemHandler = async (event) => {
     if (authError) {
         return authError;
     }
-
-    // All log statements are written to CloudWatch
-    console.info('received:', event);
 
     const body = parseJsonBody(event);
     if (!body) {
@@ -61,16 +59,15 @@ export const putItemHandler = async (event) => {
     };
 
     try {
-        const data = await ddbDocClient.send(new PutCommand(params));
-        console.log("Success - item added or updated", data);
+        await ddbDocClient.send(new PutCommand(params));
+        console.info('putItem succeeded', { path: requestPath, id, ext });
       } catch (err) {
-        console.error("Error", err);
+        console.error('putItem failed', { path: requestPath, id, ext, error: err });
         return serverError('Failed to write item', event);
       }
 
     const response = jsonResponse(200, params.Item, event);
 
-    // All log statements are written to CloudWatch
-    console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);
+    console.info('putItem response', { path: requestPath, statusCode: response.statusCode, id, ext });
     return response;
 };

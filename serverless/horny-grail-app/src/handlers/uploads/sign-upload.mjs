@@ -27,6 +27,7 @@ async function createSignedUrl(input) {
 
 export const signUploadHandler = async (event) => {
   const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+  const requestPath = event?.requestContext?.http?.path || event?.path || '/api/uploads/sign';
   if (method === 'OPTIONS') {
     return corsPreflight(event);
   }
@@ -98,13 +99,27 @@ export const signUploadHandler = async (event) => {
 
   try {
     const uploadUrl = await createSignedUrl(commandInput);
+    console.info('signUpload succeeded', {
+      path: requestPath,
+      uploadPath: path,
+      id,
+      ext: normalizedExt,
+      sizeBytes
+    });
     return jsonResponse(200, {
       uploadUrl,
       key: objectKey,
       headers
     }, event);
   } catch (error) {
-    console.error('Error creating upload URL', error);
+    console.error('signUpload failed', {
+      path: requestPath,
+      uploadPath: path,
+      id,
+      ext: normalizedExt,
+      sizeBytes,
+      error
+    });
     return serverError('Failed to create upload URL', event);
   }
 };

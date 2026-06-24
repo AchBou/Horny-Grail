@@ -53,6 +53,10 @@ describe('Test getByIdHandler', () => {
         });
 
         expect(result.statusCode).toEqual(400);
+        expect(JSON.parse(result.body)).toEqual({
+            code: 'bad_request',
+            message: 'Invalid image id'
+        });
     });
 
     it('should fall back to the list handler for an empty id', async () => {

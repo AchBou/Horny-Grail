@@ -72,7 +72,10 @@ describe('Test getRandomImageHandler', () => {
     const result = await getRandomImageHandler({ httpMethod: 'GET' });
 
     expect(result.statusCode).toEqual(404);
-    expect(JSON.parse(result.body)).toEqual({ message: 'No active images found' });
+    expect(JSON.parse(result.body)).toEqual({
+      code: 'not_found',
+      message: 'No active images found'
+    });
   });
 
   it('should reject non-GET methods', async () => {

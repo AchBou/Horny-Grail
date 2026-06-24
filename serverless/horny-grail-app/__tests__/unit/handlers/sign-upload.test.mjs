@@ -98,6 +98,10 @@ describe('Test signUploadHandler', () => {
     });
 
     expect(result.statusCode).toEqual(401);
+    expect(JSON.parse(result.body)).toEqual({
+      code: 'unauthorized',
+      message: 'Unauthorized'
+    });
   });
 
   it('should reject invalid upload targets', async () => {
@@ -114,6 +118,10 @@ describe('Test signUploadHandler', () => {
     });
 
     expect(result.statusCode).toEqual(400);
+    expect(JSON.parse(result.body)).toEqual({
+      code: 'bad_request',
+      message: 'Invalid upload path'
+    });
   });
 
   it('should reject file uploads with a mismatched content type', async () => {
@@ -132,6 +140,10 @@ describe('Test signUploadHandler', () => {
     });
 
     expect(result.statusCode).toEqual(400);
+    expect(JSON.parse(result.body)).toEqual({
+      code: 'bad_request',
+      message: 'Content type does not match upload extension'
+    });
   });
 
   it('should reject oversized original uploads', async () => {
@@ -150,5 +162,9 @@ describe('Test signUploadHandler', () => {
     });
 
     expect(result.statusCode).toEqual(400);
+    expect(JSON.parse(result.body)).toEqual({
+      code: 'bad_request',
+      message: 'Invalid upload size; max is 104857600 bytes'
+    });
   });
 });

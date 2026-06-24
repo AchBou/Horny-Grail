@@ -62,6 +62,10 @@ describe('Test putItemHandler', function () {
         });
 
         expect(result.statusCode).toEqual(401);
+        expect(JSON.parse(result.body)).toEqual({
+            code: 'unauthorized',
+            message: 'Unauthorized'
+        });
     });
 
     it('should reject invalid item payloads', async () => {
@@ -74,6 +78,10 @@ describe('Test putItemHandler', function () {
         });
 
         expect(result.statusCode).toEqual(400);
+        expect(JSON.parse(result.body)).toEqual({
+            code: 'bad_request',
+            message: 'Invalid image id'
+        });
     });
 
     it('should accept webm items', async () => {

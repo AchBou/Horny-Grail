@@ -97,5 +97,9 @@ describe('Test getAssetIntegrityHandler', () => {
     });
 
     expect(result.statusCode).toEqual(400);
+    expect(JSON.parse(result.body)).toEqual({
+      code: 'bad_request',
+      message: 'Invalid image id'
+    });
   });
 });

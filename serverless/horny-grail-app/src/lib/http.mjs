@@ -42,6 +42,10 @@ export function jsonResponse(statusCode, body, event) {
   };
 }
 
+function errorResponse(statusCode, code, message, event) {
+  return jsonResponse(statusCode, { code, message }, event);
+}
+
 export function corsPreflight(event) {
   return {
     statusCode: 204,
@@ -51,17 +55,21 @@ export function corsPreflight(event) {
 }
 
 export function methodNotAllowed(message, event) {
-  return jsonResponse(405, { message }, event);
+  return errorResponse(405, 'method_not_allowed', message, event);
 }
 
 export function badRequest(message, event) {
-  return jsonResponse(400, { message }, event);
+  return errorResponse(400, 'bad_request', message, event);
 }
 
 export function unauthorized(event) {
-  return jsonResponse(401, { message: 'Unauthorized' }, event);
+  return errorResponse(401, 'unauthorized', 'Unauthorized', event);
+}
+
+export function notFound(message = 'Not found', event) {
+  return errorResponse(404, 'not_found', message, event);
 }
 
 export function serverError(message = 'Internal server error', event) {
-  return jsonResponse(500, { message }, event);
+  return errorResponse(500, 'internal_server_error', message, event);
 }

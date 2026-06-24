@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { buildCloudFrontFileUrl, getLookupTableName } from '../../config/env.mjs';
-import { jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { jsonResponse, methodNotAllowed, notFound, serverError } from '../../lib/http.mjs';
 
 const RANDOM_IMAGE_INDEX = 'RandomImageIndex';
 const ACTIVE_STATUS = 'active';
@@ -37,7 +37,7 @@ export const getRandomImageHandler = async (event) => {
     const item = await queryRandomImage(randomKey) || await queryRandomImage(0);
 
     if (!item) {
-      return jsonResponse(404, { message: 'No active images found' }, event);
+      return notFound('No active images found', event);
     }
 
     const key = `${item.id}.${item.ext}`;
