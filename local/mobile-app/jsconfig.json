@@ -1,0 +1,15 @@
+{
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "strict": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "scripts/**/*.mjs"
+  ]
+}

@@ -38,3 +38,14 @@ Thumbs.db
 *.env.development.local
 *.env.test.local
 *.env.production.local
+
+# Future private mobile client config
+local/mobile-app/.env
+local/mobile-app/.env.*
+local/mobile-app/mobile.private.json
+local/mobile-app/.svelte-kit/
+local/mobile-app/build/
+local/mobile-app/src/lib/generated/privateConfig.js
+local/mobile-app/android/local.properties
+local/mobile-app/android/app/src/*/assets/private-config.json
+local/mobile-app/ios/App/Config/Private.xcconfig
