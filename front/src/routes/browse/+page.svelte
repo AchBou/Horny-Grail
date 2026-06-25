@@ -19,6 +19,18 @@
 
     const seenIds = new Set();
 
+    function describeRequestFailure(status, fallbackMessage) {
+        if (status === 404) {
+            return 'No active items are available to browse yet.';
+        }
+
+        if (status >= 500) {
+            return 'The gallery is temporarily unavailable. Try again in a moment.';
+        }
+
+        return fallbackMessage || 'Failed to load images.';
+    }
+
     function buildBrowseUrl(cursor = null) {
         const url = new URL(buildApiUrl('/browse/random'));
         url.searchParams.set('limit', PAGE_SIZE.toString());
@@ -61,7 +73,11 @@
             const response = await fetch(buildBrowseUrl(cursor));
             if (!response.ok) {
                 const payload = await response.json().catch(() => null);
-                throw new Error(payload?.message || `HTTP error! Status: ${response.status}`);
+                const requestError = new Error(
+                    describeRequestFailure(response.status, payload?.message || `HTTP error! Status: ${response.status}`)
+                );
+                requestError.status = response.status;
+                throw requestError;
             }
 
             const payload = await response.json();
@@ -70,10 +86,11 @@
             nextCursor = typeof payload.cursor === 'string' ? payload.cursor : null;
         } catch (err) {
             console.error(err);
+            const message = describeRequestFailure(err?.status, err.message || 'Failed to load images');
             if (replace) {
-                error = err.message || 'Failed to load images';
+                error = message;
             } else {
-                loadMoreError = err.message || 'Failed to load more images';
+                loadMoreError = message;
             }
         } finally {
             if (replace) {
@@ -129,12 +146,21 @@
         </div>
     {:else if error}
         <div class="error">
-            <p>Error loading images: {error}</p>
-            <button on:click={retryInitialLoad}>Try Again</button>
+            <h3>Browse is unavailable right now</h3>
+            <p>{error}</p>
+            <div class="actions">
+                <button on:click={retryInitialLoad}>Try Again</button>
+                <a href="/random">Open Random</a>
+            </div>
         </div>
     {:else if images.length === 0}
         <div class="empty">
-            <p>No images found.</p>
+            <h3>Nothing to browse yet</h3>
+            <p>Upload media first, then come back here for the shuffled gallery.</p>
+            <div class="actions">
+                <a href="/random">Try Random</a>
+                <a href="/">Back Home</a>
+            </div>
         </div>
     {:else}
         <div class="gallery">
@@ -153,8 +179,12 @@
                 </div>
             {:else if loadMoreError}
                 <div class="error inline-error">
-                    <p>Error loading more images: {loadMoreError}</p>
-                    <button on:click={() => fetchPage({ cursor: nextCursor })}>Try Again</button>
+                    <h3>Could not load more items</h3>
+                    <p>{loadMoreError}</p>
+                    <div class="actions">
+                        <button on:click={() => fetchPage({ cursor: nextCursor })}>Try Again</button>
+                        <button class="secondary-action" on:click={retryInitialLoad}>Refresh Gallery</button>
+                    </div>
                 </div>
             {:else if !hasMore}
                 <p class="end-of-results">You reached the end of this shuffle.</p>
@@ -247,6 +277,13 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 
+    .error h3,
+    .empty h3 {
+        margin: 0 0 12px;
+        color: #2c3e50;
+        font-size: 1.4em;
+    }
+
     .inline-error {
         padding: 24px;
         margin-top: 24px;
@@ -287,6 +324,35 @@
 
     .error button:hover {
         background-color: #c0392b;
+    }
+
+    .actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .actions a,
+    .secondary-action {
+        background-color: #fff;
+        color: #2c3e50;
+        border: 1px solid rgba(44, 62, 80, 0.18);
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        font-family: 'Montserrat', sans-serif;
+        letter-spacing: 0.3px;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .actions a:hover,
+    .secondary-action:hover {
+        border-color: rgba(44, 62, 80, 0.35);
+        background-color: #f7f8fa;
     }
 
     .load-more-area {

@@ -7,9 +7,36 @@
     let mediaKind = 'image';
     let isLoading = true;
     let error = null;
+    let errorTitle = 'Unable to load item';
     let id = '';
     let videoElement;
     let videoControlsEnabled = false;
+
+    function getCurrentIdFromPath() {
+        const segments = (typeof window !== 'undefined' ? window.location.pathname : '').split('/');
+        return segments[segments.length - 1] || '';
+    }
+
+    function describeDetailFailure(status, currentId, fallbackMessage) {
+        if (status === 404) {
+            return {
+                title: 'Item not found',
+                message: `No media item with id ${currentId} is available right now. It may not exist yet or may have been removed.`
+            };
+        }
+
+        if (status >= 500) {
+            return {
+                title: 'Detail page is temporarily unavailable',
+                message: 'The backend returned an error while loading this item. Try again in a moment.'
+            };
+        }
+
+        return {
+            title: 'Unable to load item',
+            message: fallbackMessage || 'Unknown error'
+        };
+    }
 
     async function toggleVideoPlaybackMode() {
         videoControlsEnabled = !videoControlsEnabled;
@@ -35,23 +62,29 @@
         }
     }
 
-    onMount(async () => {
+    async function loadItem() {
         try {
             isLoading = true;
             error = null;
+            errorTitle = 'Unable to load item';
             imageUrl = '';
             videoControlsEnabled = false;
-
-            const segments = (typeof window !== 'undefined' ? window.location.pathname : '').split('/');
-            id = segments[segments.length - 1] || '';
+            id = getCurrentIdFromPath();
 
             if (!id) {
-                throw new Error('Missing image id in the URL');
+                const routeError = new Error('Missing image id in the URL');
+                routeError.status = 400;
+                throw routeError;
             }
 
             const resp = await fetch(buildApiUrl(`/${id}`));
             if (!resp.ok) {
-                throw new Error(`Failed to load image metadata (status ${resp.status})`);
+                const payload = await resp.json().catch(() => null);
+                const requestError = new Error(
+                    payload?.message || `Failed to load image metadata (status ${resp.status})`
+                );
+                requestError.status = resp.status;
+                throw requestError;
             }
 
             const item = await resp.json();
@@ -60,11 +93,25 @@
             imageUrl = buildFileUrl(id, ext);
         } catch (e) {
             console.error(e);
-            error = e?.message || 'Unknown error';
+            const failure = describeDetailFailure(e?.status, id || 'unknown', e?.message || 'Unknown error');
+            errorTitle = failure.title;
+            error = failure.message;
         } finally {
             isLoading = false;
         }
-    });
+    }
+
+    onMount(loadItem);
+
+    function handleMediaError() {
+        errorTitle = 'Media file could not be loaded';
+        error = 'The item metadata loaded, but the original media file could not be displayed.';
+        imageUrl = '';
+    }
+
+    function retryCurrentItem() {
+        loadItem();
+    }
 </script>
 
 <div class="image-container-page">
@@ -78,8 +125,13 @@
             </div>
         {:else if error}
             <div class="error">
-                <p>Error loading image: {error}</p>
-                <a class="btn" href="/browse">Back to Browse</a>
+                <h3>{errorTitle}</h3>
+                <p>{error}</p>
+                <div class="error-actions">
+                    <button class="btn" type="button" on:click={retryCurrentItem}>Try Again</button>
+                    <a class="btn secondary-btn" href="/browse">Back to Browse</a>
+                    <a class="btn secondary-btn" href="/random">Open Random</a>
+                </div>
             </div>
         {:else if imageUrl}
             <div class="image-wrapper">
@@ -95,9 +147,10 @@
                         muted={!videoControlsEnabled}
                         playsinline
                         preload="auto"
+                        on:error={handleMediaError}
                     ></video>
                 {:else}
-                    <img class="media" src={imageUrl} alt="Selected file" />
+                    <img class="media" src={imageUrl} alt="Selected file" on:error={handleMediaError} />
                 {/if}
             </div>
         {/if}
@@ -170,6 +223,14 @@
         gap: 12px;
     }
 
+    .error-actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
     .btn {
         background-color: #e74c3c;
         color: white;
@@ -228,6 +289,12 @@
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         width: 80%;
+    }
+
+    .error h3 {
+        margin: 0 0 12px;
+        color: #2c3e50;
+        font-size: 1.4em;
     }
 
     .error p {

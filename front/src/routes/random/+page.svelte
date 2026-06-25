@@ -9,6 +9,29 @@
     let mediaKind = "image";
     let isLoading = true;
     let error = null;
+    let errorTitle = "Random image unavailable";
+    let mediaLoadFailed = false;
+
+    function describeRandomFailure(status, fallbackMessage) {
+        if (status === 404) {
+            return {
+                title: "Nothing is available yet",
+                message: "The backend did not find an active item to show. Upload media first, then try again."
+            };
+        }
+
+        if (status >= 500) {
+            return {
+                title: "Random picker is temporarily unavailable",
+                message: "The service returned an error while selecting media. Try again in a moment."
+            };
+        }
+
+        return {
+            title: "Random image unavailable",
+            message: fallbackMessage || "Unable to load a random item right now."
+        };
+    }
 
     function inferExtFromUrl(url) {
         try {
@@ -28,10 +51,15 @@
             randomSrc = "";
             mediaKind = "image";
             error = null;
+            errorTitle = "Random image unavailable";
+            mediaLoadFailed = false;
 
             const response = await fetch(buildApiUrl("/get-random-image"));
             if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+                const payload = await response.json().catch(() => null);
+                const requestError = new Error(payload?.message || `HTTP error! Status: ${response.status}`);
+                requestError.status = response.status;
+                throw requestError;
             }
 
             const contentType = response.headers.get('content-type') || '';
@@ -49,10 +77,18 @@
             mediaKind = getMediaKindFromExt(inferExtFromUrl(randomSrc));
         } catch (err) {
             console.error(err);
-            error = err.message || 'Unknown error';
+            const failure = describeRandomFailure(err?.status, err.message || 'Unknown error');
+            errorTitle = failure.title;
+            error = failure.message;
         } finally {
             isLoading = false;
         }
+    }
+
+    function handleMediaError() {
+        mediaLoadFailed = true;
+        errorTitle = "Media file could not be loaded";
+        error = "The random item metadata loaded, but the media file itself could not be displayed.";
     }
 
     onMount(generateRandomPic);
@@ -67,18 +103,22 @@
                 <div class="spinner"></div>
                 <p>Loading a random image...</p>
             </div>
-        {:else if error}
+        {:else if error || mediaLoadFailed}
             <div class="error" in:fade>
-                <p>Error loading image: {error}</p>
-                <button on:click={generateRandomPic}>Try Again</button>
+                <h3>{errorTitle}</h3>
+                <p>{error}</p>
+                <div class="actions">
+                    <button on:click={generateRandomPic}>Try Again</button>
+                    <a href="/browse">Open Browse</a>
+                </div>
             </div>
         {:else if randomSrc}
             <div class="image-wrapper" in:fade={{ duration: 300 }}>
                 {#if mediaKind === 'video'}
                     <!-- svelte-ignore a11y_media_has_caption -->
-                    <video class="random-media" src={randomSrc} autoplay loop muted playsinline preload="auto"></video>
+                    <video class="random-media" src={randomSrc} autoplay loop muted playsinline preload="auto" on:error={handleMediaError}></video>
                 {:else}
-                    <img class="random-media" src={randomSrc} alt="Random selection" />
+                    <img class="random-media" src={randomSrc} alt="Random selection" on:error={handleMediaError} />
                 {/if}
             </div>
         {/if}
@@ -176,6 +216,12 @@
         width: 80%;
     }
 
+    .error h3 {
+        margin: 0 0 12px;
+        color: #2c3e50;
+        font-size: 1.4em;
+    }
+
     .error p {
         margin-bottom: 20px;
         color: #555;
@@ -209,6 +255,33 @@
 
     .error button:hover {
         background-color: #c0392b;
+    }
+
+    .actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .actions a {
+        background-color: #fff;
+        color: #2c3e50;
+        border: 1px solid rgba(44, 62, 80, 0.18);
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        font-family: 'Montserrat', sans-serif;
+        letter-spacing: 0.3px;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .actions a:hover {
+        border-color: rgba(44, 62, 80, 0.35);
+        background-color: #f7f8fa;
     }
 
     @media (max-width: 768px) {
