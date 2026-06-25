@@ -10,6 +10,7 @@
   let error = null;
   let videoElement;
   let videoControlsEnabled = false;
+  let showDetails = false;
   let controller = null;
 
   function getRouteId() {
@@ -48,7 +49,7 @@
       const payload = await fetchItemById(id, { signal: activeController.signal });
       const nextMedia = createDetailMedia(payload, id);
       if (!nextMedia) {
-        throw new Error('Media metadata was not found');
+        throw new Error('Media was not found');
       }
 
       media = nextMedia;
@@ -59,7 +60,7 @@
       }
 
       console.error('Failed to load media detail', loadError);
-      error = loadError?.message || 'Failed to load media detail';
+      error = loadError?.message || 'Could not open this item';
     } finally {
       if (controller === activeController && !activeController.signal.aborted) {
         isLoading = false;
@@ -101,192 +102,183 @@
 </script>
 
 <svelte:head>
-  <title>{media ? `${media.kind === 'video' ? 'Video' : 'Image'} ${media.id.slice(0, 12)}` : 'Media Detail'} | HornyGrail Mobile</title>
-  <meta name="description" content="HornyGrail private mobile media detail view." />
+  <title>{media ? `${media.kind === 'video' ? 'Clip' : 'Image'} | HornyGrail` : 'HornyGrail'}</title>
+  <meta name="description" content="HornyGrail private mobile media viewer." />
 </svelte:head>
 
-<div class="page">
-  <main class="detail-shell">
-    <nav class="top-bar" aria-label="Detail navigation">
-      <a class="nav-link" href="/">Back</a>
-      {#if media}
-        <a class="nav-link accent" href={media.fileUrl} target="_blank" rel="noreferrer">Open Original</a>
+<div class="viewer">
+  <nav class="top-bar" aria-label="Detail navigation">
+    <a class="pill" href="/">Back</a>
+    {#if media}
+      <a class="pill dark" href={media.fileUrl} target="_blank" rel="noreferrer">Original</a>
+    {/if}
+  </nav>
+
+  {#if isLoading}
+    <section class="center-state">
+      <div class="spinner"></div>
+      <p>Opening...</p>
+    </section>
+  {:else if error}
+    <section class="center-state">
+      <h1>Could not open it.</h1>
+      <p>{error}</p>
+      <button class="pill dark" type="button" on:click={loadMedia}>Try Again</button>
+    </section>
+  {:else if media}
+    <main class="stage">
+      {#if media.kind === 'video'}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video
+          bind:this={videoElement}
+          class="media"
+          src={media.fileUrl}
+          poster={media.thumbnailUrl}
+          autoplay
+          controls={videoControlsEnabled}
+          loop={!videoControlsEnabled}
+          muted={!videoControlsEnabled}
+          playsinline
+          preload="auto"
+        ></video>
+      {:else}
+        <img class="media" src={media.fileUrl} alt="Saved media" />
       {/if}
-    </nav>
+    </main>
 
-    {#if isLoading}
-      <section class="panel center-state">
-        <div class="spinner"></div>
-        <p>Loading media...</p>
-      </section>
-    {:else if error}
-      <section class="panel center-state">
-        <p class="error-text">{error}</p>
-        <button class="secondary-button" type="button" on:click={loadMedia}>Try Again</button>
-      </section>
-    {:else if media}
-      <section class="media-stage">
+    <section class="action-sheet">
+      <div>
+        <p class="eyebrow">{media.kind === 'video' ? 'Clip' : 'Image'}</p>
+        <h1>Saved in your Grail</h1>
+      </div>
+
+      <div class="actions">
         {#if media.kind === 'video'}
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <video
-            bind:this={videoElement}
-            class="media"
-            src={media.fileUrl}
-            poster={media.thumbnailUrl}
-            autoplay
-            controls={videoControlsEnabled}
-            loop={!videoControlsEnabled}
-            muted={!videoControlsEnabled}
-            playsinline
-            preload="auto"
-          ></video>
-        {:else}
-          <img class="media" src={media.fileUrl} alt={media.id} />
+          <button class="pill dark" type="button" on:click={toggleVideoPlaybackMode}>
+            {videoControlsEnabled ? 'Mute Preview' : 'Sound + Controls'}
+          </button>
         {/if}
-      </section>
+        <button class="pill" type="button" on:click={() => showDetails = !showDetails}>
+          {showDetails ? 'Hide Details' : 'Details'}
+        </button>
+      </div>
 
-      <section class="panel">
-        <div class="section-heading">
+      {#if showDetails}
+        <dl class="details">
           <div>
-            <p class="section-label">{media.kind === 'video' ? 'Video' : 'Image'}</p>
-            <h1>{media.id.slice(0, 12)}...</h1>
-          </div>
-          {#if media.kind === 'video'}
-            <button class="secondary-button" type="button" on:click={toggleVideoPlaybackMode}>
-              {videoControlsEnabled ? 'Mute Preview' : 'Controls + Sound'}
-            </button>
-          {/if}
-        </div>
-
-        <dl class="meta-grid">
-          <div>
-            <dt>Hash</dt>
-            <dd>{media.id}</dd>
-          </div>
-          <div>
-            <dt>Extension</dt>
+            <dt>Type</dt>
             <dd>{media.ext}</dd>
           </div>
           <div>
             <dt>Date</dt>
             <dd>{media.dateAdded || 'Unknown'}</dd>
           </div>
+          <div class="wide">
+            <dt>Hash</dt>
+            <dd>{media.id}</dd>
+          </div>
         </dl>
 
-        {#if integrity}
-          <div class={`integrity ${integrity.repairRequired ? 'warning' : 'ok'}`}>
-            {#if integrity.repairRequired}
-              Repair needed: {integrity.missing.join(', ')}
-            {:else}
-              Metadata, original, and thumbnail are present.
-            {/if}
-          </div>
+        {#if integrity?.repairRequired}
+          <p class="repair">Repair needed: {integrity.missing.join(', ')}</p>
         {/if}
-      </section>
-    {/if}
-  </main>
+      {/if}
+    </section>
+  {/if}
 </div>
 
 <style>
   :global(body) {
     margin: 0;
     min-height: 100vh;
-    background:
-      radial-gradient(circle at top left, rgba(255, 144, 84, 0.18), transparent 28%),
-      radial-gradient(circle at bottom right, rgba(28, 181, 154, 0.18), transparent 26%),
-      linear-gradient(180deg, #fff7f0 0%, #f6efe7 42%, #efe5da 100%);
-    color: #241811;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #17100c;
+    color: #fff7ed;
+    font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
   }
 
-  .page {
+  :global(*) {
+    box-sizing: border-box;
+  }
+
+  .viewer {
     min-height: 100vh;
-  }
-
-  .detail-shell {
-    max-width: 58rem;
-    margin: 0 auto;
-    padding: 1rem 1rem 3rem;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(217, 95, 31, 0.28), transparent 35%),
+      radial-gradient(circle at 92% 14%, rgba(13, 148, 136, 0.2), transparent 30%),
+      #17100c;
   }
 
   .top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
-    margin-bottom: 1rem;
+    padding: 1rem;
+    pointer-events: none;
   }
 
-  .nav-link,
-  .secondary-button {
-    border: none;
-    border-radius: 0.7rem;
+  .top-bar > * {
+    pointer-events: auto;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.8rem;
+    border: 1px solid rgba(255, 247, 237, 0.2);
+    border-radius: 999px;
     padding: 0.78rem 1rem;
-    background: rgba(255, 252, 247, 0.86);
-    color: #6c5443;
-    border: 1px solid rgba(108, 84, 67, 0.22);
-    font-size: 0.95rem;
-    font-weight: 700;
+    background: rgba(255, 247, 237, 0.14);
+    color: #fff7ed;
+    font: inherit;
+    font-weight: 800;
     text-decoration: none;
+    backdrop-filter: blur(16px);
     cursor: pointer;
   }
 
-  .nav-link.accent,
-  .secondary-button {
-    background: #0f766e;
-    color: #f1fffd;
+  .pill.dark {
     border-color: transparent;
+    background: #fff7ed;
+    color: #20140e;
   }
 
-  .media-stage {
-    min-height: 52vh;
+  .stage {
+    min-height: 100vh;
     display: grid;
     place-items: center;
-    border-radius: 1rem;
-    overflow: hidden;
-    background:
-      linear-gradient(135deg, rgba(36, 24, 17, 0.92), rgba(72, 45, 27, 0.84)),
-      #241811;
-    box-shadow: 0 18px 42px rgba(65, 43, 29, 0.18);
+    padding: 5rem 0 12rem;
   }
 
   .media {
     display: block;
     max-width: 100%;
-    max-height: 72vh;
+    max-height: 78vh;
     object-fit: contain;
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
   }
 
-  .panel {
-    margin-top: 1rem;
-    padding: 1rem;
-    background: rgba(255, 252, 247, 0.86);
-    border: 1px solid rgba(73, 44, 29, 0.12);
-    border-radius: 0.9rem;
-    box-shadow: 0 12px 32px rgba(65, 43, 29, 0.08);
-    backdrop-filter: blur(12px);
-  }
-
-  .center-state {
-    min-height: 45vh;
+  .action-sheet {
+    position: fixed;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 2;
     display: grid;
-    place-items: center;
-    text-align: center;
     gap: 1rem;
-  }
-
-  .section-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .section-label {
-    margin: 0 0 0.5rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    color: #9b4d20;
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 1rem;
+    border: 1px solid rgba(255, 247, 237, 0.12);
+    border-radius: 1.5rem;
+    background: rgba(32, 20, 14, 0.8);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(22px);
   }
 
   h1,
@@ -297,66 +289,77 @@
   }
 
   h1 {
-    font-size: clamp(1.8rem, 8vw, 3rem);
+    font-size: clamp(1.65rem, 8vw, 3rem);
     line-height: 0.95;
+    letter-spacing: -0.055em;
   }
 
-  .meta-grid {
+  .eyebrow {
+    margin-bottom: 0.35rem;
+    color: #ffc38f;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+  }
+
+  .details {
     display: grid;
-    gap: 0.75rem;
-    margin-top: 1rem;
-    color: #5f4f42;
+    gap: 0.65rem;
+    color: rgba(255, 247, 237, 0.76);
   }
 
-  .meta-grid div {
+  .details div {
     min-width: 0;
     padding: 0.75rem;
-    border-radius: 0.75rem;
-    background: rgba(29, 24, 20, 0.06);
+    border-radius: 1rem;
+    background: rgba(255, 247, 237, 0.08);
   }
 
-  .meta-grid dt {
+  .details dt {
     margin-bottom: 0.25rem;
-    color: #8a4a22;
-    font-size: 0.76rem;
-    font-weight: 700;
+    color: rgba(255, 195, 143, 0.88);
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
   }
 
-  .meta-grid dd {
+  .details dd {
     overflow-wrap: anywhere;
-    font-family: Consolas, monospace;
-    font-size: 0.82rem;
+    font-size: 0.84rem;
   }
 
-  .integrity {
-    margin-top: 1rem;
-    padding: 0.8rem;
-    border-radius: 0.75rem;
-    font-weight: 700;
+  .repair {
+    color: #ffd18a;
+    font-weight: 800;
   }
 
-  .integrity.ok {
-    background: #d7efe7;
-    color: #0f5f56;
+  .center-state {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    gap: 1rem;
+    padding: 2rem;
+    text-align: center;
   }
 
-  .integrity.warning {
-    background: #f9e3c4;
-    color: #9b4d20;
-  }
-
-  .error-text {
-    color: #9a2e1b;
+  .center-state p {
+    color: rgba(255, 247, 237, 0.72);
   }
 
   .spinner {
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.8rem;
+    height: 2.8rem;
     border-radius: 999px;
-    border: 4px solid rgba(36, 24, 17, 0.12);
-    border-top-color: #d95f1f;
+    border: 4px solid rgba(255, 247, 237, 0.18);
+    border-top-color: #fff7ed;
     animation: spin 1s linear infinite;
   }
 
@@ -366,25 +369,22 @@
     }
   }
 
-  @media (min-width: 760px) {
-    .detail-shell {
-      padding: 1.5rem 1.5rem 3.5rem;
+  @media (min-width: 720px) {
+    .action-sheet {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      left: 1.5rem;
+      right: 1.5rem;
+      bottom: 1.5rem;
     }
 
-    .meta-grid {
-      grid-template-columns: 2fr 1fr 1fr;
-    }
-  }
-
-  @media (max-width: 560px) {
-    .section-heading,
-    .top-bar {
-      align-items: stretch;
-      flex-direction: column;
+    .details {
+      grid-column: 1 / -1;
+      grid-template-columns: 1fr 1fr;
     }
 
-    .media-stage {
-      min-height: 42vh;
+    .details .wide {
+      grid-column: 1 / -1;
     }
   }
 </style>

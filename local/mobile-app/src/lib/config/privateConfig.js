@@ -12,7 +12,11 @@ export const apiBaseUrl = requireString('apiBaseUrl', mobilePrivateConfig.apiBas
 export const cloudFrontBaseUrl = requireString('cloudFrontBaseUrl', mobilePrivateConfig.cloudFrontBaseUrl);
 export const writeApiKey = requireString('writeApiKey', mobilePrivateConfig.writeApiKey);
 
-export function buildApiUrl(pathname) {
+export function buildApiUrl(pathname = '') {
+  if (pathname === '' || pathname === '/') {
+    return apiBaseUrl;
+  }
+
   const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
   return `${apiBaseUrl}${normalizedPath}`;
 }

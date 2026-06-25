@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { buildApiUrl, writeApiKey } from '$lib/config/privateConfig.js';
 
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -81,6 +82,12 @@ export async function requestJson(url, init = {}, { retries = DEFAULT_RETRIES } 
 
 export async function putBinary(uploadUrl, body, headers = {}, { retries = DEFAULT_RETRIES, signal = null } = {}) {
   let lastError = null;
+  const uploadHeaders = {
+    ...headers,
+    ...(Capacitor.isNativePlatform() && Number.isSafeInteger(body?.size)
+      ? { 'Content-Length': String(body.size) }
+      : {})
+  };
 
   for (let attempt = 0; attempt < retries; attempt += 1) {
     throwIfAborted(signal);
@@ -89,7 +96,7 @@ export async function putBinary(uploadUrl, body, headers = {}, { retries = DEFAU
       const response = await fetch(uploadUrl, {
         method: 'PUT',
         body,
-        headers,
+        headers: uploadHeaders,
         signal
       });
 

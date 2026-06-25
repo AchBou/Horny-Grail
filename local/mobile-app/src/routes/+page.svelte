@@ -1,27 +1,26 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
-  import { buildApiUrl, getPrivateConfigSummary } from '$lib/config/privateConfig.js';
   import { fetchRandomBrowsePage, isAbortError } from '$lib/mobile/api.js';
   import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
 
-  const BROWSE_PAGE_SIZE = 18;
+  const BROWSE_PAGE_SIZE = 24;
   const ACCEPTED_TYPES = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.webm,image/*,video/webm';
   const STATUS_LABELS = {
     preparing: 'Preparing',
     queued: 'Queued',
-    hashing: 'Hashing',
-    checking: 'Checking integrity',
-    duplicate: 'Already uploaded',
-    'uploading-original': 'Uploading original',
-    'repairing-original': 'Repairing original',
-    thumbnailing: 'Generating thumbnail',
-    'uploading-thumbnail': 'Uploading thumbnail',
-    'repairing-thumbnail': 'Repairing thumbnail',
-    registering: 'Registering metadata',
-    complete: 'Complete',
+    hashing: 'Reading',
+    checking: 'Checking',
+    duplicate: 'Already saved',
+    'uploading-original': 'Saving original',
+    'repairing-original': 'Fixing original',
+    thumbnailing: 'Making cover',
+    'uploading-thumbnail': 'Saving cover',
+    'repairing-thumbnail': 'Fixing cover',
+    registering: 'Finishing',
+    complete: 'Saved',
     cancelled: 'Cancelled',
-    failed: 'Failed'
+    failed: 'Needs attention'
   };
   const CANCELLABLE_STATUSES = new Set([
     'preparing',
@@ -36,8 +35,6 @@
     'registering'
   ]);
 
-  const configSummary = getPrivateConfigSummary();
-
   let browseItems = [];
   let browseCursor = null;
   let browseHasMore = false;
@@ -46,12 +43,24 @@
   let browseError = null;
   let browseSentinel;
   let browseObserver;
+  let observedBrowseSentinel = null;
   let browseAbortController = null;
 
   let uploadItems = [];
   let isProcessingQueue = false;
-  let queueError = null;
   let fileInput;
+  let showUploadQueue = false;
+
+  $: activeUploadCount = uploadItems.filter((item) => CANCELLABLE_STATUSES.has(item.status)).length;
+  $: finishedUploadCount = uploadItems.filter((item) => item.status === 'complete' || item.status === 'duplicate').length;
+  $: failedUploadCount = uploadItems.filter((item) => item.status === 'failed').length;
+  $: uploadSummary = activeUploadCount > 0
+    ? `${activeUploadCount} saving`
+    : failedUploadCount > 0
+      ? `${failedUploadCount} need attention`
+      : finishedUploadCount > 0
+        ? `${finishedUploadCount} saved`
+        : 'Ready';
 
   function nextLocalId() {
     return `upload-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
@@ -97,6 +106,19 @@
     browseItems = browseItems.concat(nextItems);
   }
 
+  function observeBrowseSentinel() {
+    if (!browseObserver || !browseSentinel || observedBrowseSentinel === browseSentinel) {
+      return;
+    }
+
+    if (observedBrowseSentinel) {
+      browseObserver.unobserve(observedBrowseSentinel);
+    }
+
+    browseObserver.observe(browseSentinel);
+    observedBrowseSentinel = browseSentinel;
+  }
+
   async function loadBrowsePage(cursor = null) {
     const controller = new AbortController();
 
@@ -124,7 +146,7 @@
       }
 
       console.error('Failed to load browse page', error);
-      browseError = error?.message || 'Failed to load browse items';
+      browseError = error?.message || 'Could not load your Grail';
     } finally {
       if (browseAbortController === controller) {
         browseLoading = false;
@@ -134,24 +156,20 @@
   }
 
   function statusText(item) {
-    if (!item.status) {
-      return 'Pending';
-    }
-
-    return STATUS_LABELS[item.status] || item.status;
+    return STATUS_LABELS[item.status] || item.status || 'Pending';
   }
 
   function outcomeText(outcome) {
     if (outcome === 'duplicate') {
-      return 'Duplicate detected';
+      return 'Already in your Grail';
     }
 
     if (outcome === 'repaired') {
-      return 'Repair completed';
+      return 'Saved and repaired';
     }
 
     if (outcome === 'uploaded') {
-      return 'Upload completed';
+      return 'Saved to your Grail';
     }
 
     return '';
@@ -175,7 +193,6 @@
     }
 
     isProcessingQueue = true;
-    queueError = null;
 
     try {
       while (true) {
@@ -214,7 +231,7 @@
             updateUploadItem(nextItem.localId, {
               status: 'cancelled',
               error: null,
-              message: 'Upload cancelled between stages.'
+              message: 'Cancelled'
             });
             continue;
           }
@@ -223,7 +240,7 @@
           updateUploadItem(nextItem.localId, {
             status: 'failed',
             error: error?.message || 'Upload failed',
-            message: error?.message || 'Upload failed'
+            message: 'Could not save this file'
           });
         }
       }
@@ -258,6 +275,7 @@
       return;
     }
 
+    showUploadQueue = true;
     uploadItems = uploadItems.concat(placeholderItems);
 
     for (const item of placeholderItems) {
@@ -285,8 +303,8 @@
         console.error('Failed to copy selected file', error);
         updateUploadItem(item.localId, {
           status: 'failed',
-          error: 'Android could not read the selected file. Try selecting it from local device storage instead of a cloud or recent-file provider.',
-          message: 'File read failed before upload.'
+          error: 'Try choosing the file from device storage instead of a cloud or recent-file provider.',
+          message: 'Could not read this file'
         });
       }
     }
@@ -321,7 +339,7 @@
     updateUploadItem(localId, {
       status: 'cancelled',
       error: null,
-      message: 'Upload cancelled.'
+      message: 'Cancelled'
     });
   }
 
@@ -336,6 +354,10 @@
     loadBrowsePage(null);
   }
 
+  function openPicker() {
+    fileInput?.click();
+  }
+
   onMount(() => {
     loadBrowsePage(null);
 
@@ -346,15 +368,13 @@
       }
 
       loadBrowsePage(browseCursor);
-    }, { rootMargin: '240px 0px' });
+    }, { rootMargin: '260px 0px' });
 
-    if (browseSentinel) {
-      browseObserver.observe(browseSentinel);
-    }
+    observeBrowseSentinel();
   });
 
   $: if (browseObserver && browseSentinel) {
-    browseObserver.observe(browseSentinel);
+    observeBrowseSentinel();
   }
 
   onDestroy(() => {
@@ -368,205 +388,150 @@
 </script>
 
 <svelte:head>
-  <title>HornyGrail Mobile</title>
+  <title>HornyGrail</title>
   <meta
     name="description"
-    content="Private HornyGrail mobile client for randomized browsing and direct uploads."
+    content="Private HornyGrail mobile gallery for browsing and uploading media."
   />
 </svelte:head>
 
 <div class="page">
+  <header class="app-bar">
+    <div>
+      <p class="kicker">Private Vault</p>
+      <h1>HornyGrail</h1>
+    </div>
+    <button class="round-button" type="button" aria-label="Refresh gallery" on:click={retryBrowse}>
+      Refresh
+    </button>
+  </header>
+
   <main class="shell">
-    <section class="hero">
-      <p class="eyebrow">Private Mobile Client</p>
-      <h1>Browse, upload, and repair from the phone.</h1>
-      <p class="lede">
-        This mobile client uses the same presigned upload contract as the desktop app:
-        SHA-256 identifiers, duplicate detection, staged S3 uploads, and final integrity checks.
-      </p>
-    </section>
-
-    <section class="panel config-panel">
-      <div class="section-heading">
-        <div>
-          <p class="section-label">Configuration</p>
-          <h2>Private build config</h2>
-        </div>
-        <span class="status-pill complete">Loaded</span>
+    <section class="feature-card">
+      <div>
+        <p class="feature-label">Drop something new</p>
+        <h2>Save from your phone in one tap.</h2>
+        <p>Images and WebM clips are checked, thumbnailed, and added to the gallery automatically.</p>
       </div>
-
-      <dl class="config-grid">
-        <div>
-          <dt>API base</dt>
-          <dd>{configSummary.apiBaseUrl}</dd>
-        </div>
-        <div>
-          <dt>CloudFront base</dt>
-          <dd>{configSummary.cloudFrontBaseUrl}</dd>
-        </div>
-        <div>
-          <dt>Write key</dt>
-          <dd>{configSummary.writeApiKeyLoaded ? `Loaded (${configSummary.writeApiKeyLength} chars)` : 'Missing'}</dd>
-        </div>
-      </dl>
-
-      <p class="panel-copy">
-        Values are generated from <code>mobile.private.json</code> at build time. The write key is
-        intentionally not displayed in the app UI.
-      </p>
+      <button class="primary-button" type="button" on:click={openPicker}>
+        Add Media
+      </button>
+      <input
+        bind:this={fileInput}
+        class="hidden-input"
+        type="file"
+        accept={ACCEPTED_TYPES}
+        multiple
+        on:change={onFileInputChange}
+      />
     </section>
 
-    <section class="panel uploader">
-      <div class="section-heading">
-        <div>
-          <p class="section-label">Uploader</p>
-          <h2>Send originals and thumbnails</h2>
-        </div>
-        <button class="primary-button" type="button" on:click={() => fileInput?.click()}>
-          Choose Files
+    {#if uploadItems.length > 0}
+      <section class={`upload-dock ${showUploadQueue ? 'expanded' : ''}`}>
+        <button class="dock-summary" type="button" on:click={() => showUploadQueue = !showUploadQueue}>
+          <span>Uploads</span>
+          <strong>{uploadSummary}</strong>
         </button>
-        <input
-          bind:this={fileInput}
-          class="hidden-input"
-          type="file"
-          accept={ACCEPTED_TYPES}
-          multiple
-          on:change={onFileInputChange}
-        />
-      </div>
 
-      <p class="panel-copy">
-        Supported originals: JPEG, PNG, GIF, WebP, BMP, TIFF, and WebM. WebM thumbnailing uses a
-        native Capacitor bridge on mobile and a browser preview path only during local web testing.
-      </p>
-
-      {#if queueError}
-        <p class="inline-error">{queueError}</p>
-      {/if}
-
-      {#if uploadItems.length === 0}
-        <div class="empty-state">
-          <p>No pending uploads yet.</p>
-          <p class="muted">Selected files queue and upload one by one so retries stay predictable.</p>
-        </div>
-      {:else}
-        <div class="upload-list">
-          {#each uploadItems as item (item.localId)}
-            <article class="upload-card">
-              <div class="upload-thumb">
-                {#if isVideoUpload(item)}
-                  <video src={item.previewUrl} muted playsinline preload="metadata"></video>
-                {:else}
-                  <img src={item.previewUrl} alt={item.name} />
-                {/if}
-              </div>
-              <div class="upload-body">
-                <div class="upload-header">
-                  <div>
-                    <h3>{item.name}</h3>
-                    <p class="meta">{Math.max(1, Math.round(item.size / 1024))} KB</p>
+        {#if showUploadQueue}
+          <div class="upload-list">
+            {#each uploadItems as item (item.localId)}
+              <article class="upload-card">
+                <div class="upload-thumb">
+                  {#if isVideoUpload(item)}
+                    <video src={item.previewUrl} muted playsinline preload="metadata"></video>
+                  {:else}
+                    <img src={item.previewUrl} alt={item.name} />
+                  {/if}
+                </div>
+                <div class="upload-body">
+                  <div class="upload-line">
+                    <div>
+                      <h3>{item.name}</h3>
+                      <p>{statusText(item)}</p>
+                    </div>
+                    <span class={`status-dot ${item.status}`}></span>
                   </div>
-                  <span class={`status-pill ${item.status}`}>{statusText(item)}</span>
+
+                  {#if item.message}
+                    <p class={`message ${item.status === 'failed' ? 'error-text' : item.status === 'cancelled' ? 'warning' : 'success'}`}>{item.message}</p>
+                  {/if}
+
+                  {#if item.error}
+                    <p class="message error-text">{item.error}</p>
+                  {/if}
+
+                  <div class="upload-actions">
+                    {#if canCancel(item)}
+                      <button class="text-button" type="button" on:click={() => cancelUpload(item.localId)}>Cancel</button>
+                    {/if}
+                    {#if item.status === 'failed' || item.status === 'cancelled'}
+                      <button class="text-button strong" type="button" on:click={() => retryUpload(item.localId)}>Retry</button>
+                    {/if}
+                    {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
+                      <a class="text-button strong" href={detailUrlForUpload(item)}>Open</a>
+                    {/if}
+                    <button class="text-button" type="button" on:click={() => removeUpload(item.localId)}>Remove</button>
+                  </div>
                 </div>
-
-                {#if item.id}
-                  <p class="hash-line">{item.id}</p>
-                {/if}
-
-                {#if item.message}
-                  <p class={`message ${item.status === 'failed' ? 'error-text' : item.status === 'cancelled' ? 'warning' : 'success'}`}>{item.message}</p>
-                {/if}
-
-                {#if item.error}
-                  <p class="message error-text">{item.error}</p>
-                {/if}
-
-                {#if item.integrity?.repairRequired}
-                  <p class="message warning">
-                    Missing: {item.integrity.missing.join(', ')}
-                  </p>
-                {/if}
-
-                <div class="upload-actions">
-                  {#if canCancel(item)}
-                    <button class="ghost-button" type="button" on:click={() => cancelUpload(item.localId)}>
-                      Cancel
-                    </button>
-                  {/if}
-                  {#if item.status === 'failed' || item.status === 'cancelled'}
-                    <button class="secondary-button" type="button" on:click={() => retryUpload(item.localId)}>
-                      Retry
-                    </button>
-                  {/if}
-                  {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
-                    <a class="secondary-link" href={detailUrlForUpload(item)}>Open</a>
-                  {/if}
-                  <button class="ghost-button" type="button" on:click={() => removeUpload(item.localId)}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </article>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <section class="panel browse">
-      <div class="section-heading">
-        <div>
-          <p class="section-label">Shuffle</p>
-          <h2>Randomized browse feed</h2>
-        </div>
-        <button class="secondary-button" type="button" on:click={retryBrowse}>
-          Refresh
-        </button>
-      </div>
-
-      {#if browseLoading}
-        <div class="empty-state">
-          <p>Loading browse feed...</p>
-        </div>
-      {:else if browseError}
-        <div class="empty-state">
-          <p>{browseError}</p>
-          <button class="secondary-button" type="button" on:click={retryBrowse}>Try Again</button>
-        </div>
-      {:else}
-        <div class="browse-grid">
-          {#each browseItems as item (item.id)}
-            <a class="browse-card" href={item.detailUrl}>
-              <div class="browse-thumb">
-                <img src={item.thumbnailUrl} alt={item.id} loading="lazy" />
-              </div>
-              <div class="browse-meta">
-                <span>{item.kind === 'video' ? 'Video' : 'Image'}</span>
-                <code>{item.id.slice(0, 12)}...</code>
-              </div>
-            </a>
-          {/each}
-        </div>
-
-        {#if browseLoadingMore}
-          <p class="footer-note">Loading more...</p>
-        {:else if !browseHasMore}
-          <p class="footer-note">End of this randomized pass.</p>
+              </article>
+            {/each}
+          </div>
         {/if}
+      </section>
+    {/if}
 
-        <div bind:this={browseSentinel} class="scroll-sentinel" aria-hidden="true"></div>
-      {/if}
-    </section>
-
-    <section class="panel contract">
-      <div class="section-heading">
-        <div>
-          <p class="section-label">Contract</p>
-          <h2>Current endpoint base</h2>
-        </div>
+    <section class="gallery-heading">
+      <div>
+        <p class="kicker">Shuffle</p>
+        <h2>Your Grail</h2>
       </div>
-      <code class="endpoint">{buildApiUrl('/')}</code>
+      <button class="link-button" type="button" on:click={retryBrowse}>New mix</button>
     </section>
+
+    {#if browseLoading}
+      <section class="gallery-grid skeleton-grid" aria-label="Loading gallery">
+        {#each Array(8) as _, index}
+          <div class={`skeleton-card card-${index % 5}`}></div>
+        {/each}
+      </section>
+    {:else if browseError}
+      <section class="empty-state">
+        <h2>Could not load the gallery.</h2>
+        <p>{browseError}</p>
+        <button class="primary-button" type="button" on:click={retryBrowse}>Try Again</button>
+      </section>
+    {:else if browseItems.length === 0}
+      <section class="empty-state">
+        <h2>Your Grail is empty.</h2>
+        <p>Add a few files from your phone and they will appear here.</p>
+        <button class="primary-button" type="button" on:click={openPicker}>Add Media</button>
+      </section>
+    {:else}
+      <section class="gallery-grid" aria-label="Randomized gallery">
+        {#each browseItems as item, index (item.id)}
+          <a class={`gallery-card card-${index % 5}`} href={item.detailUrl}>
+            <img src={item.thumbnailUrl} alt={item.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'} loading="lazy" />
+            {#if item.kind === 'video'}
+              <span class="media-badge">Clip</span>
+            {/if}
+          </a>
+        {/each}
+      </section>
+
+      {#if browseLoadingMore}
+        <p class="footer-note">Loading more...</p>
+      {:else if !browseHasMore}
+        <p class="footer-note">End of this shuffle.</p>
+      {/if}
+
+      <div bind:this={browseSentinel} class="scroll-sentinel" aria-hidden="true"></div>
+    {/if}
   </main>
+
+  <button class="floating-add" type="button" aria-label="Add media" on:click={openPicker}>
+    +
+  </button>
 </div>
 
 <style>
@@ -574,202 +539,188 @@
     margin: 0;
     min-height: 100vh;
     background:
-      radial-gradient(circle at top left, rgba(255, 144, 84, 0.18), transparent 28%),
-      radial-gradient(circle at bottom right, rgba(28, 181, 154, 0.18), transparent 26%),
-      linear-gradient(180deg, #fff7f0 0%, #f6efe7 42%, #efe5da 100%);
-    color: #241811;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+      radial-gradient(circle at 15% 0%, rgba(255, 127, 80, 0.26), transparent 30%),
+      radial-gradient(circle at 88% 12%, rgba(13, 148, 136, 0.24), transparent 28%),
+      linear-gradient(145deg, #fff4e8 0%, #f4eadc 45%, #eadcca 100%);
+    color: #25170f;
+    font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+  }
+
+  :global(*) {
+    box-sizing: border-box;
   }
 
   .page {
     min-height: 100vh;
+    padding-bottom: 6rem;
+  }
+
+  .app-bar,
+  .shell {
+    width: min(68rem, 100%);
+    margin: 0 auto;
+  }
+
+  .app-bar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    background: linear-gradient(180deg, rgba(255, 244, 232, 0.96), rgba(255, 244, 232, 0.74));
+    backdrop-filter: blur(18px);
   }
 
   .shell {
-    max-width: 68rem;
-    margin: 0 auto;
-    padding: 1.25rem 1rem 3rem;
-  }
-
-  .hero {
-    padding: 1.5rem 0 1rem;
-  }
-
-  .eyebrow,
-  .section-label {
-    margin: 0 0 0.5rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    color: #9b4d20;
+    padding: 0 1rem 2rem;
   }
 
   h1,
   h2,
   h3,
-  p,
-  dl,
-  dd {
+  p {
     margin: 0;
   }
 
   h1 {
-    max-width: 13ch;
-    font-size: clamp(2.45rem, 8vw, 4.4rem);
-    line-height: 0.95;
+    font-size: clamp(2rem, 10vw, 4rem);
+    line-height: 0.88;
+    letter-spacing: -0.08em;
   }
 
   h2 {
-    font-size: 1.15rem;
+    font-size: clamp(1.45rem, 7vw, 2.4rem);
+    line-height: 0.98;
+    letter-spacing: -0.045em;
   }
 
   h3 {
-    font-size: 0.98rem;
-    line-height: 1.3;
-  }
-
-  .lede,
-  .panel-copy,
-  .muted,
-  .footer-note,
-  .meta,
-  .message,
-  .hash-line,
-  .browse-meta,
-  .config-grid {
-    color: #5f4f42;
-    line-height: 1.5;
-  }
-
-  .lede {
-    max-width: 43rem;
-    margin-top: 0.85rem;
-    font-size: 1rem;
-  }
-
-  .panel {
-    background: rgba(255, 252, 247, 0.84);
-    border: 1px solid rgba(73, 44, 29, 0.12);
-    border-radius: 0.9rem;
-    box-shadow: 0 12px 32px rgba(65, 43, 29, 0.08);
-    padding: 1rem;
-    margin-top: 1rem;
-    backdrop-filter: blur(12px);
-  }
-
-  .section-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .panel-copy {
-    margin-top: 0.85rem;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.95rem;
   }
 
-  .config-grid {
-    display: grid;
-    gap: 0.75rem;
-    margin-top: 1rem;
-  }
-
-  .config-grid div {
-    min-width: 0;
-    padding: 0.75rem;
-    border-radius: 0.75rem;
-    background: rgba(29, 24, 20, 0.06);
-  }
-
-  .config-grid dt {
-    margin-bottom: 0.25rem;
-    color: #8a4a22;
-    font-size: 0.76rem;
-    font-weight: 700;
+  .kicker,
+  .feature-label {
+    margin-bottom: 0.35rem;
+    color: #a34d22;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
   }
 
-  .config-grid dd {
-    overflow-wrap: anywhere;
-    font-family: Consolas, monospace;
-    font-size: 0.82rem;
-  }
-
-  .primary-button,
-  .secondary-button,
-  .ghost-button,
-  .secondary-link {
-    border: none;
-    border-radius: 0.7rem;
-    padding: 0.78rem 1rem;
-    font-size: 0.95rem;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .primary-button {
-    background: #d95f1f;
-    color: #fffaf4;
-  }
-
-  .secondary-button,
-  .secondary-link {
-    background: #0f766e;
-    color: #f1fffd;
-  }
-
-  .ghost-button {
+  .round-button,
+  .link-button,
+  .text-button {
+    border: 0;
     background: transparent;
-    color: #6c5443;
-    border: 1px solid rgba(108, 84, 67, 0.22);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .round-button,
+  .primary-button {
+    min-height: 2.9rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.85rem 1.1rem;
+    background: #23160f;
+    color: #fff7ed;
+    font-size: 0.92rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    box-shadow: 0 12px 26px rgba(35, 22, 15, 0.18);
+    cursor: pointer;
+  }
+
+  .round-button {
+    background: rgba(255, 255, 255, 0.64);
+    color: #4b3122;
+    box-shadow: none;
   }
 
   .hidden-input {
     display: none;
   }
 
-  .empty-state {
-    padding: 1.2rem 0 0.4rem;
-    text-align: center;
+  .feature-card {
+    display: grid;
+    gap: 1.1rem;
+    margin-top: 0.35rem;
+    padding: 1.2rem;
+    border: 1px solid rgba(68, 42, 27, 0.1);
+    border-radius: 1.8rem;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 246, 235, 0.52)),
+      radial-gradient(circle at 90% 0%, rgba(217, 95, 31, 0.16), transparent 38%);
+    box-shadow: 0 18px 42px rgba(68, 42, 27, 0.1);
+  }
+
+  .feature-card p:not(.feature-label) {
+    max-width: 28rem;
+    margin-top: 0.65rem;
+    color: #684d3b;
+    line-height: 1.45;
+  }
+
+  .upload-dock {
+    margin-top: 1rem;
+    border-radius: 1.35rem;
+    background: rgba(35, 22, 15, 0.94);
+    color: #fff7ed;
+    overflow: hidden;
+    box-shadow: 0 16px 36px rgba(35, 22, 15, 0.18);
+  }
+
+  .dock-summary {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    padding: 1rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .dock-summary span {
+    color: rgba(255, 247, 237, 0.72);
   }
 
   .upload-list {
     display: grid;
-    gap: 0.9rem;
-    margin-top: 1rem;
+    gap: 0.65rem;
+    padding: 0 0.75rem 0.85rem;
   }
 
   .upload-card {
     display: grid;
-    grid-template-columns: 6.25rem minmax(0, 1fr);
-    gap: 0.85rem;
-    padding: 0.85rem;
-    border-radius: 0.8rem;
-    background: rgba(255, 255, 255, 0.68);
-    border: 1px solid rgba(73, 44, 29, 0.08);
-  }
-
-  .upload-thumb,
-  .browse-thumb {
-    overflow: hidden;
-    border-radius: 0.65rem;
-    background: #ddd4ca;
+    grid-template-columns: 4.25rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.65rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .upload-thumb {
-    width: 6.25rem;
-    height: 6.25rem;
+    width: 4.25rem;
+    height: 4.25rem;
+    overflow: hidden;
+    border-radius: 0.85rem;
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .upload-thumb img,
-  .upload-thumb video,
-  .browse-thumb img {
+  .upload-thumb video {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -780,104 +731,177 @@
     min-width: 0;
   }
 
-  .upload-header {
+  .upload-line {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
   }
 
-  .status-pill {
-    flex: 0 0 auto;
-    padding: 0.34rem 0.6rem;
-    border-radius: 999px;
-    font-size: 0.78rem;
-    background: #eadfce;
-    color: #5d4a3b;
-  }
-
-  .status-pill.complete,
-  .status-pill.duplicate {
-    background: #d7efe7;
-    color: #0f5f56;
-  }
-
-  .status-pill.failed,
-  .status-pill.cancelled {
-    background: #f7d8d2;
-    color: #8f3423;
-  }
-
-  .hash-line {
-    margin-top: 0.55rem;
-    font-family: Consolas, monospace;
-    font-size: 0.72rem;
-    word-break: break-all;
+  .upload-line p,
+  .message {
+    color: rgba(255, 247, 237, 0.7);
+    font-size: 0.82rem;
+    line-height: 1.35;
   }
 
   .message {
-    margin-top: 0.45rem;
-    font-size: 0.88rem;
+    margin-top: 0.35rem;
   }
 
   .success {
-    color: #0f5f56;
+    color: #9ee6c9;
   }
 
   .warning {
-    color: #9b4d20;
+    color: #ffd18a;
   }
 
-  .error-text,
-  .inline-error {
-    color: #9a2e1b;
+  .error-text {
+    color: #ffb4a5;
+  }
+
+  .status-dot {
+    width: 0.72rem;
+    height: 0.72rem;
+    margin-top: 0.28rem;
+    border-radius: 999px;
+    background: #f2b35e;
+    box-shadow: 0 0 0 4px rgba(242, 179, 94, 0.14);
+  }
+
+  .status-dot.complete,
+  .status-dot.duplicate {
+    background: #52d39c;
+    box-shadow: 0 0 0 4px rgba(82, 211, 156, 0.16);
+  }
+
+  .status-dot.failed,
+  .status-dot.cancelled {
+    background: #ff765f;
+    box-shadow: 0 0 0 4px rgba(255, 118, 95, 0.16);
   }
 
   .upload-actions {
     display: flex;
-    gap: 0.65rem;
-    margin-top: 0.8rem;
+    gap: 0.85rem;
+    margin-top: 0.5rem;
     flex-wrap: wrap;
   }
 
-  .browse-grid {
+  .text-button {
+    padding: 0;
+    color: rgba(255, 247, 237, 0.72);
+    font-size: 0.82rem;
+    text-decoration: none;
+  }
+
+  .text-button.strong {
+    color: #fff7ed;
+    font-weight: 800;
+  }
+
+  .gallery-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.45rem 0 0.8rem;
+  }
+
+  .link-button {
+    color: #0f766e;
+    font-weight: 800;
+  }
+
+  .gallery-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.8rem;
-    margin-top: 1rem;
+    grid-auto-flow: dense;
+    gap: 0.72rem;
   }
 
-  .browse-card {
-    text-decoration: none;
-    color: inherit;
-    background: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(73, 44, 29, 0.08);
-    border-radius: 0.8rem;
+  .gallery-card,
+  .skeleton-card {
+    position: relative;
+    min-height: 10rem;
     overflow: hidden;
+    border-radius: 1.1rem;
+    background: rgba(255, 255, 255, 0.52);
+    box-shadow: 0 12px 28px rgba(68, 42, 27, 0.1);
   }
 
-  .browse-thumb {
-    aspect-ratio: 1 / 1;
+  .gallery-card img {
+    width: 100%;
+    height: 100%;
+    min-height: inherit;
+    object-fit: cover;
+    display: block;
+    transition: transform 180ms ease;
   }
 
-  .browse-meta {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.7rem;
-    font-size: 0.78rem;
+  .gallery-card:active img {
+    transform: scale(0.98);
   }
 
-  .browse-meta code,
-  .endpoint,
-  .panel-copy code {
-    font-family: Consolas, monospace;
+  .card-1,
+  .card-4 {
+    min-height: 13.5rem;
+  }
+
+  .card-2 {
+    grid-row: span 2;
+    min-height: 21rem;
+  }
+
+  .media-badge {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
+    border-radius: 999px;
+    padding: 0.32rem 0.55rem;
+    background: rgba(35, 22, 15, 0.74);
+    color: #fff7ed;
+    font-size: 0.72rem;
+    font-weight: 800;
+    backdrop-filter: blur(12px);
+  }
+
+  .skeleton-grid {
+    pointer-events: none;
+  }
+
+  .skeleton-card {
+    background: linear-gradient(110deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.35));
+    background-size: 220% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: -220% 0;
+    }
+  }
+
+  .empty-state {
+    display: grid;
+    place-items: center;
+    gap: 0.8rem;
+    min-height: 16rem;
+    padding: 2rem 1rem;
+    border-radius: 1.5rem;
+    background: rgba(255, 255, 255, 0.52);
+    text-align: center;
+  }
+
+  .empty-state p,
+  .footer-note {
+    color: #684d3b;
   }
 
   .footer-note {
-    margin-top: 0.8rem;
+    margin: 1.2rem 0;
     text-align: center;
-    font-size: 0.9rem;
   }
 
   .scroll-sentinel {
@@ -885,47 +909,40 @@
     height: 1px;
   }
 
-  .contract {
-    margin-bottom: 2rem;
+  .floating-add {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 5;
+    width: 4rem;
+    height: 4rem;
+    border: 0;
+    border-radius: 999px;
+    background: #d95f1f;
+    color: #fff7ed;
+    font-size: 2.1rem;
+    line-height: 1;
+    box-shadow: 0 18px 38px rgba(217, 95, 31, 0.36);
+    cursor: pointer;
   }
 
-  .endpoint {
-    display: block;
-    margin-top: 1rem;
-    padding: 0.8rem;
-    border-radius: 0.75rem;
-    background: rgba(29, 24, 20, 0.08);
-    color: #3e3026;
-    overflow-wrap: anywhere;
-  }
+  @media (min-width: 720px) {
+    .app-bar {
+      padding: 1.4rem 1.5rem;
+    }
 
-  @media (min-width: 760px) {
     .shell {
-      padding: 1.5rem 1.5rem 3.5rem;
+      padding: 0 1.5rem 3rem;
     }
 
-    .config-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+    .feature-card {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      padding: 1.5rem;
     }
 
-    .browse-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 520px) {
-    .section-heading {
-      align-items: flex-start;
-      flex-direction: column;
-    }
-
-    .upload-card {
-      grid-template-columns: 4.75rem minmax(0, 1fr);
-    }
-
-    .upload-thumb {
-      width: 4.75rem;
-      height: 4.75rem;
+    .gallery-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 </style>

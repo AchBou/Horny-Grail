@@ -23,6 +23,25 @@ function createProgress(update) {
   return (phase, detail = null) => update?.(phase, detail);
 }
 
+async function uploadSignedBinary(label, uploadUrl, body, headers, signal) {
+  try {
+    await putBinary(uploadUrl, body, headers, { signal });
+  } catch (error) {
+    throw new Error(`${label} upload failed: ${error?.message || String(error)}`);
+  }
+}
+
+function toThumbnailFile(thumbnailBlob, id) {
+  if (thumbnailBlob instanceof File) {
+    return thumbnailBlob;
+  }
+
+  return new File([thumbnailBlob], `thumbnail-${id}.jpeg`, {
+    type: THUMBNAIL_MIME_TYPE,
+    lastModified: Date.now()
+  });
+}
+
 async function uploadOriginal(file, id, ext, signal) {
   const contentType = getMimeTypeFromExtension(ext);
   if (!contentType) {
@@ -37,29 +56,32 @@ async function uploadOriginal(file, id, ext, signal) {
     contentType
   }, { signal });
 
-  await putBinary(uploadTarget.uploadUrl, file, uploadTarget.headers || { 'Content-Type': contentType }, { signal });
-}
-
-async function createUploadableThumbnail(file, signal) {
-  const thumbnailBlob = await createThumbnail(file, { signal });
-
-  return thumbnailBlob;
+  await uploadSignedBinary(
+    'Original',
+    uploadTarget.uploadUrl,
+    file,
+    uploadTarget.headers || { 'Content-Type': contentType },
+    signal
+  );
 }
 
 async function uploadThumbnailBlob(thumbnailBlob, id, signal) {
+  const thumbnailFile = toThumbnailFile(thumbnailBlob, id);
+
   const uploadTarget = await signUpload({
     path: 'thumbnails',
     id,
     ext: THUMBNAIL_EXT,
-    sizeBytes: thumbnailBlob.size,
+    sizeBytes: thumbnailFile.size,
     contentType: THUMBNAIL_MIME_TYPE
   }, { signal });
 
-  await putBinary(
+  await uploadSignedBinary(
+    'Thumbnail',
     uploadTarget.uploadUrl,
-    thumbnailBlob,
+    thumbnailFile,
     uploadTarget.headers || { 'Content-Type': THUMBNAIL_MIME_TYPE },
-    { signal }
+    signal
   );
 }
 
@@ -130,7 +152,7 @@ export async function runUploadFlow(file, updateStatus, { signal = null } = {}) 
   if (!integrity?.thumbnailExists) {
     throwIfAborted(signal);
     progress('thumbnailing', { id });
-    const thumbnailBlob = await createUploadableThumbnail(file, signal);
+    const thumbnailBlob = await createThumbnail(file, { signal });
 
     throwIfAborted(signal);
     progress(integrity?.metadataExists ? 'repairing-thumbnail' : 'uploading-thumbnail', { id });
