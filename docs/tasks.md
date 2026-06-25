@@ -20,6 +20,8 @@ Frontend:
 - [x] Random single-item route backed by `GET /api/get-random-image`
 - [x] Static SPA build for S3 + CloudFront deployment
 - [x] Automated frontend deployment workflow in GitHub Actions
+- [x] Improved error states and recovery UX across browse, random, and detail flows
+- [x] Added a dedicated 404 and missing-route experience
 
 Desktop app:
 
@@ -74,13 +76,10 @@ This priority order assumes uploads are mainly done by you through the private d
 
 ## Important Soon
 
-- [ ] Improve error states and recovery UX across browse, random, and detail flows
-- [ ] Add a dedicated 404 or missing-item experience
 - [ ] Add richer metadata, navigation polish, and non-hash-facing UX where appropriate
 - [ ] Expand verification on real devices beyond the current Android-first path
 - [ ] Standardize error handling and logging more strictly across every handler
 - [ ] Reduce noisy console logging in upload and watch flows
-- [ ] Backfill `status` and `randomKey` if legacy or imported metadata is ever loaded into production
 
 ## Later Hardening
 
