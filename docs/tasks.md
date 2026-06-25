@@ -1,137 +1,97 @@
-# HornyGrail Project Improvement Tasks
+# HornyGrail Status And Backlog
 
-This document contains a comprehensive list of actionable improvement tasks for the HornyGrail project. Each task is logically ordered and covers both architectural and code-level improvements.
+This document reflects the current implemented state of the project plus the main follow-up work that still appears open.
 
-## Architecture Improvements
+## Implemented
 
-### Configuration Management
-- [x] Implement a centralized configuration management system
-- [x] Move hardcoded values to environment variables
-- [x] Standardize AWS region usage across services
-- [ ] Create separate configuration files for development, testing, and production environments
+Architecture and data contract:
 
-### Security
-- [x] Implement proper authentication and authorization for API write endpoints
-- [x] Review and secure S3 bucket permissions
-- [x] Implement CORS policies for API endpoints
-- [x] Remove sensitive information from code (e.g., real bucket and distribution identifiers)
-- [x] Implement input validation for API inputs
-- [ ] Add rate limiting to API endpoints to prevent abuse
+- [x] Consolidated the active backend into `serverless/horny-grail-app/`
+- [x] Consolidated active private clients into `local/mobile-app/` and `local/desktop-app/`
+- [x] Standardized on SHA-256 `id` as the canonical media identifier
+- [x] Standardized original object keys as `files/<hash>.<ext>`
+- [x] Standardized thumbnail object keys as `thumbnails/thumbnail-<hash>.jpeg`
+- [x] Moved client and backend configuration to explicit env or private config files
 
-### Performance
-- [ ] Implement caching for frequently accessed resources
-- [x] Optimize thumbnail processing pipeline for local desktop uploads
-- [x] Use AWS CloudFront for content delivery
-- [x] Implement pagination for randomized browse resources
-- [x] Review and optimize DynamoDB queries for random selection and randomized browse
+Frontend:
 
-### Scalability
-- [ ] Implement a proper error handling and logging strategy
-- [ ] Set up monitoring and alerting for the application
-- [ ] Implement auto-scaling for serverless functions
-- [ ] Consider using a message queue for asynchronous processing of uploads
+- [x] Public SvelteKit frontend for browse, random item, and single-item detail
+- [x] Cursor-based randomized infinite scroll backed by `GET /api/browse/random`
+- [x] Random single-item route backed by `GET /api/get-random-image`
+- [x] Static SPA build for S3 + CloudFront deployment
+- [x] Automated frontend deployment workflow in GitHub Actions
 
-## Code-Level Improvements
+Desktop app:
 
-### Front-end (SvelteKit)
+- [x] Tauri 2 desktop uploader with folder watch flow
+- [x] Native SHA-256 hashing through `compute_sha256_streaming`
+- [x] Duplicate detection by metadata lookup on canonical `id`
+- [x] Asset integrity checks and repair flow
+- [x] Native image thumbnail generation
+- [x] Native WebM thumbnail generation with ffmpeg fallback behavior
+- [x] Manual thumbnail regeneration for existing files
 
-#### General
-- [ ] Implement a state management solution (e.g., Svelte stores)
-- [ ] Create a consistent design system and component library
-- [ ] Implement responsive design for all pages
-- [x] Add loading states for randomized browse and random image flows
-- [ ] Implement proper error handling and user feedback
+Mobile app:
 
-#### Components
-- [ ] Refactor Button component to handle events properly
-- [ ] Improve Thumbnail component with loading states and error handling
-- [ ] Add descriptive alt text for images
-- [ ] Implement a modal component for viewing full-size images
-- [ ] Create reusable form components
+- [x] Capacitor + SvelteKit private mobile client
+- [x] Chooser-first home screen with explicit browse and upload modes
+- [x] On-demand randomized browse instead of loading browse content immediately on app entry
+- [x] Duplicate-aware upload queue with retry, cancel, and repair behavior
+- [x] Android-native WebM thumbnail bridge through `HornyGrailMedia`
+- [x] Item detail view with integrity visibility
 
-#### Pages
-- [ ] Improve layout with proper navigation
-- [ ] Implement a 404 page for non-existent routes
-- [ ] Add a footer with relevant information
-- [ ] Implement proper meta tags for SEO
+Backend:
 
-### Serverless Functions
+- [x] SAM-managed DynamoDB metadata table
+- [x] `RandomImageIndex` on `status` and `randomKey`
+- [x] Public read endpoints for list, single item, random item, and randomized browse
+- [x] Write endpoints protected by `x-api-key`
+- [x] Presigned S3 upload signing for originals and thumbnails
+- [x] Asset integrity endpoint for repair-aware clients
+- [x] Input validation for ids, extensions, MIME types, and upload size limits
 
-#### General
-- [ ] Standardize error handling across all functions
-- [ ] Implement proper logging with different log levels
-- [ ] Remove console.log statements from production code
-- [x] Add input validation for all function parameters
-- [x] Implement proper HTTP status codes for responses
+Documentation:
 
-#### get-random-image
-- [x] Refactor to use a more efficient method for getting random items from DynamoDB
-- [x] Remove scan-loop-based random selection logic
-- [ ] Improve error handling with specific error messages
-- [x] Fix potential infinite loop in random item selection
+- [x] Shared upload contract for desktop and mobile
+- [x] Mobile API reference
+- [x] Frontend deployment notes
+- [x] Desktop ffmpeg and thumbnail-generation notes
+- [x] Repo-level architecture and workflow overview
 
-#### randomized browse
-- [x] Add cursor-based randomized browse endpoint backed by a DynamoDB random index
-- [x] Implement infinite scroll in the frontend using the randomized browse cursor
-- [ ] Backfill `status` and `randomKey` for existing table items before relying on randomized browse in production
-- [ ] Add a secondary browse mode for stable chronological listing if product needs change
+## Current Gaps
 
-#### image retrieval
-- [ ] Implement content type detection based on file extension where raw image responses are served
-- [x] Add validation for image ID parameter
-- [ ] Improve error handling with specific error messages
+Cross-cutting:
 
-### Local Development Environment
+- [ ] Add staging or environment-specific config strategy beyond local examples and production values
+- [ ] Add a clearer logging and monitoring strategy across backend and clients
+- [ ] Add rate limiting or similar abuse controls for public read traffic and authenticated writes
 
-#### General
-- [ ] Standardize path handling (currently mixing Windows and Unix styles)
-- [ ] Implement proper error handling and recovery
-- [ ] Add validation for uploaded files
-- [ ] Improve logging with structured log format
-- [x] Add repair flow for partial assets where metadata exists but S3 objects are missing
+Frontend:
 
-#### File Upload
-- [ ] Refactor to use asynchronous file reading for better performance
-- [ ] Improve file extension extraction to handle multiple dots
-- [ ] Add validation for file types and sizes
-- [ ] Implement retry logic for failed uploads
+- [ ] Improve error states and recovery UX across browse, random, and detail flows
+- [ ] Add richer metadata, navigation polish, and non-hash-facing UX where appropriate
+- [ ] Add a dedicated 404 or missing-item experience
 
-#### Thumbnail Generation
-- [x] Generate image thumbnails with native Tauri code
-- [x] Generate WebM thumbnails with native bundled ffmpeg
-- [x] Add manual thumbnail regeneration for existing files
-- [x] Maintain aspect ratio for square thumbnails
-- [ ] Add support for different thumbnail sizes
-- [x] Implement bounded timeouts and fallback handling for thumbnail generation and upload
-- [ ] Add automated tests or fixtures for image and WebM thumbnail generation
-- [ ] Decide whether to bundle smaller ffmpeg builds per platform to reduce installer size
+Desktop app:
 
-## Testing and Documentation
+- [ ] Add targeted automated coverage for thumbnail generation and upload repair flows
+- [ ] Decide whether smaller or per-platform ffmpeg bundles are needed
+- [ ] Reduce noisy console logging in upload and watch flows
 
-### Testing
-- [ ] Implement unit tests for all components and functions
-- [ ] Set up integration tests for API endpoints
-- [ ] Implement end-to-end tests for critical user flows
-- [ ] Set up continuous integration to run tests automatically
+Mobile app:
 
-### Documentation
-- [ ] Create comprehensive API documentation
-- [ ] Document the architecture and design decisions
-- [ ] Add inline code documentation
-- [ ] Create user documentation
-- [x] Document deployment procedures
-- [x] Document desktop thumbnail generation and local ffmpeg fetch behavior
+- [ ] Add stronger persistence or resume behavior if uploads are interrupted by suspension or process death
+- [ ] Expand verification on real devices beyond the current Android-first path
+- [ ] Revisit whether the chooser screen should remain minimal or become more branded
 
-## Build and Deployment
+Backend:
 
-### Build Process
-- [ ] Set up a proper build pipeline
-- [ ] Implement code linting and formatting
-- [ ] Add static code analysis
-- [ ] Implement versioning strategy
+- [ ] Standardize error handling and logging more strictly across every handler
+- [ ] Backfill `status` and `randomKey` if legacy or imported metadata is ever loaded into production
+- [ ] Add broader test coverage around route behavior and deployment-sensitive config
 
-### Deployment
-- [x] Automate frontend deployment process
-- [ ] Implement blue-green deployment for zero downtime
-- [ ] Set up staging environment for testing before production
-- [ ] Implement rollback procedures
+Operations:
+
+- [ ] Add a safe delete, archive, or moderation workflow for uploaded media
+- [ ] Add rollback and staging guidance for backend and client deployments
+- [ ] Document monitoring, alerting, and operational runbooks

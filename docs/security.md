@@ -13,7 +13,7 @@
 
 ## Desktop Binary Dependencies
 
-The desktop app bundles `src-tauri/binaries/ffmpeg.exe` so WebM thumbnails can be generated natively without requiring users to install ffmpeg.
+On Windows, the desktop app bundles `src-tauri/binaries/ffmpeg.exe` so WebM thumbnails can be generated natively without requiring users to install ffmpeg. On non-Windows, the desktop app falls back to `ffmpeg` from `PATH`.
 
 Security and distribution notes:
 

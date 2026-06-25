@@ -33,10 +33,11 @@ Desktop app:
 ```bash
 cd local/desktop-app
 npm install
+npm run ffmpeg:ensure
 npm run dev
 npm run check
-npm run tauri dev
-npm run build
+npm run tauri -- dev
+npm run tauri -- build
 ```
 
 Mobile app:
@@ -72,7 +73,7 @@ sam deploy --guided
 - The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
 - The mobile app requires private build-time config for `apiBaseUrl`, `cloudFrontBaseUrl`, and `writeApiKey` through `mobile.private.json`.
 - The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.
-- The desktop uploader fetches `src-tauri/binaries/ffmpeg.exe` on demand via `npm run ffmpeg:ensure` before Tauri dev/build. If the local binary cannot be resolved, the Rust command falls back to `ffmpeg` on `PATH`.
+- On Windows, the desktop uploader fetches `src-tauri/binaries/ffmpeg.exe` on demand via `npm run ffmpeg:ensure`. `npm run tauri -- dev` and `npm run tauri -- build` run that step automatically. On non-Windows, the ensure script is a no-op and the Rust command falls back to `ffmpeg` on `PATH`.
 - The upload bucket is configured per environment through `BUCKET_NAME`/`BucketName` in `us-west-2`; browser uploads require S3 bucket CORS for `http://localhost:1420`.
 
 ## Environment And AWS Notes
@@ -111,7 +112,7 @@ Choose checks based on the area changed:
 
 - Frontend UI or routing: run `npm run build` in `front/`; run `npm run test` when behavior changes are testable.
 - Mobile app UI or routing: run `npm run check` in `local/mobile-app/`; run `npm run cap:sync` when changing Capacitor-facing behavior or native plugin wiring.
-- Desktop Svelte code: run `npm run check` in `local/desktop-app/`; run `npm run build` when dependencies or bundling change.
+- Desktop Svelte code: run `npm run check` in `local/desktop-app/`; run `npm run build` for frontend bundle changes and `npm run tauri -- build` when Tauri packaging or bundled resources change.
 - Tauri Rust code: run `cargo check` in `local/desktop-app/src-tauri/`.
 - Serverless handlers: run `npm run test` in `serverless/horny-grail-app/`; run `sam build` after template or dependency changes.
 

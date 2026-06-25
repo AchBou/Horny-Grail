@@ -1,5 +1,7 @@
 # Mobile Client Plan
 
+Most of the MVP described here is now implemented in `local/mobile-app/`. Keep this document as rationale and next-steps context, not as a statement that the mobile client is still unbuilt.
+
 This plan assumes the mobile client is a private uploader/viewer for the project owner only. It is not intended for public distribution through app stores or for use by untrusted users.
 
 ## Goals
@@ -18,7 +20,7 @@ This plan assumes the mobile client is a private uploader/viewer for the project
 - Direct AWS SDK access from the mobile client.
 - Changing S3 key formats or DynamoDB identifiers.
 
-## Recommended MVP
+## Implemented MVP
 
 1. Configure API base URL, CloudFront base URL, and write API key through private build-time configuration.
 2. Show a chooser-first home screen with separate browse and upload entry points.
@@ -64,12 +66,6 @@ Recommended file contract:
 
 - Tracked example file: `local/mobile-app/mobile.private.example.json`
 - Untracked real file: `local/mobile-app/mobile.private.json`
-
-If the mobile app is built with framework-specific env files, keep the same three keys and map them into the app at build time:
-
-- `MOBILE_API_BASE_URL`
-- `MOBILE_CLOUDFRONT_BASE_URL`
-- `MOBILE_WRITE_API_KEY`
 
 Preferred loading rule:
 
@@ -143,13 +139,6 @@ Chosen implementation:
 - Reuse the desktop rule that video thumbnailing should stay outside the web layer because browser media events are the fragile part.
 - Treat JavaScript or WebView thumbnail generation as a last-resort fallback only after the native path exists and is proven necessary.
 
-Platform notes:
-
-- If the mobile client is built with Capacitor, implement the thumbnail step in a custom native plugin or a maintained ffmpeg plugin rather than in Svelte code.
-- If the mobile client is built with React Native or native Android/iOS, keep thumbnail generation entirely in the native layer and pass back JPEG bytes or a temporary file path.
-- Keep the generated JPEG bounded so it remains under the backend thumbnail upload size limit.
-- Review ffmpeg licensing before bundling it into any installable mobile build.
-
 ## Chosen Stack
 
 - Mobile shell: Capacitor
@@ -167,38 +156,40 @@ Scaffold location:
 
 - `local/mobile-app`
 
-Defer reconsidering the stack unless the app later needs sustained background transfers, complex media pipelines, or platform-specific UX that becomes awkward in Capacitor.
-
 ## Reliability Requirements
 
 Mobile uploads should assume unreliable network and app suspension.
 
-Implement:
+Implemented or expected behavior:
 
 - Retry with backoff for API calls.
 - Retry S3 `PUT` only after checking current asset integrity.
-- Clear per-file states: pending, hashing, duplicate, uploading original, thumbnailing, uploading thumbnail, registering metadata, complete, failed.
+- Clear per-file states across preparation, hashing, duplicate detection, upload, thumbnailing, repair, completion, failure, and cancellation.
 - Safe cancellation between stages.
 - A repair action for files where metadata exists but one S3 object is missing.
 
-## Backend Tasks Before Build
+## Remaining Backend Tasks
 
-- Add concise API documentation for the mobile endpoints.
-- Standardize backend error response shapes enough for mobile UI messages.
+- Add deeper API and route-level automated coverage.
+- Standardize backend error response handling further if the mobile UI needs stronger guarantees.
 - Remove or reduce noisy full-event production logs in write handlers.
-- No DynamoDB backfill is needed while the production table is still empty. If data is imported later, every item must include `status` and `randomKey`.
+- No DynamoDB backfill is needed while production data remains aligned with current writes. If data is imported later, every item must include `status` and `randomKey`.
 
-## First Implementation Milestone
+## Completed First Milestone
 
-Build a private mobile MVP with:
+The private mobile MVP now includes:
 
-- Chooser-first home screen.
-- Browse screen loaded on demand.
-- Single media detail screen.
-- Image and WebM upload from gallery/files.
-- SHA-256 duplicate detection.
-- Presigned original and thumbnail upload.
-- Metadata registration.
-- Basic retry and repair handling.
+- chooser-first home screen
+- browse screen loaded on demand
+- single media detail screen
+- image and WebM upload from gallery or files
+- SHA-256 duplicate detection
+- presigned original and thumbnail upload
+- metadata registration
+- basic retry and repair handling
 
-Defer background uploads, app-store packaging, and account-based auth until the private upload flow is reliable.
+Still deferred:
+
+- background uploads
+- public app-store packaging
+- account-based auth

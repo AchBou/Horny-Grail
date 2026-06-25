@@ -1,194 +1,158 @@
-# horny-grail-app
+# HornyGrail Backend
 
-This project contains source code and supporting files for a serverless application that you can deploy with the AWS Serverless Application Model (AWS SAM) command line interface (CLI). It includes the following files and folders:
+AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity checks, and presigned uploads.
 
-- `src` - Code for the application's Lambda function.
-- `events` - Invocation events that you can use to invoke the function.
-- `__tests__` - Unit tests for the application code. 
-- `template.yaml` - A template that defines the application's AWS resources.
+## Current Responsibilities
 
-The application uses several AWS resources, including Lambda functions, an API Gateway API, and Amazon DynamoDB tables. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+- Store image and video metadata in DynamoDB using SHA-256 `id` as the primary key
+- Maintain `status` and `randomKey` fields for random discovery
+- Serve public read endpoints for item lookup, random item lookup, and randomized browse
+- Validate upload requests and issue presigned S3 URLs for originals and thumbnails
+- Check whether metadata, originals, and thumbnails exist for repair flows
+
+## Project Layout
+
+- `src/handlers/`: Lambda handlers grouped by feature
+- `src/lib/`: shared validation, auth, and HTTP helpers
+- `__tests__/`: Jest unit tests
+- `events/`: sample local invocation payloads
+- `template.yaml`: SAM stack definition
+- `env.example.json`: local SAM environment example
+
+## API Surface
+
+Public read endpoints:
+
+- `GET /api`
+- `GET /api/`
+- `GET /api/{id}`
+- `GET /api/get-random-image`
+- `GET /api/browse/random`
+- `GET /api/thumbnails`
+- `GET /api/assets/{id}/integrity`
+
+Write endpoints:
+
+- `POST /api`
+- `POST /api/uploads/sign`
+
+Write endpoints require:
+
+```http
+x-api-key: <write-api-key>
+```
+
+Current data contracts:
+
+- canonical identifier: `id`
+- original object key: `files/<hash>.<ext>`
+- thumbnail object key: `thumbnails/thumbnail-<hash>.jpeg`
+- random browse index: `RandomImageIndex` on `status` + `randomKey`
 
 ## Configuration
 
 Use `env.example.json` as the starting point for local SAM environment values.
 
-Relevant local variables:
+Required runtime env:
 
 - `LOOKUP_TABLE`
 - `CLOUDFRONT_BASE_URL`
 - `BUCKET_NAME`
 - `BUCKET_REGION`
-- `WRITE_API_KEY` for write endpoints
+- `WRITE_API_KEY`
+- `CORS_ALLOWED_ORIGINS`
 
-The SAM template also exposes matching deploy-time parameters:
+Matching SAM parameters:
 
-- `LookupTableName` for the DynamoDB table created and managed by this stack
+- `LookupTableName`
 - `CloudFrontBaseUrl`
 - `BucketName`
 - `BucketRegion`
 - `WriteApiKey`
 - `AllowedCorsOrigins`
 
-These values are required. The runtime config helper does not apply source defaults anymore.
+Notes:
 
-The stack owns the DynamoDB metadata table. It uses `id` as the primary key and defines a `RandomImageIndex` GSI on `status` and `randomKey` for efficient random active-image queries. If a table with the configured `LookupTableName` already exists outside CloudFormation, import it into the stack or deploy with a new table name; CloudFormation cannot create a managed table over an existing unmanaged table with the same name.
+- The stack owns the DynamoDB metadata table.
+- The table uses `id` as the primary key.
+- `RandomImageIndex` is required for `GET /api/get-random-image` and `GET /api/browse/random`.
+- If a table with the target name already exists outside CloudFormation, import it or deploy with a new name.
 
-Current read-paths built on that index:
+## Local Development
 
-- `GET /api/get-random-image` returns one random active item.
-- `GET /api/browse/random` returns randomized, cursor-based browse pages for infinite scroll.
+Install dependencies and run tests:
 
-The configured CloudFront distribution points at the configured S3 upload bucket in `us-west-2`. Browser uploads through presigned URLs also require S3 bucket CORS allowing the local Tauri origin `http://localhost:1420`.
+```bash
+npm install
+npm run test
+```
 
-Upload clients must follow the shared desktop/mobile contract in `docs/upload-contract.md`. `POST /api/uploads/sign` validates path, SHA-256 id, extension, MIME type, and byte length before issuing a presigned S3 URL.
+Build or run the local API:
 
-If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
-The AWS Toolkit is an open-source plugin for popular IDEs that uses the AWS SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds step-through debugging for Lambda function code. 
+```bash
+sam build
+sam local start-api
+```
 
-To get started, see the following:
+Convenience scripts:
 
-* [CLion](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [GoLand](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [IntelliJ](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [WebStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [Rider](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PhpStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PyCharm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [RubyMine](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [DataGrip](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [VS Code](https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/welcome.html)
-* [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
+```bash
+npm run sam:dev
+npm run sam:deploy
+```
 
-## Deploy the sample application
+The local API uses the handler environment mappings in `env.json` or another SAM env file you provide.
 
-The AWS SAM CLI is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
+## Deployment
 
-To use the AWS SAM CLI, you need the following tools:
-
-* AWS SAM CLI - [Install the AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html).
-* Node.js - [Install Node.js 22](https://nodejs.org/en/), including the npm package management tool.
-* Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community).
-
-To build and deploy your application for the first time, run the following in your shell:
+First deploy:
 
 ```bash
 sam build
 sam deploy --guided
 ```
 
-The first command will build the source of your application. The second command will package and deploy your application to AWS, with a series of prompts:
-
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
-
-The API Gateway endpoint API will be displayed in the outputs when the deployment is complete.
-
-## Use the AWS SAM CLI to build and test locally
-
-Build your application by using the `sam build` command.
+Subsequent deploys:
 
 ```bash
-my-application$ sam build
+npm run sam:deploy
 ```
 
-The AWS SAM CLI installs dependencies that are defined in `package.json`, creates a deployment package, and saves it in the `.aws-sam/build` folder.
+The template outputs the deployed API base URL. Clients should use that URL with the `/api` suffix.
 
-Test a single function by invoking it directly with a test event. An event is a JSON document that represents the input that the function receives from the event source. Test events are included in the `events` folder in this project.
+## Storage and Upload Rules
 
-Run functions locally and invoke them with the `sam local invoke` command.
+The backend does not accept raw media bytes directly. Desktop and mobile clients must:
 
-```bash
-my-application$ sam local invoke putItemFunction --event events/event-post-item.json
-my-application$ sam local invoke getAllItemsFunction --event events/event-get-all-items.json
-```
+1. Compute SHA-256 and use it as `id`
+2. Call `POST /api/uploads/sign`
+3. Upload bytes to the returned S3 presigned URL
+4. Register metadata through `POST /api`
 
-The AWS SAM CLI can also emulate your application's API. Use the `sam local start-api` command to run the API locally on port 3000.
+Validation for `POST /api/uploads/sign` includes:
 
-```bash
-my-application$ sam local start-api
-my-application$ curl http://localhost:3000/
-```
+- valid `path`
+- valid 64-character hex `id`
+- supported extension
+- exact MIME type match
+- maximum byte length
 
-The AWS SAM CLI reads the application template to determine the API's routes and the functions that they invoke. The `Events` property on each function's definition includes the route and method for each path.
+The shared upload contract lives in `../../docs/upload-contract.md`.
 
-```yaml
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /
-            Method: GET
-```
+## Random Browse and Random Item Behavior
 
-## Add a resource to your application
-The application template uses AWS SAM to define application resources. AWS SAM is an extension of AWS CloudFormation with a simpler syntax for configuring common serverless application resources, such as functions, triggers, and APIs. For resources that aren't included in the [AWS SAM specification](https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md), you can use the standard [AWS CloudFormation resource types](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
+`GET /api/get-random-image` and `GET /api/browse/random` both depend on items having:
 
-Update `template.yaml` to add a dead-letter queue to your application. In the **Resources** section, add a resource named **MyQueue** with the type **AWS::SQS::Queue**. Then add a property to the **AWS::Serverless::Function** resource named **DeadLetterQueue** that targets the queue's Amazon Resource Name (ARN), and a policy that grants the function permission to access the queue.
+- `status: "active"`
+- a numeric `randomKey`
 
-```
-Resources:
-  MyQueue:
-    Type: AWS::SQS::Queue
-  getAllItemsFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/get-all-items.getAllItemsHandler
-      Runtime: nodejs22.x
-      DeadLetterQueue:
-        Type: SQS 
-        TargetArn: !GetAtt MyQueue.Arn
-      Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt MyQueue.QueueName
-```
+`POST /api` currently sets both fields on new metadata writes. If existing data is imported into the table later, it must be backfilled with those fields before relying on random discovery.
 
-The dead-letter queue is a location for Lambda to send events that could not be processed. It's only used if you invoke your function asynchronously, but it's useful here to show how you can modify your application's resources and function configuration.
+## Verification
 
-Deploy the updated application.
+Run these checks when changing backend code or infrastructure:
 
-```bash
-my-application$ sam deploy
-```
+- `npm run test`
+- `sam build`
 
-Open the [**Applications**](https://console.aws.amazon.com/lambda/home#/applications) page of the Lambda console, and choose your application. When the deployment completes, view the application resources on the **Overview** tab to see the new resource. Then, choose the function to see the updated configuration that specifies the dead-letter queue.
-
-## Fetch, tail, and filter Lambda function logs
-
-To simplify troubleshooting, the AWS SAM CLI has a command called `sam logs`. `sam logs` lets you fetch logs that are generated by your Lambda function from the command line. In addition to printing the logs on the terminal, this command has several nifty features to help you quickly find the bug.
-
-**NOTE:** This command works for all Lambda functions, not just the ones you deploy using AWS SAM.
-
-```bash
-my-application$ sam logs -n putItemFunction --stack-name sam-app --tail
-```
-
-**NOTE:** This uses the logical name of the function within the stack. This is the correct name to use when searching logs inside an AWS Lambda function within a CloudFormation stack, even if the deployed function name varies due to CloudFormation's unique resource name generation.
-
-You can find more information and examples about filtering Lambda function logs in the [AWS SAM CLI documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-logging.html).
-
-## Unit tests
-
-Tests are defined in the `__tests__` folder in this project. Use `npm` to install the [Jest test framework](https://jestjs.io/) and run unit tests.
-
-```bash
-my-application$ npm install
-my-application$ npm run test
-```
-
-## Cleanup
-
-To delete the sample application that you created, use the AWS CLI. Assuming you used your project name for the stack name, you can run the following:
-
-```bash
-sam delete --stack-name horny-grail-app
-```
-
-## Resources
-
-For an introduction to the AWS SAM specification, the AWS SAM CLI, and serverless application concepts, see the [AWS SAM Developer Guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html).
-
-Next, you can use the AWS Serverless Application Repository to deploy ready-to-use apps that go beyond Hello World samples and learn how authors developed their applications. For more information, see the [AWS Serverless Application Repository main page](https://aws.amazon.com/serverless/serverlessrepo/) and the [AWS Serverless Application Repository Developer Guide](https://docs.aws.amazon.com/serverlessrepo/latest/devguide/what-is-serverlessrepo.html).
+For template changes that affect IAM, S3 permissions, or API routes, also verify the generated CloudFormation changeset before deployment.
