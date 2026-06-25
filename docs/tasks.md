@@ -58,40 +58,35 @@ Documentation:
 - [x] Desktop ffmpeg and thumbnail-generation notes
 - [x] Repo-level architecture and workflow overview
 
-## Current Gaps
+## Priorities For A Mostly Solo / Private-Uploader Setup
 
-Cross-cutting:
+This priority order assumes uploads are mainly done by you through the private desktop or mobile clients, while the public frontend remains internet-facing for browsing.
 
-- [ ] Add staging or environment-specific config strategy beyond local examples and production values
-- [ ] Add a clearer logging and monitoring strategy across backend and clients
-- [ ] Add rate limiting or similar abuse controls for public read traffic and authenticated writes
-
-Frontend:
-
-- [ ] Improve error states and recovery UX across browse, random, and detail flows
-- [ ] Add richer metadata, navigation polish, and non-hash-facing UX where appropriate
-- [ ] Add a dedicated 404 or missing-item experience
-
-Desktop app:
-
-- [ ] Add targeted automated coverage for thumbnail generation and upload repair flows
-- [ ] Decide whether smaller or per-platform ffmpeg bundles are needed
-- [ ] Reduce noisy console logging in upload and watch flows
-
-Mobile app:
+## Do Next
 
 - [ ] Add stronger persistence or resume behavior if uploads are interrupted by suspension or process death
-- [ ] Expand verification on real devices beyond the current Android-first path
-- [ ] Revisit whether the chooser screen should remain minimal or become more branded
-
-Backend:
-
-- [ ] Standardize error handling and logging more strictly across every handler
-- [ ] Backfill `status` and `randomKey` if legacy or imported metadata is ever loaded into production
-- [ ] Add broader test coverage around route behavior and deployment-sensitive config
-
-Operations:
-
+- [ ] Add targeted automated coverage for thumbnail generation, upload repair, and duplicate-detection flows
+- [ ] Replace the placeholder frontend Playwright test with real browse, random, and item-detail coverage
+- [ ] Add broader backend test coverage around route behavior and deployment-sensitive config
+- [ ] Add staging or environment-specific config strategy beyond local examples and production values
+- [ ] Add rollback guidance for backend and client deployments so production changes are reversible
 - [ ] Add a safe delete, archive, or moderation workflow for uploaded media
-- [ ] Add rollback and staging guidance for backend and client deployments
+
+## Important Soon
+
+- [ ] Improve error states and recovery UX across browse, random, and detail flows
+- [ ] Add a dedicated 404 or missing-item experience
+- [ ] Add richer metadata, navigation polish, and non-hash-facing UX where appropriate
+- [ ] Expand verification on real devices beyond the current Android-first path
+- [ ] Standardize error handling and logging more strictly across every handler
+- [ ] Reduce noisy console logging in upload and watch flows
+- [ ] Backfill `status` and `randomKey` if legacy or imported metadata is ever loaded into production
+
+## Later Hardening
+
+- [ ] Add rate limiting or similar abuse controls for public read traffic and authenticated writes
+- [ ] Replace the shared client-held write API key with a stronger write-auth strategy if private upload clients are ever distributed beyond your own devices
+- [ ] Add a clearer logging and monitoring strategy across backend and clients
 - [ ] Document monitoring, alerting, and operational runbooks
+- [ ] Decide whether smaller or per-platform ffmpeg bundles are needed
+- [ ] Revisit whether the chooser screen should remain minimal or become more branded
