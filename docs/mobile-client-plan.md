@@ -4,6 +4,7 @@ This plan assumes the mobile client is a private uploader/viewer for the project
 
 ## Goals
 
+- Start on a neutral home screen that lets the user explicitly choose browse or upload.
 - Browse existing images and videos from the current public read API.
 - Upload originals and thumbnails through backend-issued presigned URLs.
 - Preserve the existing SHA-256 hash-based metadata and S3 object key contract.
@@ -20,14 +21,15 @@ This plan assumes the mobile client is a private uploader/viewer for the project
 ## Recommended MVP
 
 1. Configure API base URL, CloudFront base URL, and write API key through private build-time configuration.
-2. Browse randomized media using `GET /api/browse/random`.
-3. View a single item by hash using `GET /api/{id}` and CloudFront media URLs.
-4. Select a local image or WebM file.
-5. Compute SHA-256 over original bytes.
-6. Check `GET /api/assets/{id}/integrity`.
-7. Upload missing original and thumbnail assets through `POST /api/uploads/sign` and S3 `PUT`.
-8. Register metadata through `POST /api/`.
-9. Show clear upload status, retry errors, and duplicate/repair outcomes.
+2. Show a chooser-first home screen with separate browse and upload entry points.
+3. Browse randomized media using `GET /api/browse/random` only after the user explicitly opens browse mode.
+4. View a single item by hash using `GET /api/{id}` and CloudFront media URLs.
+5. Select a local image or WebM file.
+6. Compute SHA-256 over original bytes.
+7. Check `GET /api/assets/{id}/integrity`.
+8. Upload missing original and thumbnail assets through `POST /api/uploads/sign` and S3 `PUT`.
+9. Register metadata through `POST /api/`.
+10. Show clear upload status, retry errors, and duplicate/repair outcomes.
 
 ## Private Secret Handling
 
@@ -190,8 +192,8 @@ Implement:
 
 Build a private mobile MVP with:
 
-- Local configuration screen.
-- Browse screen.
+- Chooser-first home screen.
+- Browse screen loaded on demand.
 - Single media detail screen.
 - Image and WebM upload from gallery/files.
 - SHA-256 duplicate detection.
