@@ -22,6 +22,22 @@
     cancelled: 'Cancelled',
     failed: 'Needs attention'
   };
+  const STATUS_PROGRESS = {
+    preparing: 6,
+    queued: 10,
+    hashing: 24,
+    checking: 38,
+    duplicate: 100,
+    'uploading-original': 58,
+    'repairing-original': 58,
+    thumbnailing: 72,
+    'uploading-thumbnail': 86,
+    'repairing-thumbnail': 86,
+    registering: 94,
+    complete: 100,
+    cancelled: 100,
+    failed: 100
+  };
   const CANCELLABLE_STATUSES = new Set([
     'preparing',
     'queued',
@@ -38,7 +54,7 @@
   let browseItems = [];
   let browseCursor = null;
   let browseHasMore = false;
-  let browseLoading = true;
+  let browseLoading = false;
   let browseLoadingMore = false;
   let browseError = null;
   let browseSentinel;
@@ -50,10 +66,17 @@
   let isProcessingQueue = false;
   let fileInput;
   let showUploadQueue = false;
+  let homeMode = 'home';
+  let hasBrowseIntent = false;
+  let hasLoadedBrowse = false;
 
   $: activeUploadCount = uploadItems.filter((item) => CANCELLABLE_STATUSES.has(item.status)).length;
   $: finishedUploadCount = uploadItems.filter((item) => item.status === 'complete' || item.status === 'duplicate').length;
   $: failedUploadCount = uploadItems.filter((item) => item.status === 'failed').length;
+  $: totalUploadCount = uploadItems.length;
+  $: uploadQueueProgress = totalUploadCount > 0
+    ? Math.round(uploadItems.reduce((sum, item) => sum + uploadProgress(item), 0) / totalUploadCount)
+    : 0;
   $: uploadSummary = activeUploadCount > 0
     ? `${activeUploadCount} saving`
     : failedUploadCount > 0
@@ -140,6 +163,7 @@
       appendBrowseItems(payload?.items || []);
       browseCursor = payload?.cursor || null;
       browseHasMore = Boolean(payload?.hasMore);
+      hasLoadedBrowse = true;
     } catch (error) {
       if (isAbortError(error)) {
         return;
@@ -157,6 +181,38 @@
 
   function statusText(item) {
     return STATUS_LABELS[item.status] || item.status || 'Pending';
+  }
+
+  function uploadProgress(item) {
+    return STATUS_PROGRESS[item.status] ?? 0;
+  }
+
+  function formatFileSize(size) {
+    if (!Number.isFinite(size) || size <= 0) {
+      return 'Unknown size';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = size;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+
+    return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+  }
+
+  function browseSummary() {
+    if (browseLoading) {
+      return 'Loading your next mix';
+    }
+
+    if (browseItems.length === 0) {
+      return 'No saved items yet';
+    }
+
+    return `${browseItems.length} item${browseItems.length === 1 ? '' : 's'} in view`;
   }
 
   function outcomeText(outcome) {
@@ -351,6 +407,8 @@
   }
 
   function retryBrowse() {
+    homeMode = 'browse';
+    hasBrowseIntent = true;
     loadBrowsePage(null);
   }
 
@@ -358,9 +416,23 @@
     fileInput?.click();
   }
 
-  onMount(() => {
-    loadBrowsePage(null);
+  function openBrowse() {
+    homeMode = 'browse';
+    hasBrowseIntent = true;
+    if (!hasLoadedBrowse && !browseLoading && !browseLoadingMore) {
+      loadBrowsePage(null);
+    }
+  }
 
+  function openUpload() {
+    homeMode = 'upload';
+  }
+
+  function goHome() {
+    homeMode = 'home';
+  }
+
+  onMount(() => {
     browseObserver = new IntersectionObserver((entries) => {
       const [entry] = entries;
       if (!entry?.isIntersecting || browseLoading || browseLoadingMore || !browseHasMore || !browseCursor) {
@@ -375,6 +447,10 @@
 
   $: if (browseObserver && browseSentinel) {
     observeBrowseSentinel();
+  }
+
+  $: if (hasBrowseIntent && !hasLoadedBrowse && !browseLoading && !browseLoadingMore) {
+    loadBrowsePage(null);
   }
 
   onDestroy(() => {
@@ -399,151 +475,265 @@
   <header class="app-bar">
     <div>
       <p class="kicker">Private Vault</p>
-      <h1>HornyGrail</h1>
+      <h1>{homeMode === 'browse' ? 'Browse Grail' : homeMode === 'upload' ? 'Upload Media' : 'HornyGrail'}</h1>
     </div>
-    <button class="round-button" type="button" aria-label="Refresh gallery" on:click={retryBrowse}>
-      Refresh
-    </button>
+    {#if homeMode === 'home'}
+      <span class="app-bar-note">Choose a path</span>
+    {:else if homeMode === 'browse'}
+      <div class="app-bar-actions">
+        <button class="round-button" type="button" aria-label="Back to home" on:click={goHome}>
+          Home
+        </button>
+      </div>
+    {:else}
+      <button class="round-button" type="button" aria-label="Back to home" on:click={goHome}>
+        Home
+      </button>
+    {/if}
   </header>
 
   <main class="shell">
-    <section class="feature-card">
-      <div>
-        <p class="feature-label">Drop something new</p>
-        <h2>Save from your phone in one tap.</h2>
-        <p>Images and WebM clips are checked, thumbnailed, and added to the gallery automatically.</p>
-      </div>
-      <button class="primary-button" type="button" on:click={openPicker}>
-        Add Media
-      </button>
-      <input
-        bind:this={fileInput}
-        class="hidden-input"
-        type="file"
-        accept={ACCEPTED_TYPES}
-        multiple
-        on:change={onFileInputChange}
-      />
-    </section>
-
-    {#if uploadItems.length > 0}
-      <section class={`upload-dock ${showUploadQueue ? 'expanded' : ''}`}>
-        <button class="dock-summary" type="button" on:click={() => showUploadQueue = !showUploadQueue}>
-          <span>Uploads</span>
-          <strong>{uploadSummary}</strong>
-        </button>
-
-        {#if showUploadQueue}
-          <div class="upload-list">
-            {#each uploadItems as item (item.localId)}
-              <article class="upload-card">
-                <div class="upload-thumb">
-                  {#if isVideoUpload(item)}
-                    <video src={item.previewUrl} muted playsinline preload="metadata"></video>
-                  {:else}
-                    <img src={item.previewUrl} alt={item.name} />
-                  {/if}
-                </div>
-                <div class="upload-body">
-                  <div class="upload-line">
-                    <div>
-                      <h3>{item.name}</h3>
-                      <p>{statusText(item)}</p>
-                    </div>
-                    <span class={`status-dot ${item.status}`}></span>
-                  </div>
-
-                  {#if item.message}
-                    <p class={`message ${item.status === 'failed' ? 'error-text' : item.status === 'cancelled' ? 'warning' : 'success'}`}>{item.message}</p>
-                  {/if}
-
-                  {#if item.error}
-                    <p class="message error-text">{item.error}</p>
-                  {/if}
-
-                  <div class="upload-actions">
-                    {#if canCancel(item)}
-                      <button class="text-button" type="button" on:click={() => cancelUpload(item.localId)}>Cancel</button>
-                    {/if}
-                    {#if item.status === 'failed' || item.status === 'cancelled'}
-                      <button class="text-button strong" type="button" on:click={() => retryUpload(item.localId)}>Retry</button>
-                    {/if}
-                    {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
-                      <a class="text-button strong" href={detailUrlForUpload(item)}>Open</a>
-                    {/if}
-                    <button class="text-button" type="button" on:click={() => removeUpload(item.localId)}>Remove</button>
-                  </div>
-                </div>
-              </article>
-            {/each}
+    {#if homeMode === 'home'}
+      <section class="chooser-hero">
+        <div class="chooser-copy">
+          <p class="feature-label">Private vault</p>
+          <h2>What do you want to do?</h2>
+          <p>Browse your collection or add something new.</p>
+          <div class="chooser-pills" aria-label="App modes">
+            <span>Browse on demand</span>
+            <span>Hash-safe uploads</span>
+            <span>Native WebM covers</span>
+          </div>
+        </div>
+        {#if uploadItems.length > 0}
+          <div class="resume-banner">
+            <span>{uploadSummary}</span>
+            <button class="resume-button" type="button" on:click={openUpload}>Resume queue</button>
           </div>
         {/if}
       </section>
+
+      <section class="path-grid">
+        <button class="path-card browse-path" type="button" on:click={openBrowse}>
+          <span class="path-kicker">Browse</span>
+          <strong>Browse Grail</strong>
+          <p>See what is already in your vault.</p>
+          <span class="path-meta">Shuffle feed / Fullscreen detail view</span>
+        </button>
+
+        <button class="path-card upload-path" type="button" on:click={openUpload}>
+          <span class="path-kicker">Upload</span>
+          <strong>Upload Media</strong>
+          <p>Add photos or clips from your device.</p>
+          <span class="path-meta">Duplicate check / Repair-aware queue</span>
+        </button>
+      </section>
     {/if}
 
-    <section class="gallery-heading">
-      <div>
-        <p class="kicker">Shuffle</p>
-        <h2>Your Grail</h2>
-      </div>
-      <button class="link-button" type="button" on:click={retryBrowse}>New mix</button>
-    </section>
-
-    {#if browseLoading}
-      <section class="gallery-grid skeleton-grid" aria-label="Loading gallery">
-        {#each Array(8) as _, index}
-          <div class={`skeleton-card card-${index % 5}`}></div>
-        {/each}
-      </section>
-    {:else if browseError}
-      <section class="empty-state">
-        <h2>Could not load the gallery.</h2>
-        <p>{browseError}</p>
-        <button class="primary-button" type="button" on:click={retryBrowse}>Try Again</button>
-      </section>
-    {:else if browseItems.length === 0}
-      <section class="empty-state">
-        <h2>Your Grail is empty.</h2>
-        <p>Add a few files from your phone and they will appear here.</p>
-        <button class="primary-button" type="button" on:click={openPicker}>Add Media</button>
-      </section>
-    {:else}
-      <section class="gallery-grid" aria-label="Randomized gallery">
-        {#each browseItems as item, index (item.id)}
-          <a class={`gallery-card card-${index % 5}`} href={item.detailUrl}>
-            <img src={item.thumbnailUrl} alt={item.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'} loading="lazy" />
-            {#if item.kind === 'video'}
-              <span class="media-badge">Clip</span>
-            {/if}
-          </a>
-        {/each}
+    {#if homeMode === 'upload'}
+      <section class="feature-card">
+        <div class="feature-copy">
+          <p class="feature-label">Upload lane</p>
+          <h2>Pick media. The app handles the boring parts.</h2>
+          <p>Duplicates are skipped, incomplete assets are repaired, and WebM covers are generated on-device.</p>
+          <div class="type-strip" aria-label="Supported upload types">
+            <span>JPG</span>
+            <span>PNG</span>
+            <span>GIF</span>
+            <span>WEBP</span>
+            <span>WEBM</span>
+          </div>
+        </div>
+        <div class="upload-cta">
+          {#if uploadItems.length > 0}
+            <div class="mini-stats" aria-label="Upload queue summary">
+              <span><strong>{finishedUploadCount}</strong> done</span>
+              <span><strong>{activeUploadCount}</strong> active</span>
+              <span><strong>{failedUploadCount}</strong> issues</span>
+            </div>
+          {/if}
+          <button class="primary-button" type="button" on:click={openPicker}>
+            Add Media
+          </button>
+          <button class="secondary-button" type="button" on:click={goHome}>
+            Back to Home
+          </button>
+        </div>
       </section>
 
-      {#if browseLoadingMore}
-        <p class="footer-note">Loading more...</p>
-      {:else if !browseHasMore}
-        <p class="footer-note">End of this shuffle.</p>
+      {#if uploadItems.length > 0}
+        <section class={`upload-dock ${showUploadQueue ? 'expanded' : ''}`}>
+          <button class="dock-summary" type="button" on:click={() => showUploadQueue = !showUploadQueue}>
+            <span>
+              <span class="dock-label">Uploads</span>
+              <strong>{uploadSummary}</strong>
+            </span>
+            <span class="dock-progress">{uploadQueueProgress}%</span>
+          </button>
+          <div class="queue-meter" aria-hidden="true">
+            <span style={`width: ${uploadQueueProgress}%`}></span>
+          </div>
+
+          {#if showUploadQueue}
+            <div class="upload-list">
+              {#each uploadItems as item (item.localId)}
+                <article class="upload-card">
+                  <div class="upload-thumb">
+                    {#if isVideoUpload(item)}
+                      <video src={item.previewUrl} muted playsinline preload="metadata"></video>
+                    {:else}
+                      <img src={item.previewUrl} alt={item.name} />
+                    {/if}
+                  </div>
+                  <div class="upload-body">
+                    <div class="upload-line">
+                      <div>
+                        <h3>{item.name}</h3>
+                        <p>{statusText(item)} / {formatFileSize(item.size)}</p>
+                      </div>
+                      <span class={`status-dot ${item.status}`}></span>
+                    </div>
+                    <div class="item-meter" aria-label={`${statusText(item)} progress`}>
+                      <span style={`width: ${uploadProgress(item)}%`}></span>
+                    </div>
+
+                    {#if item.message}
+                      <p class={`message ${item.status === 'failed' ? 'error-text' : item.status === 'cancelled' ? 'warning' : 'success'}`}>{item.message}</p>
+                    {/if}
+
+                    {#if item.error}
+                      <p class="message error-text">{item.error}</p>
+                    {/if}
+
+                    <div class="upload-actions">
+                      {#if canCancel(item)}
+                        <button class="text-button" type="button" on:click={() => cancelUpload(item.localId)}>Cancel</button>
+                      {/if}
+                      {#if item.status === 'failed' || item.status === 'cancelled'}
+                        <button class="text-button strong" type="button" on:click={() => retryUpload(item.localId)}>Retry</button>
+                      {/if}
+                      {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
+                        <a class="text-button strong" href={detailUrlForUpload(item)}>Open</a>
+                      {/if}
+                      <button class="text-button" type="button" on:click={() => removeUpload(item.localId)}>Remove</button>
+                    </div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {/if}
+        </section>
       {/if}
+    {/if}
 
-      <div bind:this={browseSentinel} class="scroll-sentinel" aria-hidden="true"></div>
+    {#if homeMode === 'browse'}
+      <section class="browse-hero">
+        <div>
+          <p class="feature-label">Browse mode</p>
+          <h2>Your Grail</h2>
+          <p>{browseSummary()}</p>
+        </div>
+        <div class="browse-hero-actions">
+          <button class="secondary-button" type="button" on:click={() => { openUpload(); openPicker(); }}>
+            Add Media
+          </button>
+        </div>
+      </section>
+
+      <section class="gallery-heading">
+        <div>
+          <p class="kicker">Shuffle</p>
+          <h2>Your Grail</h2>
+        </div>
+        <button class="link-button" type="button" on:click={retryBrowse}>New mix</button>
+      </section>
+
+      {#if browseLoading}
+        <section class="gallery-grid skeleton-grid" aria-label="Loading gallery">
+          {#each Array(8) as _, index}
+            <div class={`skeleton-card card-${index % 5}`}></div>
+          {/each}
+        </section>
+      {:else if browseError}
+        <section class="empty-state">
+          <h2>Could not load the gallery.</h2>
+          <p>{browseError}</p>
+          <button class="primary-button" type="button" on:click={retryBrowse}>Try Again</button>
+        </section>
+      {:else if browseItems.length === 0}
+        <section class="empty-state">
+          <h2>Your Grail is empty.</h2>
+          <p>Add a few files from your phone and they will appear here.</p>
+          <button class="primary-button" type="button" on:click={openPicker}>Add Media</button>
+        </section>
+      {:else}
+        <section class="gallery-grid" aria-label="Randomized gallery">
+          {#each browseItems as item, index (item.id)}
+            <a class={`gallery-card card-${index % 5}`} href={item.detailUrl}>
+              <img src={item.thumbnailUrl} alt={item.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'} loading="lazy" />
+              {#if item.kind === 'video'}
+                <span class="media-badge">Clip</span>
+              {/if}
+            </a>
+          {/each}
+        </section>
+
+        {#if browseLoadingMore}
+          <p class="footer-note">Loading more...</p>
+        {:else if !browseHasMore}
+          <p class="footer-note">End of this shuffle.</p>
+        {/if}
+
+        <div bind:this={browseSentinel} class="scroll-sentinel" aria-hidden="true"></div>
+      {/if}
     {/if}
   </main>
 
-  <button class="floating-add" type="button" aria-label="Add media" on:click={openPicker}>
-    +
-  </button>
+  {#if homeMode === 'browse'}
+    <button class="floating-add" type="button" aria-label="Add media" on:click={() => { openUpload(); openPicker(); }}>
+      +
+    </button>
+  {/if}
+
+  <input
+    bind:this={fileInput}
+    class="hidden-input"
+    type="file"
+    accept={ACCEPTED_TYPES}
+    multiple
+    on:change={onFileInputChange}
+  />
 </div>
 
 <style>
+  :global(html) {
+    min-height: 100%;
+    background: #f4eadc;
+  }
+
+  :global(:root) {
+    --bg-base: #f4eadc;
+    --bg-panel: #fff8f0;
+    --bg-panel-soft: #fffaf5;
+    --bg-panel-strong: #f8efe4;
+    --text-strong: #25170f;
+    --text-body: #684d3b;
+    --text-muted: #8e654d;
+    --stroke-soft: rgba(68, 42, 27, 0.1);
+    --stroke-strong: rgba(68, 42, 27, 0.16);
+    --shadow-soft: 0 14px 30px rgba(68, 42, 27, 0.08);
+    --shadow-panel: 0 20px 44px rgba(68, 42, 27, 0.1);
+    --accent-warm: #d95f1f;
+    --accent-cool: #0f766e;
+  }
+
   :global(body) {
     margin: 0;
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at 15% 0%, rgba(255, 127, 80, 0.26), transparent 30%),
-      radial-gradient(circle at 88% 12%, rgba(13, 148, 136, 0.24), transparent 28%),
-      linear-gradient(145deg, #fff4e8 0%, #f4eadc 45%, #eadcca 100%);
-    color: #25170f;
+    min-height: 100dvh;
+    background: var(--bg-base);
+    color: var(--text-strong);
     font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+    text-rendering: geometricPrecision;
   }
 
   :global(*) {
@@ -551,8 +741,22 @@
   }
 
   .page {
-    min-height: 100vh;
-    padding-bottom: 6rem;
+    position: relative;
+    isolation: isolate;
+    min-height: 100dvh;
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .page::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(255, 127, 80, 0.26), transparent 30%),
+      radial-gradient(circle at 88% 12%, rgba(13, 148, 136, 0.24), transparent 28%),
+      linear-gradient(145deg, #fff4e8 0%, var(--bg-base) 45%, #eadcca 100%);
   }
 
   .app-bar,
@@ -569,9 +773,23 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 1rem;
-    background: linear-gradient(180deg, rgba(255, 244, 232, 0.96), rgba(255, 244, 232, 0.74));
-    backdrop-filter: blur(18px);
+    padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem 1rem;
+    background: var(--bg-panel-strong);
+    color: var(--text-strong);
+    border-bottom: 1px solid var(--stroke-soft);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+
+  .app-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .app-bar-note {
+    color: var(--text-body);
+    font-size: 0.82rem;
+    font-weight: 800;
   }
 
   .shell {
@@ -589,12 +807,14 @@
     font-size: clamp(2rem, 10vw, 4rem);
     line-height: 0.88;
     letter-spacing: -0.08em;
+    color: var(--text-strong);
   }
 
   h2 {
     font-size: clamp(1.45rem, 7vw, 2.4rem);
     line-height: 0.98;
     letter-spacing: -0.045em;
+    color: var(--text-strong);
   }
 
   h3 {
@@ -603,12 +823,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.95rem;
+    color: #fff7ed;
   }
 
   .kicker,
   .feature-label {
     margin-bottom: 0.35rem;
-    color: #a34d22;
+    color: #9a4c24;
     font-size: 0.74rem;
     font-weight: 800;
     letter-spacing: 0.13em;
@@ -627,10 +848,10 @@
 
   .round-button,
   .primary-button {
-    min-height: 2.9rem;
+    min-height: 3.25rem;
     border: 0;
     border-radius: 999px;
-    padding: 0.85rem 1.1rem;
+    padding: 0.95rem 1.2rem;
     background: #23160f;
     color: #fff7ed;
     font-size: 0.92rem;
@@ -641,9 +862,23 @@
   }
 
   .round-button {
-    background: rgba(255, 255, 255, 0.64);
+    background: #fff8f0;
     color: #4b3122;
-    box-shadow: none;
+    border: 1px solid var(--stroke-soft);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  }
+
+  .secondary-button {
+    min-height: 3.1rem;
+    border: 1px solid var(--stroke-strong);
+    border-radius: 999px;
+    padding: 0.88rem 1.15rem;
+    background: var(--bg-panel);
+    color: #342118;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
   }
 
   .hidden-input {
@@ -655,28 +890,208 @@
     gap: 1.1rem;
     margin-top: 0.35rem;
     padding: 1.2rem;
-    border: 1px solid rgba(68, 42, 27, 0.1);
+    border: 1px solid var(--stroke-soft);
     border-radius: 1.8rem;
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 246, 235, 0.52)),
-      radial-gradient(circle at 90% 0%, rgba(217, 95, 31, 0.16), transparent 38%);
-    box-shadow: 0 18px 42px rgba(68, 42, 27, 0.1);
+      linear-gradient(135deg, #fffaf4, #fff2e4),
+      radial-gradient(circle at 90% 0%, rgba(217, 95, 31, 0.1), transparent 38%);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .chooser-hero {
+    display: grid;
+    gap: 1rem;
+    margin-top: 0.35rem;
+    padding: 1.2rem;
+    border: 1px solid var(--stroke-soft);
+    border-radius: 1.8rem;
+    background:
+      linear-gradient(135deg, #fffaf4, #fff3e7),
+      radial-gradient(circle at 85% 0%, rgba(217, 95, 31, 0.12), transparent 38%);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .chooser-copy {
+    min-width: 0;
+  }
+
+  .chooser-hero p:not(.feature-label) {
+    margin-top: 0.65rem;
+    color: var(--text-body);
+    line-height: 1.45;
+  }
+
+  .chooser-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 1rem;
+  }
+
+  .chooser-pills span {
+    padding: 0.42rem 0.72rem;
+    border: 1px solid rgba(154, 76, 36, 0.14);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+
+  .resume-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 1rem;
+    background: #fffdf9;
+    color: #4b3122;
+    font-weight: 800;
+    border: 1px solid rgba(68, 42, 27, 0.08);
+  }
+
+  .resume-button {
+    min-height: 2.6rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.72rem 0.95rem;
+    background: #23160f;
+    color: #fff7ed;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .path-grid {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1rem;
+  }
+
+  .path-card {
+    display: grid;
+    gap: 0.45rem;
+    width: 100%;
+    padding: 1.15rem;
+    border: 1px solid rgba(68, 42, 27, 0.1);
+    border-radius: 1.6rem;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .browse-path {
+    background:
+      linear-gradient(135deg, #f0fcf8, #ffffff),
+      radial-gradient(circle at 100% 0%, rgba(13, 148, 136, 0.12), transparent 35%);
+  }
+
+  .upload-path {
+    background:
+      linear-gradient(135deg, #fff7ef, #ffffff),
+      radial-gradient(circle at 100% 0%, rgba(217, 95, 31, 0.12), transparent 35%);
+  }
+
+  .path-kicker {
+    color: #a34d22;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .path-card strong {
+    font-size: 1.35rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: #25170f;
+  }
+
+  .path-card p {
+    color: var(--text-body);
+    line-height: 1.45;
+  }
+
+  .path-meta {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 800;
+  }
+
+  .feature-copy {
+    min-width: 0;
   }
 
   .feature-card p:not(.feature-label) {
     max-width: 28rem;
     margin-top: 0.65rem;
-    color: #684d3b;
+    color: var(--text-body);
     line-height: 1.45;
   }
 
+  .type-strip,
+  .mini-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .type-strip {
+    margin-top: 1rem;
+  }
+
+  .type-strip span,
+  .mini-stats span {
+    border-radius: 999px;
+    padding: 0.42rem 0.62rem;
+    background: rgba(35, 22, 15, 0.06);
+    color: #5f3d2a;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+  }
+
+  .upload-cta {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .upload-cta .primary-button {
+    width: 100%;
+  }
+
+  .mini-stats {
+    justify-content: stretch;
+  }
+
+  .mini-stats span {
+    flex: 1 1 5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.28rem;
+    background: #fffaf4;
+    letter-spacing: 0;
+    border: 1px solid rgba(68, 42, 27, 0.08);
+  }
+
+  .mini-stats strong {
+    font-size: 1rem;
+  }
+
   .upload-dock {
+    position: sticky;
+    top: calc(5.25rem + env(safe-area-inset-top, 0px));
+    z-index: 3;
     margin-top: 1rem;
     border-radius: 1.35rem;
     background: rgba(35, 22, 15, 0.94);
     color: #fff7ed;
     overflow: hidden;
     box-shadow: 0 16px 36px rgba(35, 22, 15, 0.18);
+    border: 1px solid rgba(255, 247, 237, 0.06);
   }
 
   .dock-summary {
@@ -692,8 +1107,56 @@
     cursor: pointer;
   }
 
-  .dock-summary span {
+  .dock-summary > span:first-child {
+    display: grid;
+    gap: 0.18rem;
+    text-align: left;
+  }
+
+  .dock-label {
     color: rgba(255, 247, 237, 0.72);
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .dock-progress {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.2rem;
+    min-height: 2.15rem;
+    border-radius: 999px;
+    background: rgba(255, 247, 237, 0.12);
+    color: #fff7ed;
+    font-size: 0.82rem;
+    font-weight: 900;
+  }
+
+  .queue-meter,
+  .item-meter {
+    overflow: hidden;
+    background: rgba(255, 247, 237, 0.12);
+  }
+
+  .queue-meter {
+    height: 0.28rem;
+    margin: 0 1rem 0.9rem;
+    border-radius: 999px;
+  }
+
+  .item-meter {
+    height: 0.22rem;
+    margin-top: 0.52rem;
+    border-radius: 999px;
+  }
+
+  .queue-meter span,
+  .item-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #f2b35e, #52d39c);
+    transition: width 180ms ease;
   }
 
   .upload-list {
@@ -708,7 +1171,8 @@
     gap: 0.75rem;
     padding: 0.65rem;
     border-radius: 1rem;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .upload-thumb {
@@ -806,12 +1270,36 @@
     align-items: end;
     justify-content: space-between;
     gap: 1rem;
-    margin: 1.45rem 0 0.8rem;
+    margin: 1rem 0 0.8rem;
   }
 
   .link-button {
-    color: #0f766e;
+    color: var(--accent-cool);
     font-weight: 800;
+  }
+
+  .browse-hero {
+    display: grid;
+    gap: 1rem;
+    margin-top: 0.35rem;
+    padding: 1.2rem;
+    border: 1px solid var(--stroke-soft);
+    border-radius: 1.8rem;
+    background:
+      linear-gradient(135deg, #f2fbf8, #fffdfa),
+      radial-gradient(circle at 100% 0%, rgba(13, 148, 136, 0.1), transparent 34%);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .browse-hero p:not(.feature-label) {
+    margin-top: 0.65rem;
+    color: var(--text-body);
+    line-height: 1.45;
+  }
+
+  .browse-hero-actions {
+    display: flex;
+    align-items: center;
   }
 
   .gallery-grid {
@@ -827,8 +1315,9 @@
     min-height: 10rem;
     overflow: hidden;
     border-radius: 1.1rem;
-    background: rgba(255, 255, 255, 0.52);
-    box-shadow: 0 12px 28px rgba(68, 42, 27, 0.1);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: var(--shadow-soft);
+    border: 1px solid rgba(68, 42, 27, 0.08);
   }
 
   .gallery-card img {
@@ -860,11 +1349,10 @@
     right: 0.65rem;
     border-radius: 999px;
     padding: 0.32rem 0.55rem;
-    background: rgba(35, 22, 15, 0.74);
+    background: rgba(35, 22, 15, 0.92);
     color: #fff7ed;
     font-size: 0.72rem;
     font-weight: 800;
-    backdrop-filter: blur(12px);
   }
 
   .skeleton-grid {
@@ -890,8 +1378,9 @@
     min-height: 16rem;
     padding: 2rem 1rem;
     border-radius: 1.5rem;
-    background: rgba(255, 255, 255, 0.52);
+    background: rgba(255, 255, 255, 0.82);
     text-align: center;
+    border: 1px solid rgba(68, 42, 27, 0.08);
   }
 
   .empty-state p,
@@ -912,7 +1401,7 @@
   .floating-add {
     position: fixed;
     right: 1rem;
-    bottom: 1rem;
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     z-index: 5;
     width: 4rem;
     height: 4rem;
@@ -928,7 +1417,7 @@
 
   @media (min-width: 720px) {
     .app-bar {
-      padding: 1.4rem 1.5rem;
+      padding: calc(1.4rem + env(safe-area-inset-top, 0px)) 1.5rem 1.4rem;
     }
 
     .shell {
@@ -939,6 +1428,26 @@
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
       padding: 1.5rem;
+    }
+
+    .chooser-hero {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      padding: 1.5rem;
+    }
+
+    .browse-hero {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      padding: 1.5rem;
+    }
+
+    .upload-cta {
+      min-width: 15rem;
+    }
+
+    .path-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .gallery-grid {

@@ -2,9 +2,17 @@
 
 Private Capacitor + SvelteKit mobile client for browsing and uploading HornyGrail media.
 
+## Current UX
+
+- The home screen is a neutral chooser, not a gallery-first or upload-first screen.
+- Users explicitly choose `Browse Grail` or `Upload Media` on entry.
+- The randomized gallery is loaded only after the user opens browse mode.
+- Upload UI and queue details stay hidden until the user opens upload mode or resumes an active queue.
+
 ## Implemented MVP
 
 - Private build-time config from `mobile.private.json`.
+- Chooser-first home screen with explicit browse and upload entry points.
 - Randomized browse feed backed by `GET /api/browse/random`.
 - Single media detail route at `/image/[id]`.
 - Image and WebM selection from the WebView file picker.
