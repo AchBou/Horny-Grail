@@ -1,7 +1,19 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
-  import { fetchAssetIntegrity, fetchItemById, isAbortError } from '$lib/mobile/api.js';
-  import { createMediaView } from '$lib/mobile/items.js';
+  import { fly } from 'svelte/transition';
+  import {
+    fetchAssetIntegrity,
+    fetchItemById,
+    fetchRandomBrowsePage,
+    isAbortError
+  } from '$lib/mobile/api.js';
+  import { createMediaView, normalizeMediaViews } from '$lib/mobile/items.js';
+
+  const NEXT_MEDIA_PAGE_SIZE = 6;
+  const NEXT_MEDIA_ATTEMPTS = 3;
+  const SWIPE_THRESHOLD_PX = 56;
+  const SWIPE_MAX_VERTICAL_DRIFT_PX = 88;
+  const SWIPE_TRANSITION_OFFSET_PX = 42;
 
   let id = '';
   let media = null;
@@ -13,6 +25,17 @@
   let showDetails = false;
   let showChrome = true;
   let controller = null;
+  let randomController = null;
+  let gestureStartX = 0;
+  let gestureStartY = 0;
+  let gestureDeltaX = 0;
+  let gestureDeltaY = 0;
+  let isTrackingGesture = false;
+  let isAdvancing = false;
+  let isTransitioning = false;
+  let swipeDirection = 1;
+  let viewerNotice = '';
+  let viewerNoticeTimer = null;
 
   function getRouteId() {
     const segments = window.location.pathname.split('/').filter(Boolean);
@@ -31,42 +54,175 @@
     return null;
   }
 
-  async function loadMedia() {
+  function showNotice(message) {
+    clearTimeout(viewerNoticeTimer);
+    viewerNotice = message;
+    viewerNoticeTimer = window.setTimeout(() => {
+      viewerNotice = '';
+    }, 1800);
+  }
+
+  async function loadMedia(nextId = getRouteId(), { preserveMedia = false } = {}) {
     controller?.abort();
     const activeController = new AbortController();
     controller = activeController;
-    isLoading = true;
+    isLoading = !preserveMedia;
+    isTransitioning = preserveMedia;
     error = null;
-    media = null;
-    integrity = null;
-    videoControlsEnabled = false;
+
+    if (!preserveMedia) {
+      media = null;
+      integrity = null;
+      videoControlsEnabled = false;
+      showDetails = false;
+      showChrome = true;
+    }
 
     try {
-      id = getRouteId();
-      if (!id) {
+      if (!nextId) {
         throw new Error('Missing media id in the URL');
       }
 
-      const payload = await fetchItemById(id, { signal: activeController.signal });
-      const nextMedia = createDetailMedia(payload, id);
+      const payload = await fetchItemById(nextId, { signal: activeController.signal });
+      const nextMedia = createDetailMedia(payload, nextId);
       if (!nextMedia) {
         throw new Error('Media was not found');
       }
 
+      const nextIntegrity = await fetchAssetIntegrity(nextId, { signal: activeController.signal });
+      id = nextId;
       media = nextMedia;
-      integrity = await fetchAssetIntegrity(id, { signal: activeController.signal });
+      integrity = nextIntegrity;
+      videoControlsEnabled = false;
+      return true;
+    } catch (loadError) {
+      if (isAbortError(loadError)) {
+        return false;
+      }
+
+      console.error('Failed to load media detail', loadError);
+      if (preserveMedia) {
+        showNotice(loadError?.message || 'Could not load another item');
+      } else {
+        error = loadError?.message || 'Could not open this item';
+      }
+      return false;
+    } finally {
+      if (controller === activeController && !activeController.signal.aborted) {
+        isLoading = false;
+        isTransitioning = false;
+      }
+    }
+  }
+
+  async function findRandomNextMedia(excludeId, signal) {
+    for (let attempt = 0; attempt < NEXT_MEDIA_ATTEMPTS; attempt += 1) {
+      const payload = await fetchRandomBrowsePage(null, NEXT_MEDIA_PAGE_SIZE, { signal });
+      const candidate = normalizeMediaViews(payload).find((item) => item.id && item.id !== excludeId);
+
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  async function loadRandomNextMedia(direction = 1) {
+    if (!media || isLoading || isAdvancing || videoControlsEnabled) {
+      return;
+    }
+
+    randomController?.abort();
+    const activeRandomController = new AbortController();
+    randomController = activeRandomController;
+    isAdvancing = true;
+    swipeDirection = direction >= 0 ? 1 : -1;
+
+    try {
+      const nextMedia = await findRandomNextMedia(media.id, activeRandomController.signal);
+      if (!nextMedia) {
+        showNotice('No other saved items yet');
+        return;
+      }
+
+      const didLoad = await loadMedia(nextMedia.id, { preserveMedia: true });
+      if (didLoad) {
+        window.history.pushState({}, '', nextMedia.detailUrl);
+      }
     } catch (loadError) {
       if (isAbortError(loadError)) {
         return;
       }
 
-      console.error('Failed to load media detail', loadError);
-      error = loadError?.message || 'Could not open this item';
+      console.error('Failed to load next random media', loadError);
+      showNotice('Could not load another item');
     } finally {
-      if (controller === activeController && !activeController.signal.aborted) {
-        isLoading = false;
+      if (randomController === activeRandomController) {
+        randomController = null;
+        isAdvancing = false;
       }
     }
+  }
+
+  function resetGesture() {
+    gestureStartX = 0;
+    gestureStartY = 0;
+    gestureDeltaX = 0;
+    gestureDeltaY = 0;
+    isTrackingGesture = false;
+  }
+
+  function handleTouchStart(event) {
+    if (event.touches.length !== 1 || isLoading || isAdvancing || videoControlsEnabled) {
+      resetGesture();
+      return;
+    }
+
+    const touch = event.touches[0];
+    gestureStartX = touch.clientX;
+    gestureStartY = touch.clientY;
+    gestureDeltaX = 0;
+    gestureDeltaY = 0;
+    isTrackingGesture = true;
+  }
+
+  function handleTouchMove(event) {
+    if (!isTrackingGesture || event.touches.length !== 1) {
+      return;
+    }
+
+    const touch = event.touches[0];
+    gestureDeltaX = touch.clientX - gestureStartX;
+    gestureDeltaY = touch.clientY - gestureStartY;
+
+    if (Math.abs(gestureDeltaX) > Math.abs(gestureDeltaY) && event.cancelable) {
+      event.preventDefault();
+    }
+  }
+
+  async function handleTouchEnd() {
+    if (!isTrackingGesture) {
+      return;
+    }
+
+    const deltaX = gestureDeltaX;
+    const deltaY = gestureDeltaY;
+    resetGesture();
+
+    if (
+      Math.abs(deltaX) < SWIPE_THRESHOLD_PX ||
+      Math.abs(deltaY) > SWIPE_MAX_VERTICAL_DRIFT_PX ||
+      Math.abs(deltaX) <= Math.abs(deltaY)
+    ) {
+      return;
+    }
+
+    await loadRandomNextMedia(deltaX >= 0 ? 1 : -1);
+  }
+
+  function handleTouchCancel() {
+    resetGesture();
   }
 
   async function toggleVideoPlaybackMode() {
@@ -100,11 +256,22 @@
   }
 
   onMount(() => {
+    const handlePopState = () => {
+      loadMedia(getRouteId(), { preserveMedia: Boolean(media) });
+    };
+
+    window.addEventListener('popstate', handlePopState);
     loadMedia();
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   });
 
   onDestroy(() => {
     controller?.abort();
+    randomController?.abort();
+    clearTimeout(viewerNoticeTimer);
   });
 </script>
 
@@ -126,33 +293,58 @@
       <button class="pill solid" type="button" on:click={loadMedia}>Try Again</button>
     </section>
   {:else if media}
-    <main class={`stage ${showChrome && !videoControlsEnabled ? 'with-info' : ''} ${showDetails ? 'with-details' : ''}`}>
-      {#if media.kind === 'video'}
-        <!-- svelte-ignore a11y_media_has_caption -->
-        <video
-          bind:this={videoElement}
-          class="media"
-          src={media.fileUrl}
-          poster={media.thumbnailUrl}
-          autoplay
-          controls={videoControlsEnabled}
-          loop={!videoControlsEnabled}
-          muted={!videoControlsEnabled}
-          playsinline
-          preload="auto"
-        ></video>
-      {:else}
-        <img class="media" src={media.fileUrl} alt="Saved media" />
-      {/if}
+    <main
+      class={`stage ${showChrome && !videoControlsEnabled ? 'with-info' : ''} ${showDetails ? 'with-details' : ''} ${isTransitioning ? 'busy' : ''}`}
+      on:touchstart={handleTouchStart}
+      on:touchmove={handleTouchMove}
+      on:touchend={handleTouchEnd}
+      on:touchcancel={handleTouchCancel}
+    >
+      {#key media.id}
+        {#if media.kind === 'video'}
+          <!-- svelte-ignore a11y_media_has_caption -->
+          <video
+            bind:this={videoElement}
+            class="media"
+            src={media.fileUrl}
+            poster={media.thumbnailUrl}
+            autoplay
+            controls={videoControlsEnabled}
+            loop={!videoControlsEnabled}
+            muted={!videoControlsEnabled}
+            playsinline
+            preload="auto"
+            in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: 180, opacity: 0.22 }}
+            out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: 160, opacity: 0.1 }}
+          ></video>
+        {:else}
+          <img
+            class="media"
+            src={media.fileUrl}
+            alt="Saved media"
+            in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: 180, opacity: 0.22 }}
+            out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: 160, opacity: 0.1 }}
+          />
+        {/if}
+      {/key}
 
       {#if media.kind !== 'video' || !videoControlsEnabled}
         <button class="media-toggle" type="button" aria-label="Toggle viewer controls" on:click={toggleChrome}></button>
+      {/if}
+
+      {#if isTransitioning}
+        <div class="media-loading" aria-hidden="true">
+          <div class="spinner small"></div>
+        </div>
       {/if}
     </main>
 
     <nav class={`top-bar ${showChrome ? 'visible' : ''}`} aria-label="Detail navigation">
       <a class="pill" href="/">Back</a>
       <div class="top-actions">
+        <button class="pill" type="button" disabled={isLoading || isAdvancing || videoControlsEnabled} on:click={loadRandomNextMedia}>
+          {isAdvancing ? 'Loading' : 'Next'}
+        </button>
         {#if media.kind === 'video'}
           <button class="pill solid" type="button" on:click={toggleVideoPlaybackMode}>
             {videoControlsEnabled ? 'Preview' : 'Sound'}
@@ -171,6 +363,7 @@
           <p class="eyebrow">{media.kind === 'video' ? 'Clip ID' : 'Image ID'}</p>
           <h1 class="item-id">{media.id}</h1>
         </div>
+        <p class="swipe-copy">Swipe for another</p>
       </div>
 
       {#if showDetails}
@@ -190,6 +383,10 @@
         {/if}
       {/if}
     </section>
+
+    {#if viewerNotice}
+      <aside class="viewer-notice" aria-live="polite">{viewerNotice}</aside>
+    {/if}
   {/if}
 </div>
 
@@ -246,6 +443,7 @@
     display: grid;
     place-items: center;
     padding: 4.4rem 0 1.2rem;
+    touch-action: pan-y pinch-zoom;
   }
 
   .stage.with-info {
@@ -254,6 +452,11 @@
 
   .stage.with-info.with-details {
     padding-bottom: 10.5rem;
+  }
+
+  .stage.busy .media {
+    opacity: 0.78;
+    transform: scale(0.992);
   }
 
   .media-toggle {
@@ -272,6 +475,7 @@
     max-width: 100%;
     max-height: 82vh;
     object-fit: contain;
+    transition: opacity 160ms ease, transform 160ms ease;
   }
 
   .stage.with-info .media {
@@ -291,6 +495,16 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .media-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(18, 15, 13, 0.08), rgba(18, 15, 13, 0.18));
   }
 
   .top-bar.visible,
@@ -340,6 +554,11 @@
     border-color: transparent;
     background: #fff9f3;
     color: #1f1814;
+  }
+
+  .pill:disabled {
+    opacity: 0.56;
+    cursor: default;
   }
 
   .info-sheet {
@@ -407,6 +626,13 @@
     text-transform: uppercase;
   }
 
+  .swipe-copy {
+    color: rgba(255, 249, 243, 0.72);
+    font-size: 0.76rem;
+    line-height: 1.2;
+    text-align: right;
+  }
+
   .details {
     display: grid;
     gap: 0.55rem;
@@ -444,6 +670,24 @@
     text-align: left;
   }
 
+  .viewer-notice {
+    position: fixed;
+    left: 50%;
+    bottom: calc(5.6rem + env(safe-area-inset-bottom, 0px));
+    z-index: 4;
+    transform: translateX(-50%);
+    max-width: min(22rem, calc(100vw - 2rem));
+    padding: 0.72rem 0.9rem;
+    border: 1px solid rgba(255, 249, 243, 0.14);
+    border-radius: 999px;
+    background: rgba(22, 17, 13, 0.86);
+    color: #fff9f3;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    text-align: center;
+    backdrop-filter: blur(18px);
+  }
+
   .center-state {
     min-height: 100vh;
     display: grid;
@@ -465,6 +709,12 @@
     border: 4px solid rgba(255, 249, 243, 0.18);
     border-top-color: #fff9f3;
     animation: spin 1s linear infinite;
+  }
+
+  .spinner.small {
+    width: 2rem;
+    height: 2rem;
+    border-width: 3px;
   }
 
   @keyframes spin {
