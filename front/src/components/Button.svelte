@@ -9,30 +9,30 @@
     export let size = 'medium'; // small, medium, large
 </script>
 
-<div 
-    class="btn-container {primary ? 'primary' : 'secondary'} {size}"
-    on:click={(event) => { 
-        if (to) {
-            window.location.href = '/' + to;
-        } else {
-            // Forward the click event to the parent component
-            dispatch('click', event);
-        }
-    }}
-    in:fly={{ y: 20, duration: 300 }}
->
-    {#if to}
-        <a href="/{to}">
-            <span class="btn-text">{text}</span>
-        </a>
-    {:else}
+{#if to}
+    <a
+        class="btn-container {primary ? 'primary' : 'secondary'} {size}"
+        href="/{to}"
+        in:fly={{ y: 20, duration: 300 }}
+    >
         <span class="btn-text">{text}</span>
-    {/if}
-</div>
+    </a>
+{:else}
+    <button
+        class="btn-container {primary ? 'primary' : 'secondary'} {size}"
+        type="button"
+        on:click={(event) => {
+            dispatch('click', event);
+        }}
+        in:fly={{ y: 20, duration: 300 }}
+    >
+        <span class="btn-text">{text}</span>
+    </button>
+{/if}
 
 <style>
     .btn-container {
-        display: flex;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
         padding: 0;
@@ -47,6 +47,8 @@
         box-shadow: 0 3px 10px rgba(0,0,0,0.15);
         position: relative;
         overflow: hidden;
+        border: none;
+        text-decoration: none;
     }
 
     .btn-container::after {
@@ -100,14 +102,9 @@
         font-weight: 700;
     }
 
-    a {
-        text-decoration: none;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        height: 100%;
+    .btn-container:focus-visible {
+        outline: 3px solid rgba(255, 255, 255, 0.8);
+        outline-offset: 3px;
     }
 
     .btn-text {
