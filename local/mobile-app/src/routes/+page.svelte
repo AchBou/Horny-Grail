@@ -84,6 +84,11 @@
       : finishedUploadCount > 0
         ? `${finishedUploadCount} saved`
         : 'Ready';
+  $: recentUploads = uploadItems
+    .filter((item) => item.previewUrl)
+    .slice(-4)
+    .reverse();
+  $: homePreviewItems = recentUploads.length > 0 ? recentUploads : browseItems.slice(0, 4);
 
   function nextLocalId() {
     return `upload-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
@@ -205,7 +210,7 @@
 
   function browseSummary() {
     if (browseLoading) {
-      return 'Loading your next mix';
+      return 'Loading your collection';
     }
 
     if (browseItems.length === 0) {
@@ -213,6 +218,22 @@
     }
 
     return `${browseItems.length} item${browseItems.length === 1 ? '' : 's'} in view`;
+  }
+
+  function homeSummary() {
+    if (activeUploadCount > 0) {
+      return `${activeUploadCount} file${activeUploadCount === 1 ? '' : 's'} saving now`;
+    }
+
+    if (finishedUploadCount > 0) {
+      return `${finishedUploadCount} file${finishedUploadCount === 1 ? '' : 's'} saved recently`;
+    }
+
+    if (hasLoadedBrowse && browseItems.length > 0) {
+      return `${browseItems.length} saved item${browseItems.length === 1 ? '' : 's'} ready to browse`;
+    }
+
+    return 'Browse when you want, add when you need to.';
   }
 
   function outcomeText(outcome) {
@@ -473,20 +494,17 @@
 
 <div class="page">
   <header class="app-bar">
-    <div>
+    <div class="app-bar-copy">
       <p class="kicker">Private Vault</p>
-      <h1>{homeMode === 'browse' ? 'Browse Grail' : homeMode === 'upload' ? 'Upload Media' : 'HornyGrail'}</h1>
+      <h1>{homeMode === 'browse' ? 'Collection' : homeMode === 'upload' ? 'Add Media' : 'HornyGrail'}</h1>
     </div>
+
     {#if homeMode === 'home'}
-      <span class="app-bar-note">Choose a path</span>
-    {:else if homeMode === 'browse'}
-      <div class="app-bar-actions">
-        <button class="round-button" type="button" aria-label="Back to home" on:click={goHome}>
-          Home
-        </button>
-      </div>
+      <button class="icon-button" type="button" aria-label="Open upload" on:click={openUpload}>
+        Add
+      </button>
     {:else}
-      <button class="round-button" type="button" aria-label="Back to home" on:click={goHome}>
+      <button class="soft-button" type="button" aria-label="Back to home" on:click={goHome}>
         Home
       </button>
     {/if}
@@ -494,71 +512,112 @@
 
   <main class="shell">
     {#if homeMode === 'home'}
-      <section class="chooser-hero">
-        <div class="chooser-copy">
-          <p class="feature-label">Private vault</p>
-          <h2>What do you want to do?</h2>
-          <p>Browse your collection or add something new.</p>
-          <div class="chooser-pills" aria-label="App modes">
-            <span>Browse on demand</span>
-            <span>Hash-safe uploads</span>
-            <span>Native WebM covers</span>
-          </div>
+      <section class="home-panel">
+        <div class="home-copy">
+          <h2>Your private collection, without the clutter.</h2>
+          <p>{homeSummary()}</p>
         </div>
+
+        <div class="home-actions">
+          <button class="primary-button" type="button" on:click={openBrowse}>
+            Browse
+          </button>
+          <button class="secondary-button" type="button" on:click={openUpload}>
+            Add Media
+          </button>
+        </div>
+
         {#if uploadItems.length > 0}
-          <div class="resume-banner">
-            <span>{uploadSummary}</span>
-            <button class="resume-button" type="button" on:click={openUpload}>Resume queue</button>
-          </div>
+          <button class="queue-banner" type="button" on:click={openUpload}>
+            <span class="queue-banner-copy">
+              <span class="queue-banner-label">Upload queue</span>
+              <strong>{uploadSummary}</strong>
+            </span>
+            <span class="queue-banner-meter">{uploadQueueProgress}%</span>
+          </button>
         {/if}
       </section>
 
-      <section class="path-grid">
-        <button class="path-card browse-path" type="button" on:click={openBrowse}>
-          <span class="path-kicker">Browse</span>
-          <strong>Browse Grail</strong>
-          <p>See what is already in your vault.</p>
-          <span class="path-meta">Shuffle feed / Fullscreen detail view</span>
-        </button>
+      <section class="preview-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Quick Start</p>
+            <h3>{homePreviewItems.length > 0 ? 'Recent preview' : 'Two simple paths'}</h3>
+          </div>
+          {#if hasLoadedBrowse && browseItems.length > 0}
+            <button class="plain-button" type="button" on:click={openBrowse}>Open</button>
+          {/if}
+        </div>
 
-        <button class="path-card upload-path" type="button" on:click={openUpload}>
-          <span class="path-kicker">Upload</span>
-          <strong>Upload Media</strong>
-          <p>Add photos or clips from your device.</p>
-          <span class="path-meta">Duplicate check / Repair-aware queue</span>
-        </button>
+        {#if homePreviewItems.length > 0}
+          <div class="preview-grid" aria-label="Preview items">
+            {#each homePreviewItems as item}
+              {#if item.localId}
+                <button class="preview-card" type="button" on:click={openUpload}>
+                  <img src={item.previewUrl} alt={item.name} />
+                </button>
+              {:else}
+                <a class="preview-card" href={item.detailUrl}>
+                  <img src={item.thumbnailUrl} alt={item.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'} loading="lazy" />
+                  {#if item.kind === 'video'}
+                    <span class="media-badge">Clip</span>
+                  {/if}
+                </a>
+              {/if}
+            {/each}
+          </div>
+        {:else}
+          <div class="starter-grid">
+            <button class="starter-card" type="button" on:click={openBrowse}>
+              <p class="eyebrow">Browse</p>
+              <strong>Open the vault</strong>
+              <span>Load a fresh mix only when you ask for it.</span>
+            </button>
+            <button class="starter-card" type="button" on:click={openUpload}>
+              <p class="eyebrow">Add</p>
+              <strong>Save new media</strong>
+              <span>Pick files and let the queue do the heavy lifting.</span>
+            </button>
+          </div>
+        {/if}
       </section>
     {/if}
 
     {#if homeMode === 'upload'}
-      <section class="feature-card">
-        <div class="feature-copy">
-          <p class="feature-label">Upload lane</p>
-          <h2>Pick media. The app handles the boring parts.</h2>
-          <p>Duplicates are skipped, incomplete assets are repaired, and WebM covers are generated on-device.</p>
-          <div class="type-strip" aria-label="Supported upload types">
-            <span>JPG</span>
-            <span>PNG</span>
-            <span>GIF</span>
-            <span>WEBP</span>
-            <span>WEBM</span>
+      <section class="upload-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Add Media</p>
+            <h2>Pick files and keep moving.</h2>
           </div>
         </div>
-        <div class="upload-cta">
-          {#if uploadItems.length > 0}
-            <div class="mini-stats" aria-label="Upload queue summary">
-              <span><strong>{finishedUploadCount}</strong> done</span>
-              <span><strong>{activeUploadCount}</strong> active</span>
-              <span><strong>{failedUploadCount}</strong> issues</span>
-            </div>
-          {/if}
+
+        <p class="upload-copy">The queue handles duplicates, cover generation, and retries in the background.</p>
+
+        <div class="type-strip" aria-label="Supported upload types">
+          <span>JPG</span>
+          <span>PNG</span>
+          <span>GIF</span>
+          <span>WEBP</span>
+          <span>WEBM</span>
+        </div>
+
+        <div class="upload-actions">
           <button class="primary-button" type="button" on:click={openPicker}>
-            Add Media
+            Choose Files
           </button>
           <button class="secondary-button" type="button" on:click={goHome}>
-            Back to Home
+            Back
           </button>
         </div>
+
+        {#if uploadItems.length > 0}
+          <div class="mini-stats" aria-label="Upload queue summary">
+            <span><strong>{finishedUploadCount}</strong> done</span>
+            <span><strong>{activeUploadCount}</strong> active</span>
+            <span><strong>{failedUploadCount}</strong> issues</span>
+          </div>
+        {/if}
       </section>
 
       {#if uploadItems.length > 0}
@@ -605,7 +664,7 @@
                       <p class="message error-text">{item.error}</p>
                     {/if}
 
-                    <div class="upload-actions">
+                    <div class="upload-card-actions">
                       {#if canCancel(item)}
                         <button class="text-button" type="button" on:click={() => cancelUpload(item.localId)}>Cancel</button>
                       {/if}
@@ -627,31 +686,27 @@
     {/if}
 
     {#if homeMode === 'browse'}
-      <section class="browse-hero">
+      <section class="browse-top">
         <div>
-          <p class="feature-label">Browse mode</p>
-          <h2>Your Grail</h2>
-          <p>{browseSummary()}</p>
+          <p class="eyebrow">Browse</p>
+          <h2>Your collection</h2>
+          <p class="section-copy">{browseSummary()}</p>
         </div>
-        <div class="browse-hero-actions">
-          <button class="secondary-button" type="button" on:click={() => { openUpload(); openPicker(); }}>
-            Add Media
+
+        <div class="browse-actions">
+          <button class="toggle-chip active" type="button" aria-pressed="true">
+            Shuffle
+          </button>
+          <button class="soft-button" type="button" on:click={retryBrowse}>
+            Refresh
           </button>
         </div>
       </section>
 
-      <section class="gallery-heading">
-        <div>
-          <p class="kicker">Shuffle</p>
-          <h2>Your Grail</h2>
-        </div>
-        <button class="link-button" type="button" on:click={retryBrowse}>New mix</button>
-      </section>
-
       {#if browseLoading}
         <section class="gallery-grid skeleton-grid" aria-label="Loading gallery">
-          {#each Array(8) as _, index}
-            <div class={`skeleton-card card-${index % 5}`}></div>
+          {#each Array(8) as _}
+            <div class="skeleton-card"></div>
           {/each}
         </section>
       {:else if browseError}
@@ -664,12 +719,14 @@
         <section class="empty-state">
           <h2>Your Grail is empty.</h2>
           <p>Add a few files from your phone and they will appear here.</p>
-          <button class="primary-button" type="button" on:click={openPicker}>Add Media</button>
+          <button class="primary-button" type="button" on:click={() => { openUpload(); openPicker(); }}>
+            Add Media
+          </button>
         </section>
       {:else}
         <section class="gallery-grid" aria-label="Randomized gallery">
-          {#each browseItems as item, index (item.id)}
-            <a class={`gallery-card card-${index % 5}`} href={item.detailUrl}>
+          {#each browseItems as item (item.id)}
+            <a class="gallery-card" href={item.detailUrl}>
               <img src={item.thumbnailUrl} alt={item.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'} loading="lazy" />
               {#if item.kind === 'video'}
                 <span class="media-badge">Clip</span>
@@ -681,7 +738,7 @@
         {#if browseLoadingMore}
           <p class="footer-note">Loading more...</p>
         {:else if !browseHasMore}
-          <p class="footer-note">End of this shuffle.</p>
+          <p class="footer-note">End of this mix.</p>
         {/if}
 
         <div bind:this={browseSentinel} class="scroll-sentinel" aria-hidden="true"></div>
@@ -691,7 +748,7 @@
 
   {#if homeMode === 'browse'}
     <button class="floating-add" type="button" aria-label="Add media" on:click={() => { openUpload(); openPicker(); }}>
-      +
+      Add
     </button>
   {/if}
 
@@ -708,23 +765,26 @@
 <style>
   :global(html) {
     min-height: 100%;
-    background: #f4eadc;
+    background: #f3eee6;
   }
 
   :global(:root) {
-    --bg-base: #f4eadc;
-    --bg-panel: #fff8f0;
-    --bg-panel-soft: #fffaf5;
-    --bg-panel-strong: #f8efe4;
-    --text-strong: #25170f;
-    --text-body: #684d3b;
-    --text-muted: #8e654d;
-    --stroke-soft: rgba(68, 42, 27, 0.1);
-    --stroke-strong: rgba(68, 42, 27, 0.16);
-    --shadow-soft: 0 14px 30px rgba(68, 42, 27, 0.08);
-    --shadow-panel: 0 20px 44px rgba(68, 42, 27, 0.1);
-    --accent-warm: #d95f1f;
-    --accent-cool: #0f766e;
+    --bg-base: #f3eee6;
+    --bg-surface: rgba(255, 255, 255, 0.68);
+    --bg-surface-strong: #fffdf9;
+    --bg-tint: rgba(255, 255, 255, 0.46);
+    --text-strong: #221813;
+    --text-body: #65574c;
+    --text-muted: #93867b;
+    --stroke-soft: rgba(40, 29, 22, 0.07);
+    --stroke-strong: rgba(40, 29, 22, 0.12);
+    --shadow-soft: 0 8px 24px rgba(40, 29, 22, 0.045);
+    --shadow-panel: 0 14px 32px rgba(40, 29, 22, 0.06);
+    --accent: #1d7a6d;
+    --accent-strong: #17110d;
+    --accent-warm: #d5662a;
+    --font-ui: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    --font-display: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
   }
 
   :global(body) {
@@ -732,12 +792,39 @@
     min-height: 100dvh;
     background: var(--bg-base);
     color: var(--text-strong);
-    font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+    font-family: var(--font-ui);
     text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   :global(*) {
     box-sizing: border-box;
+  }
+
+  :global(a),
+  :global(button),
+  :global(input),
+  :global(select),
+  :global(textarea) {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :global(a:focus),
+  :global(button:focus),
+  :global(input:focus),
+  :global(select:focus),
+  :global(textarea:focus) {
+    outline: none;
+  }
+
+  :global(a:focus-visible),
+  :global(button:focus-visible),
+  :global(input:focus-visible),
+  :global(select:focus-visible),
+  :global(textarea:focus-visible) {
+    outline: 2px solid rgba(29, 122, 109, 0.8);
+    outline-offset: 2px;
   }
 
   .page {
@@ -745,18 +832,10 @@
     isolation: isolate;
     min-height: 100dvh;
     padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
-  }
-
-  .page::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
     background:
-      radial-gradient(circle at 15% 0%, rgba(255, 127, 80, 0.26), transparent 30%),
-      radial-gradient(circle at 88% 12%, rgba(13, 148, 136, 0.24), transparent 28%),
-      linear-gradient(145deg, #fff4e8 0%, var(--bg-base) 45%, #eadcca 100%);
+      radial-gradient(circle at 12% 0%, rgba(213, 102, 42, 0.12), transparent 28%),
+      radial-gradient(circle at 90% 10%, rgba(29, 122, 109, 0.14), transparent 24%),
+      linear-gradient(180deg, #f7f2ea 0%, #f3eee6 42%, #efe8de 100%);
   }
 
   .app-bar,
@@ -768,76 +847,96 @@
   .app-bar {
     position: sticky;
     top: 0;
-    z-index: 4;
+    z-index: 5;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
-    padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem 1rem;
-    background: var(--bg-panel-strong);
-    color: var(--text-strong);
-    border-bottom: 1px solid var(--stroke-soft);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+    padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem;
+    backdrop-filter: blur(14px);
+    background: rgba(243, 238, 230, 0.72);
+    border-bottom: 1px solid rgba(40, 29, 22, 0.05);
   }
 
-  .app-bar-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-  }
-
-  .app-bar-note {
-    color: var(--text-body);
-    font-size: 0.82rem;
-    font-weight: 800;
+  .app-bar-copy {
+    min-width: 0;
   }
 
   .shell {
-    padding: 0 1rem 2rem;
+    display: grid;
+    gap: 0.85rem;
+    padding: 0 1rem 1.75rem;
   }
 
   h1,
   h2,
   h3,
-  p {
+  p,
+  strong {
     margin: 0;
   }
 
   h1 {
-    font-size: clamp(2rem, 10vw, 4rem);
-    line-height: 0.88;
-    letter-spacing: -0.08em;
-    color: var(--text-strong);
+    font-size: clamp(1.85rem, 9vw, 3.3rem);
+    line-height: 0.94;
+    letter-spacing: -0.07em;
+    font-family: var(--font-display);
+    font-weight: 700;
   }
 
   h2 {
-    font-size: clamp(1.45rem, 7vw, 2.4rem);
-    line-height: 0.98;
-    letter-spacing: -0.045em;
-    color: var(--text-strong);
+    font-size: clamp(1.45rem, 6.5vw, 2.05rem);
+    line-height: 1;
+    letter-spacing: -0.05em;
+    font-family: var(--font-display);
+    font-weight: 700;
   }
 
   h3 {
-    max-width: 12rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.95rem;
-    color: #fff7ed;
+    font-size: 1rem;
+    line-height: 1.08;
+    letter-spacing: -0.025em;
+    font-family: var(--font-ui);
+    font-weight: 700;
   }
 
   .kicker,
-  .feature-label {
-    margin-bottom: 0.35rem;
-    color: #9a4c24;
-    font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.13em;
+  .eyebrow {
+    color: #9a5d3a;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
   }
 
-  .round-button,
-  .link-button,
+  .kicker {
+    margin-bottom: 0.28rem;
+  }
+
+  .eyebrow {
+    margin-bottom: 0.45rem;
+  }
+
+  .section-copy,
+  .home-copy p,
+  .upload-copy,
+  .footer-note,
+  .empty-state p {
+    color: var(--text-body);
+    line-height: 1.38;
+    font-size: 0.98rem;
+  }
+
+  .hidden-input {
+    display: none;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .soft-button,
+  .icon-button,
+  .toggle-chip,
+  .plain-button,
   .text-button {
     border: 0;
     background: transparent;
@@ -846,252 +945,226 @@
     cursor: pointer;
   }
 
-  .round-button,
+  .primary-button,
+  .secondary-button,
+  .soft-button,
+  .icon-button {
+    min-height: 3rem;
+    border-radius: 999px;
+    padding: 0.82rem 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+
   .primary-button {
-    min-height: 3.25rem;
-    border: 0;
-    border-radius: 999px;
-    padding: 0.95rem 1.2rem;
-    background: #23160f;
-    color: #fff7ed;
-    font-size: 0.92rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    box-shadow: 0 12px 26px rgba(35, 22, 15, 0.18);
-    cursor: pointer;
+    background: var(--accent-strong);
+    color: #fffaf5;
+    box-shadow: 0 10px 22px rgba(23, 17, 13, 0.13);
   }
 
-  .round-button {
-    background: #fff8f0;
-    color: #4b3122;
-    border: 1px solid var(--stroke-soft);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  }
-
-  .secondary-button {
-    min-height: 3.1rem;
+  .secondary-button,
+  .soft-button,
+  .icon-button {
     border: 1px solid var(--stroke-strong);
-    border-radius: 999px;
-    padding: 0.88rem 1.15rem;
-    background: var(--bg-panel);
-    color: #342118;
-    font: inherit;
-    font-weight: 800;
-    cursor: pointer;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.54);
+    color: #33261f;
   }
 
-  .hidden-input {
-    display: none;
+  .icon-button {
+    min-width: 3.2rem;
+    padding-inline: 0.95rem;
   }
 
-  .feature-card {
+  .plain-button {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .home-panel,
+  .preview-panel,
+  .upload-panel {
     display: grid;
-    gap: 1.1rem;
-    margin-top: 0.35rem;
-    padding: 1.2rem;
+    gap: 0.9rem;
+    padding: 1rem;
     border: 1px solid var(--stroke-soft);
-    border-radius: 1.8rem;
-    background:
-      linear-gradient(135deg, #fffaf4, #fff2e4),
-      radial-gradient(circle at 90% 0%, rgba(217, 95, 31, 0.1), transparent 38%);
-    box-shadow: var(--shadow-panel);
+    border-radius: 1.35rem;
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(14px);
   }
 
-  .chooser-hero {
+  .home-panel {
+    margin-top: 0.2rem;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.66)),
+      radial-gradient(circle at 100% 0%, rgba(29, 122, 109, 0.08), transparent 34%);
+  }
+
+  .home-copy {
     display: grid;
-    gap: 1rem;
-    margin-top: 0.35rem;
-    padding: 1.2rem;
-    border: 1px solid var(--stroke-soft);
-    border-radius: 1.8rem;
-    background:
-      linear-gradient(135deg, #fffaf4, #fff3e7),
-      radial-gradient(circle at 85% 0%, rgba(217, 95, 31, 0.12), transparent 38%);
-    box-shadow: var(--shadow-panel);
+    gap: 0.5rem;
   }
 
-  .chooser-copy {
-    min-width: 0;
+  .home-actions,
+  .upload-actions {
+    display: grid;
+    gap: 0.65rem;
   }
 
-  .chooser-hero p:not(.feature-label) {
-    margin-top: 0.65rem;
-    color: var(--text-body);
-    line-height: 1.45;
-  }
-
-  .chooser-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    margin-top: 1rem;
-  }
-
-  .chooser-pills span {
-    padding: 0.42rem 0.72rem;
-    border: 1px solid rgba(154, 76, 36, 0.14);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.82);
-    color: var(--text-muted);
-    font-size: 0.72rem;
-    font-weight: 800;
-  }
-
-  .resume-banner {
+  .queue-banner {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.8rem;
-    padding: 0.85rem 0.95rem;
-    border-radius: 1rem;
-    background: #fffdf9;
-    color: #4b3122;
-    font-weight: 800;
-    border: 1px solid rgba(68, 42, 27, 0.08);
-  }
-
-  .resume-button {
-    min-height: 2.6rem;
-    border: 0;
-    border-radius: 999px;
-    padding: 0.72rem 0.95rem;
-    background: #23160f;
-    color: #fff7ed;
-    font: inherit;
-    font-weight: 800;
-    cursor: pointer;
-  }
-
-  .path-grid {
-    display: grid;
-    gap: 0.9rem;
-    margin-top: 1rem;
-  }
-
-  .path-card {
-    display: grid;
-    gap: 0.45rem;
+    gap: 0.85rem;
     width: 100%;
-    padding: 1.15rem;
-    border: 1px solid rgba(68, 42, 27, 0.1);
-    border-radius: 1.6rem;
-    text-align: left;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid rgba(29, 122, 109, 0.12);
+    border-radius: 1rem;
+    background: rgba(29, 122, 109, 0.08);
+    color: inherit;
     font: inherit;
+    text-align: left;
     cursor: pointer;
+  }
+
+  .queue-banner-copy {
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .queue-banner-label,
+  .dock-label {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  .queue-banner-meter {
+    min-width: 3rem;
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .section-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+
+  .preview-grid,
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .preview-card,
+  .starter-card,
+  .gallery-card,
+  .skeleton-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid var(--stroke-soft);
+    background: var(--bg-surface-strong);
     box-shadow: var(--shadow-soft);
   }
 
-  .browse-path {
-    background:
-      linear-gradient(135deg, #f0fcf8, #ffffff),
-      radial-gradient(circle at 100% 0%, rgba(13, 148, 136, 0.12), transparent 35%);
+  .preview-card {
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    color: inherit;
+    text-decoration: none;
   }
 
-  .upload-path {
-    background:
-      linear-gradient(135deg, #fff7ef, #ffffff),
-      radial-gradient(circle at 100% 0%, rgba(217, 95, 31, 0.12), transparent 35%);
+  .preview-card img,
+  .gallery-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
-  .path-kicker {
-    color: #a34d22;
-    font-size: 0.72rem;
-    font-weight: 900;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+  .starter-grid {
+    display: grid;
+    gap: 0.7rem;
   }
 
-  .path-card strong {
-    font-size: 1.35rem;
-    line-height: 1;
-    letter-spacing: -0.04em;
-    color: #25170f;
+  .starter-card {
+    display: grid;
+    gap: 0.38rem;
+    width: 100%;
+    padding: 0.9rem;
+    text-align: left;
+    font: inherit;
+    background: rgba(255, 255, 255, 0.72);
   }
 
-  .path-card p {
+  .starter-card strong {
+    font-size: 1.02rem;
+    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+
+  .starter-card span {
     color: var(--text-body);
-    line-height: 1.45;
-  }
-
-  .path-meta {
-    color: var(--text-muted);
-    font-size: 0.74rem;
-    font-weight: 800;
-  }
-
-  .feature-copy {
-    min-width: 0;
-  }
-
-  .feature-card p:not(.feature-label) {
-    max-width: 28rem;
-    margin-top: 0.65rem;
-    color: var(--text-body);
-    line-height: 1.45;
+    line-height: 1.34;
+    font-size: 0.96rem;
   }
 
   .type-strip,
-  .mini-stats {
+  .mini-stats,
+  .browse-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
   }
 
-  .type-strip {
-    margin-top: 1rem;
-  }
-
   .type-strip span,
-  .mini-stats span {
+  .mini-stats span,
+  .toggle-chip {
     border-radius: 999px;
-    padding: 0.42rem 0.62rem;
-    background: rgba(35, 22, 15, 0.06);
-    color: #5f3d2a;
-    font-size: 0.72rem;
-    font-weight: 900;
-    letter-spacing: 0.04em;
+    padding: 0.42rem 0.68rem;
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid var(--stroke-soft);
+    font-size: 0.7rem;
+    font-weight: 700;
   }
 
-  .upload-cta {
-    display: grid;
-    gap: 0.8rem;
-  }
-
-  .upload-cta .primary-button {
-    width: 100%;
-  }
-
-  .mini-stats {
-    justify-content: stretch;
+  .toggle-chip.active {
+    background: rgba(29, 122, 109, 0.12);
+    border-color: rgba(29, 122, 109, 0.2);
+    color: var(--accent);
   }
 
   .mini-stats span {
-    flex: 1 1 5rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.28rem;
-    background: #fffaf4;
-    letter-spacing: 0;
-    border: 1px solid rgba(68, 42, 27, 0.08);
+    color: #4a3b31;
   }
 
   .mini-stats strong {
-    font-size: 1rem;
+    font-size: 0.94rem;
+    font-weight: 700;
   }
 
   .upload-dock {
     position: sticky;
-    top: calc(5.25rem + env(safe-area-inset-top, 0px));
-    z-index: 3;
-    margin-top: 1rem;
-    border-radius: 1.35rem;
-    background: rgba(35, 22, 15, 0.94);
-    color: #fff7ed;
+    top: calc(4.85rem + env(safe-area-inset-top, 0px));
+    z-index: 4;
+    border-radius: 1.15rem;
+    background: rgba(26, 20, 16, 0.94);
+    color: #fff9f3;
     overflow: hidden;
-    box-shadow: 0 16px 36px rgba(35, 22, 15, 0.18);
-    border: 1px solid rgba(255, 247, 237, 0.06);
+    box-shadow: 0 16px 36px rgba(22, 17, 13, 0.18);
   }
 
   .dock-summary {
@@ -1100,7 +1173,7 @@
     align-items: center;
     justify-content: space-between;
     border: 0;
-    padding: 1rem;
+    padding: 0.9rem;
     background: transparent;
     color: inherit;
     font: inherit;
@@ -1113,40 +1186,33 @@
     text-align: left;
   }
 
-  .dock-label {
-    color: rgba(255, 247, 237, 0.72);
-    font-size: 0.78rem;
-    font-weight: 800;
-  }
-
   .dock-progress {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 3.2rem;
-    min-height: 2.15rem;
+    min-width: 3rem;
+    min-height: 2rem;
     border-radius: 999px;
-    background: rgba(255, 247, 237, 0.12);
-    color: #fff7ed;
-    font-size: 0.82rem;
-    font-weight: 900;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 0.78rem;
+    font-weight: 700;
   }
 
   .queue-meter,
   .item-meter {
     overflow: hidden;
-    background: rgba(255, 247, 237, 0.12);
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .queue-meter {
-    height: 0.28rem;
-    margin: 0 1rem 0.9rem;
+    height: 0.24rem;
+    margin: 0 0.9rem 0.8rem;
     border-radius: 999px;
   }
 
   .item-meter {
-    height: 0.22rem;
-    margin-top: 0.52rem;
+    height: 0.2rem;
+    margin-top: 0.45rem;
     border-radius: 999px;
   }
 
@@ -1155,31 +1221,31 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #f2b35e, #52d39c);
+    background: linear-gradient(90deg, #edb867, #5cc8a0);
     transition: width 180ms ease;
   }
 
   .upload-list {
     display: grid;
-    gap: 0.65rem;
-    padding: 0 0.75rem 0.85rem;
+    gap: 0.55rem;
+    padding: 0 0.7rem 0.8rem;
   }
 
   .upload-card {
     display: grid;
     grid-template-columns: 4.25rem minmax(0, 1fr);
-    gap: 0.75rem;
-    padding: 0.65rem;
-    border-radius: 1rem;
-    background: rgba(255, 255, 255, 0.1);
+    gap: 0.65rem;
+    padding: 0.58rem;
+    border-radius: 0.95rem;
+    background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .upload-thumb {
-    width: 4.25rem;
-    height: 4.25rem;
+    width: 4rem;
+    height: 4rem;
     overflow: hidden;
-    border-radius: 0.85rem;
+    border-radius: 0.75rem;
     background: rgba(255, 255, 255, 0.1);
   }
 
@@ -1199,30 +1265,51 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.6rem;
+  }
+
+  .upload-line h3 {
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #fff9f3;
+    font-family: var(--font-ui);
+    font-weight: 700;
   }
 
   .upload-line p,
-  .message {
-    color: rgba(255, 247, 237, 0.7);
-    font-size: 0.82rem;
-    line-height: 1.35;
+  .message,
+  .text-button {
+    color: rgba(255, 249, 243, 0.72);
+    font-size: 0.78rem;
+    line-height: 1.3;
   }
 
   .message {
     margin-top: 0.35rem;
   }
 
+  .text-button {
+    padding: 0;
+    text-decoration: none;
+  }
+
+  .text-button.strong {
+    color: #fff9f3;
+    font-weight: 700;
+  }
+
   .success {
-    color: #9ee6c9;
+    color: #a4e4cd;
   }
 
   .warning {
-    color: #ffd18a;
+    color: #ffd395;
   }
 
   .error-text {
-    color: #ffb4a5;
+    color: #ffbcaf;
   }
 
   .status-dot {
@@ -1230,129 +1317,69 @@
     height: 0.72rem;
     margin-top: 0.28rem;
     border-radius: 999px;
-    background: #f2b35e;
-    box-shadow: 0 0 0 4px rgba(242, 179, 94, 0.14);
+    background: #edb867;
+    box-shadow: 0 0 0 4px rgba(237, 184, 103, 0.14);
   }
 
   .status-dot.complete,
   .status-dot.duplicate {
-    background: #52d39c;
-    box-shadow: 0 0 0 4px rgba(82, 211, 156, 0.16);
+    background: #5cc8a0;
+    box-shadow: 0 0 0 4px rgba(92, 200, 160, 0.16);
   }
 
   .status-dot.failed,
   .status-dot.cancelled {
-    background: #ff765f;
-    box-shadow: 0 0 0 4px rgba(255, 118, 95, 0.16);
+    background: #ff7c66;
+    box-shadow: 0 0 0 4px rgba(255, 124, 102, 0.16);
   }
 
-  .upload-actions {
+  .upload-card-actions {
     display: flex;
-    gap: 0.85rem;
-    margin-top: 0.5rem;
+    gap: 0.75rem;
+    margin-top: 0.45rem;
     flex-wrap: wrap;
   }
 
-  .text-button {
-    padding: 0;
-    color: rgba(255, 247, 237, 0.72);
-    font-size: 0.82rem;
-    text-decoration: none;
-  }
-
-  .text-button.strong {
-    color: #fff7ed;
-    font-weight: 800;
-  }
-
-  .gallery-heading {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 1rem;
-    margin: 1rem 0 0.8rem;
-  }
-
-  .link-button {
-    color: var(--accent-cool);
-    font-weight: 800;
-  }
-
-  .browse-hero {
+  .browse-top {
     display: grid;
-    gap: 1rem;
-    margin-top: 0.35rem;
-    padding: 1.2rem;
-    border: 1px solid var(--stroke-soft);
-    border-radius: 1.8rem;
-    background:
-      linear-gradient(135deg, #f2fbf8, #fffdfa),
-      radial-gradient(circle at 100% 0%, rgba(13, 148, 136, 0.1), transparent 34%);
-    box-shadow: var(--shadow-soft);
-  }
-
-  .browse-hero p:not(.feature-label) {
-    margin-top: 0.65rem;
-    color: var(--text-body);
-    line-height: 1.45;
-  }
-
-  .browse-hero-actions {
-    display: flex;
-    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.1rem;
   }
 
   .gallery-grid {
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-flow: dense;
-    gap: 0.72rem;
   }
 
   .gallery-card,
   .skeleton-card {
-    position: relative;
-    min-height: 10rem;
-    overflow: hidden;
-    border-radius: 1.1rem;
-    background: rgba(255, 255, 255, 0.72);
-    box-shadow: var(--shadow-soft);
-    border: 1px solid rgba(68, 42, 27, 0.08);
+    aspect-ratio: 0.84 / 1;
   }
 
-  .gallery-card img {
-    width: 100%;
-    height: 100%;
-    min-height: inherit;
-    object-fit: cover;
-    display: block;
-    transition: transform 180ms ease;
+  .gallery-card {
+    text-decoration: none;
   }
 
-  .gallery-card:active img {
-    transform: scale(0.98);
+  .gallery-card:active img,
+  .preview-card:active img {
+    transform: scale(0.985);
   }
 
-  .card-1,
-  .card-4 {
-    min-height: 13.5rem;
-  }
-
-  .card-2 {
-    grid-row: span 2;
-    min-height: 21rem;
+  .gallery-card img,
+  .preview-card img {
+    transition: transform 160ms ease;
   }
 
   .media-badge {
     position: absolute;
-    top: 0.65rem;
-    right: 0.65rem;
+    top: 0.5rem;
+    right: 0.5rem;
     border-radius: 999px;
-    padding: 0.32rem 0.55rem;
-    background: rgba(35, 22, 15, 0.92);
-    color: #fff7ed;
-    font-size: 0.72rem;
-    font-weight: 800;
+    padding: 0.28rem 0.5rem;
+    background: rgba(23, 17, 13, 0.88);
+    color: #fff9f3;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
   }
 
   .skeleton-grid {
@@ -1360,7 +1387,7 @@
   }
 
   .skeleton-card {
-    background: linear-gradient(110deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.35));
+    background: linear-gradient(110deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.4));
     background-size: 220% 100%;
     animation: shimmer 1.4s linear infinite;
   }
@@ -1374,22 +1401,16 @@
   .empty-state {
     display: grid;
     place-items: center;
-    gap: 0.8rem;
-    min-height: 16rem;
-    padding: 2rem 1rem;
-    border-radius: 1.5rem;
-    background: rgba(255, 255, 255, 0.82);
+    gap: 0.7rem;
+    min-height: 14rem;
+    padding: 1.7rem 1rem;
+    border-radius: 1.25rem;
+    background: rgba(255, 255, 255, 0.7);
     text-align: center;
-    border: 1px solid rgba(68, 42, 27, 0.08);
-  }
-
-  .empty-state p,
-  .footer-note {
-    color: #684d3b;
+    border: 1px solid var(--stroke-soft);
   }
 
   .footer-note {
-    margin: 1.2rem 0;
     text-align: center;
   }
 
@@ -1402,56 +1423,71 @@
     position: fixed;
     right: 1rem;
     bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-    z-index: 5;
-    width: 4rem;
-    height: 4rem;
+    z-index: 6;
+    min-width: 3.9rem;
+    height: 3.7rem;
     border: 0;
     border-radius: 999px;
-    background: #d95f1f;
-    color: #fff7ed;
-    font-size: 2.1rem;
-    line-height: 1;
-    box-shadow: 0 18px 38px rgba(217, 95, 31, 0.36);
+    padding: 0 1rem;
+    background: var(--accent-warm);
+    color: #fff9f3;
+    font: inherit;
+    font-weight: 800;
+    box-shadow: 0 14px 28px rgba(213, 102, 42, 0.24);
     cursor: pointer;
   }
 
   @media (min-width: 720px) {
     .app-bar {
-      padding: calc(1.4rem + env(safe-area-inset-top, 0px)) 1.5rem 1.4rem;
+      padding: calc(1.1rem + env(safe-area-inset-top, 0px)) 1.5rem 0.9rem;
     }
 
     .shell {
-      padding: 0 1.5rem 3rem;
+      padding: 0 1.5rem 2.6rem;
     }
 
-    .feature-card {
+    .home-panel,
+    .preview-panel,
+    .upload-panel {
+      padding: 1.2rem;
+    }
+
+    .home-panel {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
-      padding: 1.5rem;
     }
 
-    .chooser-hero {
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: end;
-      padding: 1.5rem;
+    .home-actions {
+      min-width: 14rem;
     }
 
-    .browse-hero {
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: end;
-      padding: 1.5rem;
+    .queue-banner {
+      grid-column: 1 / -1;
     }
 
-    .upload-cta {
-      min-width: 15rem;
-    }
-
-    .path-grid {
+    .starter-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .preview-grid,
     .gallery-grid {
       grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .upload-panel {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+    }
+
+    .upload-copy,
+    .type-strip,
+    .mini-stats {
+      grid-column: 1 / -1;
+    }
+
+    .browse-top {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
     }
   }
 </style>

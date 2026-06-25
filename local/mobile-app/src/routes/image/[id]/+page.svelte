@@ -11,6 +11,7 @@
   let videoElement;
   let videoControlsEnabled = false;
   let showDetails = false;
+  let showChrome = true;
   let controller = null;
 
   function getRouteId() {
@@ -70,6 +71,8 @@
 
   async function toggleVideoPlaybackMode() {
     videoControlsEnabled = !videoControlsEnabled;
+    showChrome = true;
+    showDetails = false;
 
     if (!videoElement) {
       return;
@@ -92,6 +95,10 @@
     }
   }
 
+  function toggleChrome() {
+    showChrome = !showChrome;
+  }
+
   onMount(() => {
     loadMedia();
   });
@@ -107,13 +114,6 @@
 </svelte:head>
 
 <div class="viewer">
-  <nav class="top-bar" aria-label="Detail navigation">
-    <a class="pill" href="/">Back</a>
-    {#if media}
-      <a class="pill dark" href={media.fileUrl} target="_blank" rel="noreferrer">Original</a>
-    {/if}
-  </nav>
-
   {#if isLoading}
     <section class="center-state">
       <div class="spinner"></div>
@@ -123,10 +123,10 @@
     <section class="center-state">
       <h1>Could not open it.</h1>
       <p>{error}</p>
-      <button class="pill dark" type="button" on:click={loadMedia}>Try Again</button>
+      <button class="pill solid" type="button" on:click={loadMedia}>Try Again</button>
     </section>
   {:else if media}
-    <main class="stage">
+    <main class={`stage ${showChrome && !videoControlsEnabled ? 'with-info' : ''} ${showDetails ? 'with-details' : ''}`}>
       {#if media.kind === 'video'}
         <!-- svelte-ignore a11y_media_has_caption -->
         <video
@@ -144,23 +144,33 @@
       {:else}
         <img class="media" src={media.fileUrl} alt="Saved media" />
       {/if}
+
+      {#if media.kind !== 'video' || !videoControlsEnabled}
+        <button class="media-toggle" type="button" aria-label="Toggle viewer controls" on:click={toggleChrome}></button>
+      {/if}
     </main>
 
-    <section class="action-sheet">
-      <div>
-        <p class="eyebrow">{media.kind === 'video' ? 'Clip' : 'Image'}</p>
-        <h1>Saved in your Grail</h1>
-      </div>
-
-      <div class="actions">
+    <nav class={`top-bar ${showChrome ? 'visible' : ''}`} aria-label="Detail navigation">
+      <a class="pill" href="/">Back</a>
+      <div class="top-actions">
         {#if media.kind === 'video'}
-          <button class="pill dark" type="button" on:click={toggleVideoPlaybackMode}>
-            {videoControlsEnabled ? 'Mute Preview' : 'Sound + Controls'}
+          <button class="pill solid" type="button" on:click={toggleVideoPlaybackMode}>
+            {videoControlsEnabled ? 'Preview' : 'Sound'}
           </button>
         {/if}
         <button class="pill" type="button" on:click={() => showDetails = !showDetails}>
-          {showDetails ? 'Hide Details' : 'Details'}
+          {showDetails ? 'Hide info' : 'Info'}
         </button>
+        <a class="pill solid" href={media.fileUrl} target="_blank" rel="noreferrer">Original</a>
+      </div>
+    </nav>
+
+    <section class={`info-sheet ${showChrome && !videoControlsEnabled ? 'visible' : ''}`}>
+      <div class="info-row">
+        <div>
+          <p class="eyebrow">{media.kind === 'video' ? 'Clip ID' : 'Image ID'}</p>
+          <h1 class="item-id">{media.id}</h1>
+        </div>
       </div>
 
       {#if showDetails}
@@ -173,10 +183,6 @@
             <dt>Date</dt>
             <dd>{media.dateAdded || 'Unknown'}</dd>
           </div>
-          <div class="wide">
-            <dt>Hash</dt>
-            <dd>{media.id}</dd>
-          </div>
         </dl>
 
         {#if integrity?.repairRequired}
@@ -188,97 +194,184 @@
 </div>
 
 <style>
-  :global(body) {
-    margin: 0;
-    min-height: 100vh;
-    background: #17100c;
-    color: #fff7ed;
-    font-family: 'Trebuchet MS', 'Avenir Next', sans-serif;
+  :global(:root) {
+    --font-ui: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    --font-display: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
   }
 
   :global(*) {
     box-sizing: border-box;
   }
 
-  .viewer {
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at 20% 0%, rgba(217, 95, 31, 0.28), transparent 35%),
-      radial-gradient(circle at 92% 14%, rgba(13, 148, 136, 0.2), transparent 30%),
-      #17100c;
+  :global(a),
+  :global(button),
+  :global(input),
+  :global(select),
+  :global(textarea) {
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .top-bar {
+  :global(a:focus),
+  :global(button:focus),
+  :global(input:focus),
+  :global(select:focus),
+  :global(textarea:focus) {
+    outline: none;
+  }
+
+  :global(a:focus-visible),
+  :global(button:focus-visible),
+  :global(input:focus-visible),
+  :global(select:focus-visible),
+  :global(textarea:focus-visible) {
+    outline: 2px solid rgba(255, 199, 159, 0.88);
+    outline-offset: 2px;
+  }
+
+  .viewer {
+    min-height: 100vh;
+    color: #fff9f3;
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background:
+      radial-gradient(circle at 18% 0%, rgba(213, 102, 42, 0.18), transparent 32%),
+      radial-gradient(circle at 88% 12%, rgba(29, 122, 109, 0.16), transparent 28%),
+      #120f0d;
+  }
+
+  .stage {
+    position: relative;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 4.4rem 0 1.2rem;
+  }
+
+  .stage.with-info {
+    padding-bottom: 7rem;
+  }
+
+  .stage.with-info.with-details {
+    padding-bottom: 10.5rem;
+  }
+
+  .media-toggle {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .media {
+    display: block;
+    position: relative;
+    z-index: 0;
+    max-width: 100%;
+    max-height: 82vh;
+    object-fit: contain;
+  }
+
+  .stage.with-info .media {
+    max-height: calc(100dvh - 12rem);
+  }
+
+  .stage.with-info.with-details .media {
+    max-height: calc(100dvh - 15.5rem);
+  }
+
+  .top-bar,
+  .info-sheet {
     position: fixed;
-    top: 0;
     left: 0;
     right: 0;
     z-index: 3;
-    display: flex;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 1rem;
+    opacity: 0;
     pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease;
   }
 
-  .top-bar > * {
+  .top-bar.visible,
+  .info-sheet.visible {
+    opacity: 1;
     pointer-events: auto;
+  }
+
+  .top-bar {
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 0.9rem 0.9rem;
+    transform: translateY(-8px);
+  }
+
+  .top-bar.visible {
+    transform: translateY(0);
+  }
+
+  .top-actions {
+    display: flex;
+    gap: 0.5rem;
   }
 
   .pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 2.8rem;
-    border: 1px solid rgba(255, 247, 237, 0.2);
+    min-height: 2.55rem;
+    border: 1px solid rgba(255, 249, 243, 0.18);
     border-radius: 999px;
-    padding: 0.78rem 1rem;
-    background: rgba(255, 247, 237, 0.14);
-    color: #fff7ed;
+    padding: 0.7rem 0.9rem;
+    background: rgba(255, 249, 243, 0.1);
+    color: #fff9f3;
     font: inherit;
-    font-weight: 800;
+    font-weight: 700;
+    font-size: 0.88rem;
     text-decoration: none;
     backdrop-filter: blur(16px);
     cursor: pointer;
   }
 
-  .pill.dark {
+  .pill.solid {
     border-color: transparent;
-    background: #fff7ed;
-    color: #20140e;
+    background: #fff9f3;
+    color: #1f1814;
   }
 
-  .stage {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 5rem 0 12rem;
+  .info-sheet {
+    bottom: 0;
+    padding: 0 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    transform: translateY(8px);
   }
 
-  .media {
-    display: block;
-    max-width: 100%;
-    max-height: 78vh;
-    object-fit: contain;
-    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+  .info-sheet.visible {
+    transform: translateY(0);
   }
 
-  .action-sheet {
-    position: fixed;
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: 0.75rem;
-    z-index: 2;
-    display: grid;
-    gap: 1rem;
+  .info-sheet > * {
     max-width: 42rem;
     margin: 0 auto;
-    padding: 1rem;
-    border: 1px solid rgba(255, 247, 237, 0.12);
-    border-radius: 1.5rem;
-    background: rgba(32, 20, 14, 0.8);
-    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
-    backdrop-filter: blur(22px);
+  }
+
+  .info-row,
+  .details {
+    border: 1px solid rgba(255, 249, 243, 0.12);
+    background: rgba(22, 17, 13, 0.64);
+    backdrop-filter: blur(18px);
+  }
+
+  .info-row {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.82rem 0.9rem;
+    border-radius: 1.1rem;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
   }
 
   h1,
@@ -289,56 +382,66 @@
   }
 
   h1 {
-    font-size: clamp(1.65rem, 8vw, 3rem);
-    line-height: 0.95;
-    letter-spacing: -0.055em;
+    font-size: clamp(1.05rem, 5vw, 1.6rem);
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+
+  .item-id {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-family: var(--font-ui);
+    font-size: 0.88rem;
+    line-height: 1.22;
+    letter-spacing: 0.01em;
   }
 
   .eyebrow {
-    margin-bottom: 0.35rem;
-    color: #ffc38f;
-    font-size: 0.72rem;
-    font-weight: 900;
-    letter-spacing: 0.13em;
+    margin-bottom: 0.28rem;
+    color: #ffc79f;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-  }
-
-  .actions {
-    display: flex;
-    gap: 0.65rem;
-    flex-wrap: wrap;
   }
 
   .details {
     display: grid;
-    gap: 0.65rem;
-    color: rgba(255, 247, 237, 0.76);
+    gap: 0.55rem;
+    margin-top: 0.55rem;
+    padding: 0.8rem;
+    border-radius: 1rem;
+    color: rgba(255, 249, 243, 0.8);
   }
 
   .details div {
     min-width: 0;
-    padding: 0.75rem;
-    border-radius: 1rem;
-    background: rgba(255, 247, 237, 0.08);
   }
 
   .details dt {
-    margin-bottom: 0.25rem;
-    color: rgba(255, 195, 143, 0.88);
-    font-size: 0.72rem;
-    font-weight: 900;
-    letter-spacing: 0.1em;
+    margin-bottom: 0.2rem;
+    color: rgba(255, 199, 159, 0.9);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
   }
 
   .details dd {
     overflow-wrap: anywhere;
-    font-size: 0.84rem;
+    font-size: 0.8rem;
+    line-height: 1.28;
   }
 
   .repair {
+    max-width: 42rem;
+    margin: 0.55rem auto 0;
     color: #ffd18a;
-    font-weight: 800;
+    font-weight: 700;
+    font-size: 0.82rem;
+    text-align: left;
   }
 
   .center-state {
@@ -351,15 +454,16 @@
   }
 
   .center-state p {
-    color: rgba(255, 247, 237, 0.72);
+    color: rgba(255, 249, 243, 0.72);
+    font-size: 0.96rem;
   }
 
   .spinner {
     width: 2.8rem;
     height: 2.8rem;
     border-radius: 999px;
-    border: 4px solid rgba(255, 247, 237, 0.18);
-    border-top-color: #fff7ed;
+    border: 4px solid rgba(255, 249, 243, 0.18);
+    border-top-color: #fff9f3;
     animation: spin 1s linear infinite;
   }
 
@@ -370,21 +474,16 @@
   }
 
   @media (min-width: 720px) {
-    .action-sheet {
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      left: 1.5rem;
-      right: 1.5rem;
-      bottom: 1.5rem;
+    .top-bar {
+      padding-inline: 1.4rem;
+    }
+
+    .info-sheet {
+      padding-inline: 1.4rem;
     }
 
     .details {
-      grid-column: 1 / -1;
       grid-template-columns: 1fr 1fr;
-    }
-
-    .details .wide {
-      grid-column: 1 / -1;
     }
   }
 </style>
