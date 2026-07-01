@@ -78,6 +78,6 @@ Unauthenticated visitors are served `/access`. The form posts the shared code to
 
 ### Deep-link routing
 
-The app is deployed as a static SPA with a `200.html` fallback. The workflow also copies that fallback to `404.html` to support static-hosting error fallbacks.
+The app is deployed as a static SPA with a `200.html` fallback. The workflow also copies that fallback to `404.html`.
 
-CloudFront still needs to be configured so deep links such as `/browse` and `/image/<id>` resolve to the SPA shell instead of returning an origin error. If CloudFront is in front of the S3 bucket, configure custom error handling to serve `/200.html` for missing routes.
+In the protected CloudFront setup, SPA routes are handled by a CloudFront viewer-request rewrite for the frontend origin, so S3 website hosting is not required on the frontend bucket.
