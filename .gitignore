@@ -12,6 +12,8 @@
 samconfig.toml
 build/
 .env
+cloudfront-private-key.pem
+cloudfront-public-key.pem
 
 # Node.js
 node_modules/
