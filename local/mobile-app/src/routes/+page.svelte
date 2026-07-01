@@ -3,6 +3,7 @@
   import { fetchRandomBrowsePage, isAbortError } from '$lib/mobile/api.js';
   import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
+  import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
   const BROWSE_PAGE_SIZE = 24;
   const ACCEPTED_TYPES = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.webm,image/*,video/webm';
@@ -69,6 +70,9 @@
   let homeMode = 'home';
   let hasBrowseIntent = false;
   let hasLoadedBrowse = false;
+  let hasRestoredUploadQueue = false;
+  let queuePersistenceTimer = null;
+  let queuePersistenceSequence = Promise.resolve();
 
   $: activeUploadCount = uploadItems.filter((item) => CANCELLABLE_STATUSES.has(item.status)).length;
   $: finishedUploadCount = uploadItems.filter((item) => item.status === 'complete' || item.status === 'duplicate').length;
@@ -118,6 +122,36 @@
 
   function updateUploadItem(localId, patch) {
     uploadItems = uploadItems.map((item) => item.localId === localId ? { ...item, ...patch } : item);
+  }
+
+  function sanitizeUploadItemsForState(items) {
+    return items.map((item) => ({
+      ...item,
+      controller: item.controller instanceof AbortController ? item.controller : new AbortController(),
+      previewUrl: item.previewUrl || createUploadPreview(item.file)
+    }));
+  }
+
+  function scheduleUploadQueuePersistence() {
+    if (!hasRestoredUploadQueue) {
+      return;
+    }
+
+    clearTimeout(queuePersistenceTimer);
+    queuePersistenceTimer = setTimeout(() => {
+      const snapshot = uploadItems.map((item) => ({
+        ...item,
+        controller: null,
+        previewUrl: null
+      }));
+
+      queuePersistenceSequence = queuePersistenceSequence
+        .catch(() => {})
+        .then(() => persistUploadQueue(snapshot))
+        .catch((error) => {
+          console.error('Failed to persist upload queue', error);
+        });
+    }, 80);
   }
 
   function appendBrowseItems(items) {
@@ -464,6 +498,30 @@
     }, { rootMargin: '260px 0px' });
 
     observeBrowseSentinel();
+
+    loadPersistedUploadQueue()
+      .then((items) => {
+        const restoredItems = sanitizeUploadItemsForState(items);
+        const hasInterruptedItems = restoredItems.some((item) => item.wasInterrupted);
+
+        uploadItems = restoredItems.map(({ wasInterrupted, ...item }) => item);
+        hasRestoredUploadQueue = true;
+
+        if (hasInterruptedItems) {
+          showUploadQueue = true;
+          homeMode = 'upload';
+          processQueue();
+          return;
+        }
+
+        if (uploadItems.length > 0) {
+          showUploadQueue = true;
+        }
+      })
+      .catch((error) => {
+        hasRestoredUploadQueue = true;
+        console.error('Failed to restore upload queue', error);
+      });
   });
 
   $: if (browseObserver && browseSentinel) {
@@ -474,9 +532,14 @@
     loadBrowsePage(null);
   }
 
+  $: if (hasRestoredUploadQueue) {
+    scheduleUploadQueuePersistence();
+  }
+
   onDestroy(() => {
     browseAbortController?.abort();
     browseObserver?.disconnect();
+    clearTimeout(queuePersistenceTimer);
     for (const item of uploadItems) {
       item.controller?.abort();
       releasePreview(item.previewUrl);
