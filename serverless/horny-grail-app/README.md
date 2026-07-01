@@ -6,9 +6,11 @@ AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity chec
 
 - Store image and video metadata in DynamoDB using SHA-256 `id` as the primary key
 - Maintain `status` and `randomKey` fields for random discovery
-- Serve public read endpoints for item lookup, random item lookup, and randomized browse
+- Serve read endpoints for item lookup, random item lookup, and randomized browse
 - Validate upload requests and issue presigned S3 URLs for originals and thumbnails
 - Check whether metadata, originals, and thumbnails exist for repair flows
+- Expose a protected unified CloudFront entrypoint for the static frontend, `/api/*`, `/files/*`, and `/thumbnails/*`
+- Issue CloudFront signed cookies after a shared access code is submitted to `/auth/session`
 
 ## Project Layout
 
@@ -21,7 +23,7 @@ AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity chec
 
 ## API Surface
 
-Public read endpoints:
+Read endpoints:
 
 - `GET /api`
 - `GET /api/`
@@ -30,6 +32,10 @@ Public read endpoints:
 - `GET /api/browse/random`
 - `GET /api/thumbnails`
 - `GET /api/assets/{id}/integrity`
+
+Access endpoint:
+
+- `POST /auth/session`
 
 Write endpoints:
 
@@ -66,9 +72,16 @@ Matching SAM parameters:
 
 - `LookupTableName`
 - `CloudFrontBaseUrl`
+- `FrontendOriginDomainName`
+- `MediaOriginDomainName`
 - `BucketName`
 - `BucketRegion`
 - `WriteApiKey`
+- `ReadAccessCode`
+- `CloudFrontPublicKeyParameterName`
+- `CloudFrontPrivateKeySecretArn`
+- `AccessCookieTtlSeconds`
+- `CloudFrontCookieResource`
 - `AllowedCorsOrigins`
 
 Notes:
@@ -77,6 +90,13 @@ Notes:
 - The table uses `id` as the primary key.
 - `RandomImageIndex` is required for `GET /api/get-random-image` and `GET /api/browse/random`.
 - If a table with the target name already exists outside CloudFormation, import it or deploy with a new name.
+- `CloudFrontBaseUrl` is still used by read handlers that include media URLs in responses. The static frontend should build media URLs from `PUBLIC_CLOUDFRONT_BASE_URL` when possible.
+- `FrontendOriginDomainName` should usually be the frontend S3 website endpoint.
+- `MediaOriginDomainName` should be the existing origin currently serving `/files/*` and `/thumbnails/*`.
+- `ReadAccessCode` is the shared code users enter on the static access page.
+- `CloudFrontPublicKeyParameterName` points to an SSM parameter containing the PEM public key CloudFront uses to verify signed cookies.
+- `CloudFrontPrivateKeySecretArn` points to a Secrets Manager secret containing the matching PEM private key.
+- `CloudFrontCookieResource` defaults to `https://*/*` to avoid deployment ordering problems. After deployment, you can restrict it to the protected distribution domain and redeploy.
 
 ## Local Development
 
@@ -119,6 +139,38 @@ npm run sam:deploy
 ```
 
 The template outputs the deployed API base URL. Clients should use that URL with the `/api` suffix.
+
+For the static public frontend, prefer these outputs from the protected CloudFront distribution:
+
+- `ProtectedReadBaseUrl`
+- `ProtectedReadApiBaseUrl`
+- `ProtectedReadMediaBaseUrl`
+- `ProtectedReadDistributionId`
+
+Point:
+
+- `front/PUBLIC_API_BASE_URL` to `ProtectedReadApiBaseUrl`
+- `front/PUBLIC_CLOUDFRONT_BASE_URL` to `ProtectedReadMediaBaseUrl`
+- the frontend deploy invalidation target to `ProtectedReadDistributionId`
+
+Users access the static site through `ProtectedReadBaseUrl`. If they do not have valid signed cookies, CloudFront serves `/access`; after a correct code submission, `/auth/session` sets the signed cookies and redirects them into the app.
+
+### Access-code cookie keys
+
+Before deploying the protected read distribution, create an RSA key pair, store the private key in Secrets Manager, and store the public key in SSM Parameter Store:
+
+```bash
+openssl genrsa -out cloudfront-private-key.pem 2048
+openssl rsa -pubout -in cloudfront-private-key.pem -out cloudfront-public-key.pem
+aws secretsmanager create-secret --name horny-grail/cloudfront-private-key --secret-string file://cloudfront-private-key.pem
+aws ssm put-parameter --name /horny-grail/cloudfront-public-key --type String --value file://cloudfront-public-key.pem
+```
+
+Use:
+
+- `/horny-grail/cloudfront-public-key` as `CloudFrontPublicKeyParameterName`
+- the created secret ARN as `CloudFrontPrivateKeySecretArn`
+- your shared code as `ReadAccessCode`
 
 ## Storage and Upload Rules
 

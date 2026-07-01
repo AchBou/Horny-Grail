@@ -11,8 +11,16 @@ Parameters:
     Default: horny-grail-name-lookup
   CloudFrontBaseUrl:
     Type: String
-    Description: CloudFront base URL used to build public image URLs
+    Description: Legacy local/dev asset base URL used when running handlers outside the protected CloudFront stack
     Default: https://your-cloudfront-domain.cloudfront.net
+  FrontendOriginDomainName:
+    Type: String
+    Description: Existing frontend origin domain name, typically the S3 website endpoint serving the static frontend
+    Default: your-frontend-bucket.s3-website-us-west-2.amazonaws.com
+  MediaOriginDomainName:
+    Type: String
+    Description: Existing media origin domain name that currently serves /files and /thumbnails
+    Default: your-media-origin.cloudfront.net
   BucketName:
     Type: String
     Description: Existing S3 bucket used for full images and thumbnails
@@ -25,6 +33,25 @@ Parameters:
     Type: String
     Description: Shared API key required for write endpoints
     NoEcho: true
+  ReadAccessCode:
+    Type: String
+    Description: Shared code accepted by the custom access page
+    NoEcho: true
+  CloudFrontPublicKeyParameterName:
+    Type: String
+    Description: SSM parameter name containing the PEM encoded RSA public key paired with the private key in Secrets Manager
+  CloudFrontPrivateKeySecretArn:
+    Type: String
+    Description: Secrets Manager secret ARN containing the RSA private key PEM used to sign CloudFront cookies
+    NoEcho: true
+  AccessCookieTtlSeconds:
+    Type: Number
+    Description: Number of seconds a successful access-code session remains valid
+    Default: 604800
+  CloudFrontCookieResource:
+    Type: String
+    Description: CloudFront signed-cookie resource scope. Use https://*/* for first deploy, then restrict to your protected domain if desired.
+    Default: https://*/*
   AllowedCorsOrigins:
     Type: String
     Description: Comma-separated list of allowed CORS origins
@@ -59,6 +86,281 @@ Resources:
           KeyType: RANGE
         Projection:
           ProjectionType: ALL
+
+  ProtectedReadStaticCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-protected-read-static
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+
+  ProtectedReadApiCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-protected-read-api
+        DefaultTTL: 0
+        MaxTTL: 1
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Origin
+              - Access-Control-Request-Headers
+              - Access-Control-Request-Method
+              - Content-Type
+              - x-api-key
+          QueryStringsConfig:
+            QueryStringBehavior: all
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+
+  ProtectedReadApiOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub ${AWS::StackName}-protected-read-api
+        CookiesConfig:
+          CookieBehavior: none
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers:
+            - Origin
+            - Access-Control-Request-Headers
+            - Access-Control-Request-Method
+            - Content-Type
+            - x-api-key
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
+  ProtectedReadPublicKey:
+    Type: AWS::CloudFront::PublicKey
+    Properties:
+      PublicKeyConfig:
+        CallerReference: !Sub ${AWS::StackName}-protected-read-key
+        Comment: Public key used by CloudFront to verify HornyGrail access cookies
+        EncodedKey: !Sub '{{resolve:ssm:${CloudFrontPublicKeyParameterName}}}'
+        Name: !Sub ${AWS::StackName}-protected-read-key
+
+  ProtectedReadKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    Properties:
+      KeyGroupConfig:
+        Comment: Key group trusted by the HornyGrail protected read distribution
+        Items:
+          - !Ref ProtectedReadPublicKey
+        Name: !Sub ${AWS::StackName}-protected-read-key-group
+
+  ProtectedReadSiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub Protected static site, API, and media distribution for ${AWS::StackName}
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Origins:
+          - Id: FrontendOrigin
+            DomainName: !Ref FrontendOriginDomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSSLProtocols:
+                - TLSv1.2
+          - Id: ApiOrigin
+            DomainName: !Sub ${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+          - Id: MediaOrigin
+            DomainName: !Ref MediaOriginDomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+          Compress: true
+          TargetOriginId: FrontendOrigin
+          TrustedKeyGroups:
+            - !Ref ProtectedReadKeyGroup
+          ViewerProtocolPolicy: redirect-to-https
+        CacheBehaviors:
+          - PathPattern: /_app/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+            Compress: true
+            TargetOriginId: FrontendOrigin
+            ViewerProtocolPolicy: redirect-to-https
+          - PathPattern: /access*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+            Compress: true
+            TargetOriginId: FrontendOrigin
+            ViewerProtocolPolicy: redirect-to-https
+          - PathPattern: /auth/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadApiCachePolicy
+            Compress: true
+            OriginRequestPolicyId: !Ref ProtectedReadApiOriginRequestPolicy
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+          - PathPattern: /api/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadApiCachePolicy
+            Compress: true
+            OriginRequestPolicyId: !Ref ProtectedReadApiOriginRequestPolicy
+            TargetOriginId: ApiOrigin
+            TrustedKeyGroups:
+              - !Ref ProtectedReadKeyGroup
+            ViewerProtocolPolicy: redirect-to-https
+          - PathPattern: /files/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+            Compress: true
+            TargetOriginId: MediaOrigin
+            TrustedKeyGroups:
+              - !Ref ProtectedReadKeyGroup
+            ViewerProtocolPolicy: redirect-to-https
+          - PathPattern: /thumbnails/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+            Compress: true
+            TargetOriginId: MediaOrigin
+            TrustedKeyGroups:
+              - !Ref ProtectedReadKeyGroup
+            ViewerProtocolPolicy: redirect-to-https
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /access
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /200.html
+            ErrorCachingMinTTL: 0
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  createAccessSessionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/auth/create-session.createSessionHandler
+      Runtime: nodejs22.x
+      Architectures:
+      - x86_64
+      MemorySize: 128
+      Timeout: 10
+      Description: Validates the shared access code and issues CloudFront signed cookies.
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Ref CloudFrontPrivateKeySecretArn
+      Environment:
+        Variables:
+          READ_ACCESS_CODE: !Ref ReadAccessCode
+          CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: !Ref CloudFrontPrivateKeySecretArn
+          CLOUDFRONT_KEY_PAIR_ID: !Ref ProtectedReadPublicKey
+          CLOUDFRONT_COOKIE_RESOURCE: !Ref CloudFrontCookieResource
+          ACCESS_COOKIE_TTL_SECONDS: !Ref AccessCookieTtlSeconds
+      Events:
+        AuthSessionPost:
+          Type: HttpApi
+          Properties:
+            Path: /auth/session
+            Method: POST
+        AuthSessionGet:
+          Type: HttpApi
+          Properties:
+            Path: /auth/session
+            Method: GET
+        AuthSessionOptions:
+          Type: HttpApi
+          Properties:
+            Path: /auth/session
+            Method: OPTIONS
 
   # Each Lambda function is defined by properties:
   # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
@@ -334,6 +636,18 @@ Outputs:
   WebEndpoint:
     Description: HTTP API default endpoint URL with /api base path
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/"
+  ProtectedReadDistributionId:
+    Description: CloudFront distribution ID for the protected static site, API, and media entrypoint
+    Value: !Ref ProtectedReadSiteDistribution
+  ProtectedReadBaseUrl:
+    Description: Base URL for the protected static frontend and media paths
+    Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}
+  ProtectedReadApiBaseUrl:
+    Description: Base URL the public frontend should use for read API requests
+    Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}/api
+  ProtectedReadMediaBaseUrl:
+    Description: Base URL the public frontend should use for image and thumbnail requests
+    Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
