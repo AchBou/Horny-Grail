@@ -72,7 +72,7 @@ Matching SAM parameters:
 
 - `LookupTableName`
 - `CloudFrontBaseUrl`
-- `FrontendOriginDomainName`
+- `FrontendBucketName`
 - `MediaOriginDomainName`
 - `BucketName`
 - `BucketRegion`
@@ -91,7 +91,7 @@ Notes:
 - `RandomImageIndex` is required for `GET /api/get-random-image` and `GET /api/browse/random`.
 - If a table with the target name already exists outside CloudFormation, import it or deploy with a new name.
 - `CloudFrontBaseUrl` is still used by read handlers that include media URLs in responses. The static frontend should build media URLs from `PUBLIC_CLOUDFRONT_BASE_URL` when possible.
-- `FrontendOriginDomainName` should usually be the frontend S3 website endpoint.
+- `FrontendBucketName` is the private S3 bucket that stores the built frontend assets. S3 website hosting is not required.
 - `MediaOriginDomainName` should be the existing origin currently serving `/files/*` and `/thumbnails/*`.
 - `ReadAccessCode` is the shared code users enter on the static access page.
 - `CloudFrontPublicKeyParameterName` points to an SSM parameter containing the PEM public key CloudFront uses to verify signed cookies.
@@ -146,6 +146,7 @@ For the static public frontend, prefer these outputs from the protected CloudFro
 - `ProtectedReadApiBaseUrl`
 - `ProtectedReadMediaBaseUrl`
 - `ProtectedReadDistributionId`
+- `ProtectedReadDistributionArn`
 
 Point:
 
@@ -171,6 +172,38 @@ Use:
 - `/horny-grail/cloudfront-public-key` as `CloudFrontPublicKeyParameterName`
 - the created secret ARN as `CloudFrontPrivateKeySecretArn`
 - your shared code as `ReadAccessCode`
+
+### Frontend bucket policy
+
+The frontend bucket policy is now managed by this stack and scoped to the protected distribution.
+
+Because `hornygrail-front` already has an unmanaged bucket policy today, the first adoption step is one-time:
+
+1. Delete the existing bucket policy from `hornygrail-front`.
+2. Redeploy this SAM stack.
+
+After that, CloudFormation owns the bucket policy and keeps it aligned with the current protected distribution.
+
+The managed policy statement looks like this:
+
+```json
+{
+  "Sid": "AllowProtectedReadDistribution",
+  "Effect": "Allow",
+  "Principal": {
+    "Service": "cloudfront.amazonaws.com"
+  },
+  "Action": "s3:GetObject",
+  "Resource": "arn:aws:s3:::hornygrail-front/*",
+  "Condition": {
+    "StringEquals": {
+      "AWS:SourceArn": "arn:aws:cloudfront::<account-id>:distribution/<distribution-id>"
+    }
+  }
+}
+```
+
+This allows only the protected distribution to read the private frontend bucket through Origin Access Control.
 
 ## Storage and Upload Rules
 
