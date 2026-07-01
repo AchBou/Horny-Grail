@@ -2,7 +2,7 @@
     import Button from "../../components/Button.svelte";
     import { onMount } from "svelte";
     import { fade } from 'svelte/transition';
-    import { buildApiUrl } from "$lib/config/publicEnv.js";
+    import { buildApiUrl, buildFileUrl } from "$lib/config/publicEnv.js";
     import { getMediaKindFromExt } from "$lib/models/image.js";
 
     let randomSrc = "";
@@ -65,10 +65,13 @@
             const contentType = response.headers.get('content-type') || '';
             if (contentType.includes('application/json')) {
                 const data = await response.json();
-                if (!data || typeof data.url !== 'string') {
-                    throw new Error('Invalid response format: missing url');
+                if (data?.id && data?.ext) {
+                    randomSrc = buildFileUrl(data.id, data.ext);
+                } else if (typeof data?.url === 'string') {
+                    randomSrc = data.url;
+                } else {
+                    throw new Error('Invalid response format: missing media item');
                 }
-                randomSrc = data.url;
             } else {
                 const text = await response.text();
                 randomSrc = text.replace(/^\"|\"$/g, '');
