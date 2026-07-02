@@ -146,6 +146,33 @@ Resources:
         QueryStringsConfig:
           QueryStringBehavior: all
 
+  ProtectedReadAuthCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-protected-read-auth
+        DefaultTTL: 0
+        MaxTTL: 1
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: whitelist
+            Cookies:
+              - CloudFront-Policy
+              - CloudFront-Signature
+              - CloudFront-Key-Pair-Id
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Origin
+              - Access-Control-Request-Headers
+              - Access-Control-Request-Method
+              - Content-Type
+          QueryStringsConfig:
+            QueryStringBehavior: all
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+
   # Edge resources that protect the static frontend, API, and media with signed cookies.
   ProtectedReadPublicKey:
     Type: AWS::CloudFront::PublicKey
@@ -187,10 +214,32 @@ Resources:
         function handler(event) {
           var request = event.request;
           var uri = request.uri || '/';
+          var cookies = request.cookies || {};
+
+          function hasSignedAccessCookies() {
+            return !!cookies['CloudFront-Policy']
+              && !!cookies['CloudFront-Signature']
+              && !!cookies['CloudFront-Key-Pair-Id'];
+          }
 
           if (uri === '/access' || uri === '/access/') {
             request.uri = '/access.html';
             return request;
+          }
+
+          if (!hasSignedAccessCookies()) {
+            return {
+              statusCode: 302,
+              statusDescription: 'Found',
+              headers: {
+                location: {
+                  value: '/access?next=' + encodeURIComponent(uri)
+                },
+                'cache-control': {
+                  value: 'no-store'
+                }
+              }
+            };
           }
 
           if (uri === '/' || uri === '') {
@@ -250,8 +299,6 @@ Resources:
             - EventType: viewer-request
               FunctionARN: !GetAtt ProtectedReadFrontendRewriteFunction.FunctionARN
           TargetOriginId: FrontendOrigin
-          TrustedKeyGroups:
-            - !Ref ProtectedReadKeyGroup
           ViewerProtocolPolicy: redirect-to-https
         CacheBehaviors:
           - PathPattern: /_app/*
@@ -309,7 +356,7 @@ Resources:
               - GET
               - HEAD
               - OPTIONS
-            CachePolicyId: !Ref ProtectedReadApiCachePolicy
+            CachePolicyId: !Ref ProtectedReadAuthCachePolicy
             Compress: true
             OriginRequestPolicyId: !Ref ProtectedReadApiOriginRequestPolicy
             TargetOriginId: ApiOrigin
@@ -364,11 +411,6 @@ Resources:
             TrustedKeyGroups:
               - !Ref ProtectedReadKeyGroup
             ViewerProtocolPolicy: redirect-to-https
-        CustomErrorResponses:
-          - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /access
-            ErrorCachingMinTTL: 0
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
 

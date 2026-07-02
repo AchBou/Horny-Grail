@@ -9,7 +9,8 @@ AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity chec
 - Serve read endpoints for item lookup, random item lookup, and randomized browse
 - Validate upload requests and issue presigned S3 URLs for originals and thumbnails
 - Check whether metadata, originals, and thumbnails exist for repair flows
-- Expose a protected unified CloudFront entrypoint for the static frontend, `/api/*`, `/files/*`, and `/thumbnails/*`
+- Expose a unified CloudFront entrypoint for the static frontend, `/api/*`, `/files/*`, and `/thumbnails/*`
+- Redirect-gate frontend routes with a CloudFront Function and enforce signed cookies on API and media routes
 - Issue CloudFront signed cookies after a shared access code is submitted to `/auth/session`
 
 ## Project Layout
@@ -154,7 +155,7 @@ Point:
 - `front/PUBLIC_CLOUDFRONT_BASE_URL` to `ProtectedReadMediaBaseUrl`
 - the frontend deploy invalidation target to `ProtectedReadDistributionId`
 
-Users access the static site through `ProtectedReadBaseUrl`. If they do not have valid signed cookies, CloudFront serves `/access`; after a correct code submission, `/auth/session` sets the signed cookies and redirects them into the app.
+Users access the static site through `ProtectedReadBaseUrl`. If the frontend route request does not include the signed-cookie names, CloudFront redirects to `/access`; after a correct code submission, `/auth/session` sets signed cookies and redirects back into the app. The API and media paths enforce those signed cookies through CloudFront trusted key groups.
 
 ### Access-code cookie keys
 
