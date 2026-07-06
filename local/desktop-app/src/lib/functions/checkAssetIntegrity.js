@@ -1,4 +1,4 @@
-import { buildApiUrl } from "../config/apiEnv.js";
+import { buildApiUrl, WRITE_API_KEY } from "../config/apiEnv.js";
 import { httpFetch } from "../config/httpClient.js";
 
 /**
@@ -20,7 +20,11 @@ export async function checkAssetIntegrityByHex(hex) {
   if (!hex) return null;
 
   try {
-    const response = await httpFetch(buildApiUrl(`/assets/${hex}/integrity`));
+    const response = await httpFetch(buildApiUrl(`/assets/${hex}/integrity`), {
+      headers: {
+        "x-api-key": WRITE_API_KEY
+      }
+    });
     if (!response.ok) {
       throw new Error(`Integrity request failed with status ${response.status}`);
     }
