@@ -5,7 +5,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../../config/env.mjs';
 import { requireReadOriginSecret } from '../../lib/auth.mjs';
-import { jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { jsonResponse, serverError } from '../../lib/http.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
 
@@ -13,14 +14,13 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
  * HTTP GET method to get all thumbnails (id.ext) from a DynamoDB table.
  */
 export const getAllThumbnailsHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method !== 'GET') {
-    return methodNotAllowed(`getAllThumbnails only accepts GET method, you tried: ${method}`, event);
-  }
-
-  const authError = requireReadOriginSecret(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getAllThumbnails',
+    method: 'GET',
+    authorize: requireReadOriginSecret
+  });
+  if (guardError) {
+    return guardError;
   }
     // All log statements are written to CloudWatch
     console.info('received:', event);

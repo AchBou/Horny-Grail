@@ -1,20 +1,21 @@
 import { getAllItemsHandler } from './get-all-items.mjs';
 import { requireReadOriginSecret } from '../lib/auth.mjs';
-import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
+import { badRequest, jsonResponse, serverError } from '../lib/http.mjs';
 import { getItemById } from '../lib/items-repository.mjs';
+import { guardRequest } from '../lib/request-guards.mjs';
 import { isValidImageId } from '../lib/validation.mjs';
 
 /**
  * A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
  */
 export const getByIdHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method !== 'GET') {
-    return methodNotAllowed(`getMethod only accepts GET method, you tried: ${method}`, event);
-  }
-  const authError = requireReadOriginSecret(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getById',
+    method: 'GET',
+    authorize: requireReadOriginSecret
+  });
+  if (guardError) {
+    return guardError;
   }
   // All log statements are written to CloudWatch
   console.info('received:', event);

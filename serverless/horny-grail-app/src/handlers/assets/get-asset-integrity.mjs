@@ -1,8 +1,9 @@
 import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getBucketName, getBucketRegion } from '../../config/env.mjs';
 import { requireWriteApiKey } from '../../lib/auth.mjs';
-import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
 import { getItemById } from '../../lib/items-repository.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 import { isValidImageExt, isValidImageId } from '../../lib/validation.mjs';
 
 const s3Client = new S3Client({ region: getBucketRegion() });
@@ -70,14 +71,13 @@ export async function buildAssetIntegrityResponse(id, event) {
 }
 
 export const getAssetIntegrityHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method !== 'GET') {
-    return methodNotAllowed(`getAssetIntegrity only accepts GET method, you tried: ${method}`, event);
-  }
-
-  const authError = requireWriteApiKey(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getAssetIntegrity',
+    method: 'GET',
+    authorize: requireWriteApiKey
+  });
+  if (guardError) {
+    return guardError;
   }
 
   return buildAssetIntegrityResponse(event?.pathParameters?.id, event);

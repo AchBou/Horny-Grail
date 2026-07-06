@@ -1,5 +1,6 @@
 import { requireReadOriginSecret } from '../../lib/auth.mjs';
-import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 import { fetchRandomBrowsePage, parseRandomBrowseLimit } from '../../lib/random-browse.mjs';
 
 function getQueryParam(event, key) {
@@ -7,14 +8,14 @@ function getQueryParam(event, key) {
 }
 
 export const getRandomBrowseHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method && method !== 'GET') {
-    return methodNotAllowed(`getRandomBrowse only accepts GET method, you tried: ${method}`, event);
-  }
-
-  const authError = requireReadOriginSecret(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getRandomBrowse',
+    method: 'GET',
+    allowMissingMethod: true,
+    authorize: requireReadOriginSecret
+  });
+  if (guardError) {
+    return guardError;
   }
 
   const limit = parseRandomBrowseLimit(getQueryParam(event, 'limit'));

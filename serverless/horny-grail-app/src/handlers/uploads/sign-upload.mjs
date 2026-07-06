@@ -1,7 +1,9 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getBucketName, getBucketRegion, getWriteApiKey } from '../../config/env.mjs';
-import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, serverError, unauthorized } from '../../lib/http.mjs';
+import { getBucketName, getBucketRegion } from '../../config/env.mjs';
+import { requireWriteApiKey } from '../../lib/auth.mjs';
+import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 import {
   ORIGINAL_UPLOAD_MAX_BYTES,
   THUMBNAIL_UPLOAD_MAX_BYTES,
@@ -26,19 +28,15 @@ async function createSignedUrl(input) {
 }
 
 export const signUploadHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
   const requestPath = event?.requestContext?.http?.path || event?.path || '/api/uploads/sign';
-  if (method === 'OPTIONS') {
-    return corsPreflight(event);
-  }
-
-  if (method !== 'POST') {
-    return methodNotAllowed(`signUpload only accepts POST method, you tried: ${method}`, event);
-  }
-
-  const providedKey = event?.headers?.['x-api-key'] || event?.headers?.['X-Api-Key'];
-  if (!providedKey || providedKey !== getWriteApiKey()) {
-    return unauthorized(event);
+  const guardError = guardRequest(event, {
+    handlerName: 'signUpload',
+    method: 'POST',
+    allowOptions: true,
+    authorize: requireWriteApiKey
+  });
+  if (guardError) {
+    return guardError;
   }
 
   const body = parseJsonBody(event);

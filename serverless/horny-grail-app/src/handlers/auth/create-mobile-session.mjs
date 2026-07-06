@@ -1,10 +1,7 @@
-import { corsPreflight, jsonResponse, methodNotAllowed, unauthorized } from '../../lib/http.mjs';
+import { jsonResponse, unauthorized } from '../../lib/http.mjs';
 import { getReadAccessCode } from '../../config/env.mjs';
 import { issueMobileReadToken } from '../../lib/auth.mjs';
-
-function getMethod(event) {
-  return event?.httpMethod || event?.requestContext?.http?.method || '';
-}
+import { guardRequest } from '../../lib/request-guards.mjs';
 
 function parseBody(event) {
   try {
@@ -15,14 +12,13 @@ function parseBody(event) {
 }
 
 export const createMobileSessionHandler = async (event) => {
-  const method = getMethod(event);
-
-  if (method === 'OPTIONS') {
-    return corsPreflight(event);
-  }
-
-  if (method !== 'POST') {
-    return methodNotAllowed(`createMobileSession only accepts POST method, you tried: ${method}`, event);
+  const guardError = guardRequest(event, {
+    handlerName: 'createMobileSession',
+    method: 'POST',
+    allowOptions: true
+  });
+  if (guardError) {
+    return guardError;
   }
 
   const body = parseBody(event);

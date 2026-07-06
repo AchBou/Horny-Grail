@@ -2,7 +2,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../../config/env.mjs';
 import { requireReadOriginSecret } from '../../lib/auth.mjs';
-import { jsonResponse, methodNotAllowed, notFound, serverError } from '../../lib/http.mjs';
+import { jsonResponse, notFound, serverError } from '../../lib/http.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 
 const RANDOM_IMAGE_INDEX = 'RandomImageIndex';
 const ACTIVE_STATUS = 'active';
@@ -28,14 +29,14 @@ async function queryRandomImage(randomKey) {
 }
 
 export const getRandomImageHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method && method !== 'GET') {
-    return methodNotAllowed(`getRandomImage only accepts GET method, you tried: ${method}`, event);
-  }
-
-  const authError = requireReadOriginSecret(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getRandomImage',
+    method: 'GET',
+    allowMissingMethod: true,
+    authorize: requireReadOriginSecret
+  });
+  if (guardError) {
+    return guardError;
   }
 
   try {

@@ -1,18 +1,19 @@
 import { requireReadOriginSecret } from '../lib/auth.mjs';
-import { jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
+import { jsonResponse, serverError } from '../lib/http.mjs';
 import { scanAllItems } from '../lib/items-repository.mjs';
+import { guardRequest } from '../lib/request-guards.mjs';
 
 /**
  * A simple example includes a HTTP get method to get all items from a DynamoDB table.
  */
 export const getAllItemsHandler = async (event) => {
-    const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-    if (method !== 'GET') {
-        return methodNotAllowed(`getAllItems only accepts GET method, you tried: ${method}`, event);
-    }
-    const authError = requireReadOriginSecret(event);
-    if (authError) {
-        return authError;
+    const guardError = guardRequest(event, {
+        handlerName: 'getAllItems',
+        method: 'GET',
+        authorize: requireReadOriginSecret
+    });
+    if (guardError) {
+        return guardError;
     }
     // All log statements are written to CloudWatch
     console.info('received:', event);

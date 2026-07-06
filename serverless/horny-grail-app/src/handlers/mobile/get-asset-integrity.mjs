@@ -1,16 +1,16 @@
 import { buildAssetIntegrityResponse } from '../assets/get-asset-integrity.mjs';
 import { requireMobileReadToken } from '../../lib/auth.mjs';
-import { corsPreflight } from '../../lib/http.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 
 export const getMobileAssetIntegrityHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method === 'OPTIONS') {
-    return corsPreflight(event);
-  }
-
-  const authError = requireMobileReadToken(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getMobileAssetIntegrity',
+    method: 'GET',
+    allowOptions: true,
+    authorize: requireMobileReadToken
+  });
+  if (guardError) {
+    return guardError;
   }
 
   return buildAssetIntegrityResponse(event?.pathParameters?.id, event);

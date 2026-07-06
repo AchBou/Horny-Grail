@@ -1,21 +1,19 @@
 import { requireMobileReadToken } from '../../lib/auth.mjs';
-import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, notFound, serverError } from '../../lib/http.mjs';
+import { badRequest, jsonResponse, notFound, serverError } from '../../lib/http.mjs';
 import { getItemById } from '../../lib/items-repository.mjs';
 import { createSignedMediaView } from '../../lib/mobile-media.mjs';
+import { guardRequest } from '../../lib/request-guards.mjs';
 import { isValidImageId } from '../../lib/validation.mjs';
 
 export const getMobileByIdHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method === 'OPTIONS') {
-    return corsPreflight(event);
-  }
-  if (method !== 'GET') {
-    return methodNotAllowed(`getMobileById only accepts GET method, you tried: ${method}`, event);
-  }
-
-  const authError = requireMobileReadToken(event);
-  if (authError) {
-    return authError;
+  const guardError = guardRequest(event, {
+    handlerName: 'getMobileById',
+    method: 'GET',
+    allowOptions: true,
+    authorize: requireMobileReadToken
+  });
+  if (guardError) {
+    return guardError;
   }
 
   const id = event?.pathParameters?.id;

@@ -5,7 +5,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
 import { requireWriteApiKey } from '../lib/auth.mjs';
-import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
+import { badRequest, jsonResponse, serverError } from '../lib/http.mjs';
+import { guardRequest } from '../lib/request-guards.mjs';
 import { isValidImageExt, isValidImageId, parseJsonBody } from '../lib/validation.mjs';
 const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
@@ -14,19 +15,15 @@ const ddbDocClient = DynamoDBDocumentClient.from(client);
  * A simple example includes a HTTP post method to add one item to a DynamoDB table.
  */
 export const putItemHandler = async (event) => {
-    const method = event?.httpMethod || event?.requestContext?.http?.method || '';
     const requestPath = event?.requestContext?.http?.path || event?.path || '/api/';
-    if (method === 'OPTIONS') {
-        return corsPreflight(event);
-    }
-
-    if (method !== 'POST') {
-        return methodNotAllowed(`postMethod only accepts POST method, you tried: ${method} method.`, event);
-    }
-
-    const authError = requireWriteApiKey(event);
-    if (authError) {
-        return authError;
+    const guardError = guardRequest(event, {
+        handlerName: 'putItem',
+        method: 'POST',
+        allowOptions: true,
+        authorize: requireWriteApiKey
+    });
+    if (guardError) {
+        return guardError;
     }
 
     const body = parseJsonBody(event);
