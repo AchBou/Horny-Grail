@@ -80,7 +80,7 @@ sam local start-api
 
 ## Runtime Configuration
 
-Frontend public env:
+Frontend public env, optional same-origin overrides:
 
 - `PUBLIC_API_BASE_URL`
 - `PUBLIC_CLOUDFRONT_BASE_URL`

@@ -20,8 +20,6 @@ jobs:
       run:
         working-directory: front
     env:
-      PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
-      PUBLIC_CLOUDFRONT_BASE_URL: ${{ vars.PUBLIC_CLOUDFRONT_BASE_URL }}
       AWS_REGION: ${{ vars.FRONTEND_AWS_REGION }}
       FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
       FRONTEND_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.FRONTEND_CLOUDFRONT_DISTRIBUTION_ID }}

@@ -69,7 +69,7 @@ sam deploy --guided
 - The SAM stack now owns the DynamoDB metadata table. The table uses `id` as the primary key and defines `RandomImageIndex` on `status` + `randomKey`.
 - Original files are expected at CloudFront path `files/<hash>.<ext>`.
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
-- The frontend requires `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` from public env.
+- The frontend defaults to same-origin `/api` and `/` for API and media paths. `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` are optional overrides for non-standard deployments.
 - The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
 - The mobile app requires private build-time config for `apiBaseUrl`, `cloudFrontBaseUrl`, and `writeApiKey` through `mobile.private.json`.
 - The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.

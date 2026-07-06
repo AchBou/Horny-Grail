@@ -13,17 +13,17 @@ The frontend now builds as an explicit static single-page app for S3 + CloudFron
 
 ## Configuration
 
-Copy `.env.example` to `.env` and provide values for:
+The frontend defaults to same-origin protected CloudFront paths:
 
-- `PUBLIC_API_BASE_URL`
-- `PUBLIC_CLOUDFRONT_BASE_URL`
+- `PUBLIC_API_BASE_URL=/api`
+- `PUBLIC_CLOUDFRONT_BASE_URL=/`
 
-These values are required. The app no longer keeps source-code URL fallbacks.
+You can still copy `.env.example` to `.env` and override those values for local testing or non-standard deployments. For the protected CloudFront setup, prefer same-origin paths so the browser sends the CloudFront access cookies to the same host the user authenticated against:
 
-For the protected CloudFront setup, point both values at the same protected distribution:
+- `PUBLIC_API_BASE_URL=/api`
+- `PUBLIC_CLOUDFRONT_BASE_URL=/`
 
-- `PUBLIC_API_BASE_URL=https://<protected-domain>/api`
-- `PUBLIC_CLOUDFRONT_BASE_URL=https://<protected-domain>`
+Absolute values still work when both values point at the same protected hostname, for example `https://<protected-domain>/api` and `https://<protected-domain>`.
 
 ## Commands
 
@@ -41,11 +41,11 @@ The browse page expects the backend randomized browse response shape:
 
 ```json
 {
-  "items": [],
-  "seed": 0.4721,
-  "cursor": "opaque-cursor",
-  "wrapped": false,
-  "hasMore": true
+	"items": [],
+	"seed": 0.4721,
+	"cursor": "opaque-cursor",
+	"wrapped": false,
+	"hasMore": true
 }
 ```
 
@@ -57,8 +57,6 @@ The GitHub Actions workflow at `.github/workflows/front-deploy.yml` builds `fron
 
 Configure these GitHub Actions repository variables:
 
-- `PUBLIC_API_BASE_URL`
-- `PUBLIC_CLOUDFRONT_BASE_URL`
 - `FRONTEND_AWS_REGION`
 - `FRONTEND_S3_BUCKET`
 - `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID`
@@ -70,8 +68,6 @@ The workflow uses GitHub Actions OIDC to assume the AWS role referenced by `FRON
 
 If you deploy the protected unified CloudFront distribution from the SAM stack, set:
 
-- `PUBLIC_API_BASE_URL` to the stack output `ProtectedReadApiBaseUrl`
-- `PUBLIC_CLOUDFRONT_BASE_URL` to the stack output `ProtectedReadMediaBaseUrl`
 - `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID` to the stack output `ProtectedReadDistributionId`
 
 Unauthenticated visitors are served `/access`. The form posts the shared code to `/auth/session`; the auth Lambda sets CloudFront signed cookies and redirects back into the app.
