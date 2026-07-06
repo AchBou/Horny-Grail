@@ -1,12 +1,8 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { getLookupTableName } from '../../config/env.mjs';
 import { requireMobileReadToken } from '../../lib/auth.mjs';
 import { badRequest, corsPreflight, jsonResponse, methodNotAllowed, notFound, serverError } from '../../lib/http.mjs';
+import { getItemById } from '../../lib/items-repository.mjs';
 import { createSignedMediaView } from '../../lib/mobile-media.mjs';
 import { isValidImageId } from '../../lib/validation.mjs';
-
-const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 export const getMobileByIdHandler = async (event) => {
   const method = event?.httpMethod || event?.requestContext?.http?.method || '';
@@ -28,11 +24,7 @@ export const getMobileByIdHandler = async (event) => {
   }
 
   try {
-    const data = await ddbDocClient.send(new GetCommand({
-      TableName: getLookupTableName(),
-      Key: { id }
-    }));
-    const item = data.Item || null;
+    const item = await getItemById(id);
 
     if (!item) {
       return notFound('Media was not found', event);

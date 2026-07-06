@@ -25,21 +25,9 @@ Parameters:
     Type: String
     Description: AWS region of the existing S3 bucket used for uploads
     Default: us-west-2
-  WriteApiKey:
+  AppSecretsSecretArn:
     Type: String
-    Description: Shared API key required for write endpoints
-    NoEcho: true
-  ReadAccessCode:
-    Type: String
-    Description: Shared code accepted by the custom access page
-    NoEcho: true
-  ReadOriginSecret:
-    Type: String
-    Description: Shared secret CloudFront sends to the raw API origin so public read routes cannot be called directly
-    NoEcho: true
-  MobileReadTokenSecret:
-    Type: String
-    Description: Shared secret used to sign short-lived bearer tokens for the mobile read API
+    Description: Secrets Manager secret ARN containing writeApiKey, readAccessCode, readOriginSecret, and mobileReadTokenSecret JSON fields
     NoEcho: true
   MobileReadTokenTtlSeconds:
     Type: Number
@@ -294,7 +282,7 @@ Resources:
             DomainName: !Sub ${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com
             OriginCustomHeaders:
               - HeaderName: x-read-origin-secret
-                HeaderValue: !Ref ReadOriginSecret
+                HeaderValue: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
             CustomOriginConfig:
               HTTPPort: 80
               HTTPSPort: 443
@@ -500,7 +488,7 @@ Resources:
           Resource: !Ref CloudFrontPrivateKeySecretArn
       Environment:
         Variables:
-          READ_ACCESS_CODE: !Ref ReadAccessCode
+          READ_ACCESS_CODE: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readAccessCode}}'
           CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: !Ref CloudFrontPrivateKeySecretArn
           CLOUDFRONT_KEY_PAIR_ID: !Ref ProtectedReadPublicKey
           CLOUDFRONT_COOKIE_RESOURCE: !Ref CloudFrontCookieResource
@@ -531,8 +519,8 @@ Resources:
       Description: Validates the shared access code and issues a short-lived mobile bearer token.
       Environment:
         Variables:
-          READ_ACCESS_CODE: !Ref ReadAccessCode
-          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          READ_ACCESS_CODE: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readAccessCode}}'
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
@@ -560,7 +548,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -581,7 +569,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -604,7 +592,7 @@ Resources:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
-          WRITE_API_KEY: !Ref WriteApiKey
+          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -631,7 +619,7 @@ Resources:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
-          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -666,7 +654,7 @@ Resources:
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
-          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -692,7 +680,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -721,7 +709,7 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -763,7 +751,7 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -798,7 +786,7 @@ Resources:
         Variables:
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          WRITE_API_KEY: !Ref WriteApiKey
+          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -833,7 +821,7 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          WRITE_API_KEY: !Ref WriteApiKey
+          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -863,7 +851,7 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:

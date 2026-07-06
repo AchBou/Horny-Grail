@@ -1,13 +1,6 @@
-// Create clients and set shared const values outside of the handler.
-
-// Create a DocumentClient that represents the query to add an item
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
-import { getLookupTableName } from '../config/env.mjs';
 import { requireReadOriginSecret } from '../lib/auth.mjs';
 import { jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
-const client = new DynamoDBClient({});
-const ddbDocClient = DynamoDBDocumentClient.from(client);
+import { scanAllItems } from '../lib/items-repository.mjs';
 
 /**
  * A simple example includes a HTTP get method to get all items from a DynamoDB table.
@@ -27,14 +20,9 @@ export const getAllItemsHandler = async (event) => {
     // get all items from the table (only first 1MB data, you can use `LastEvaluatedKey` to get the rest of data)
     // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#scan-property
     // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
-    const params = {
-        TableName: getLookupTableName()
-    };
-
     let items = [];
     try {
-        const data = await ddbDocClient.send(new ScanCommand(params));
-        items = data.Items || [];
+        items = await scanAllItems();
         console.info('Raw scan items:', JSON.stringify(items));
     } catch (err) {
         console.error('Error scanning table:', err);

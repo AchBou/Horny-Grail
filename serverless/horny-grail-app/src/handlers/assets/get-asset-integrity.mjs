@@ -1,12 +1,10 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getBucketName, getBucketRegion, getLookupTableName } from '../../config/env.mjs';
+import { getBucketName, getBucketRegion } from '../../config/env.mjs';
 import { requireWriteApiKey } from '../../lib/auth.mjs';
 import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { getItemById } from '../../lib/items-repository.mjs';
 import { isValidImageExt, isValidImageId } from '../../lib/validation.mjs';
 
-const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3Client = new S3Client({ region: getBucketRegion() });
 
 async function objectExists(key) {
@@ -32,11 +30,7 @@ export async function buildAssetIntegrityResponse(id, event) {
   }
 
   try {
-    const data = await ddbClient.send(new GetCommand({
-      TableName: getLookupTableName(),
-      Key: { id }
-    }));
-    const item = data.Item || null;
+    const item = await getItemById(id);
 
     if (!item) {
       return jsonResponse(200, {

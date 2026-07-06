@@ -83,10 +83,7 @@ Matching SAM parameters:
 - `FrontendBucketName`
 - `BucketName`
 - `BucketRegion`
-- `WriteApiKey`
-- `ReadAccessCode`
-- `ReadOriginSecret`
-- `MobileReadTokenSecret`
+- `AppSecretsSecretArn`
 - `MobileReadTokenTtlSeconds`
 - `MobileSignedUrlTtlSeconds`
 - `CloudFrontPublicKeyParameterName`
@@ -104,9 +101,14 @@ Notes:
 - `CloudFrontBaseUrl` is still used by read handlers that include media URLs in responses. The static frontend should build media URLs from `PUBLIC_CLOUDFRONT_BASE_URL` when possible.
 - `FrontendBucketName` is the private S3 bucket that stores the built frontend assets. S3 website hosting is not required.
 - `BucketName` is now both the upload target and the protected media origin behind CloudFront OAC.
-- `ReadAccessCode` is the shared code users enter on the static access page.
-- `ReadOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname.
-- `MobileReadTokenSecret` signs the short-lived bearer tokens returned by `POST /auth/mobile/session`.
+- `AppSecretsSecretArn` points to a Secrets Manager JSON secret with these fields:
+  - `writeApiKey`
+  - `readAccessCode`
+  - `readOriginSecret`
+  - `mobileReadTokenSecret`
+- `readAccessCode` is the shared code users enter on the static access page.
+- `readOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname.
+- `mobileReadTokenSecret` signs the short-lived bearer tokens returned by `POST /auth/mobile/session`.
 - `MobileReadTokenTtlSeconds` defaults to `3600` seconds, which keeps a successful mobile session for 1 hour.
 - `MobileSignedUrlTtlSeconds` defaults to `900` seconds, which keeps mobile media URLs valid for 15 minutes before the app refreshes them with another authenticated read request.
 - `CloudFrontPublicKeyParameterName` points to an SSM parameter containing the PEM public key CloudFront uses to verify signed cookies.
@@ -171,7 +173,7 @@ Point:
 
 Users access the static site through `ProtectedReadBaseUrl`. If the frontend route request does not include the signed-cookie names, CloudFront redirects to `/access`; after a correct code submission, `/auth/session` sets signed cookies and redirects back into the app. The API and media paths enforce those signed cookies through CloudFront trusted key groups.
 
-The raw `execute-api` read routes are no longer anonymous. Browser reads only work when CloudFront injects `ReadOriginSecret`, and the mobile app must exchange the same shared code for a bearer token through `POST /auth/mobile/session`.
+The raw `execute-api` read routes are no longer anonymous. Browser reads only work when CloudFront injects `readOriginSecret` from the app secrets secret, and the mobile app must exchange the same shared code for a bearer token through `POST /auth/mobile/session`.
 
 The protected distribution now reads both frontend assets and media directly from private S3 buckets through Origin Access Control. Once the stack-managed media bucket policy is in place, older public CloudFront media distributions that point at the same bucket will stop serving `files/*` and `thumbnails/*`.
 
@@ -190,7 +192,19 @@ Use:
 
 - `/horny-grail/cloudfront-public-key` as `CloudFrontPublicKeyParameterName`
 - the created secret ARN as `CloudFrontPrivateKeySecretArn`
-- your shared code as `ReadAccessCode`
+
+Create another Secrets Manager secret for the app auth values:
+
+```json
+{
+  "writeApiKey": "replace-with-write-api-key",
+  "readAccessCode": "replace-with-shared-code",
+  "readOriginSecret": "replace-with-long-random-string",
+  "mobileReadTokenSecret": "replace-with-different-long-random-string"
+}
+```
+
+Use that secret ARN as `AppSecretsSecretArn`.
 
 ### Frontend bucket policy
 

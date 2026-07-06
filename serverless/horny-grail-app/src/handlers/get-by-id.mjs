@@ -1,15 +1,8 @@
-// Create clients and set shared const values outside of the handler.
-
-// Create a DocumentClient that represents the query to add an item
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { getLookupTableName } from '../config/env.mjs';
 import { getAllItemsHandler } from './get-all-items.mjs';
 import { requireReadOriginSecret } from '../lib/auth.mjs';
 import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
+import { getItemById } from '../lib/items-repository.mjs';
 import { isValidImageId } from '../lib/validation.mjs';
-const client = new DynamoDBClient({});
-const ddbDocClient = DynamoDBDocumentClient.from(client);
 
 /**
  * A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
@@ -36,16 +29,8 @@ export const getByIdHandler = async (event) => {
     return badRequest('Invalid image id', event);
   }
  
-  // Get the item from the table
-  // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#get-property
-  var params = {
-    TableName : getLookupTableName(),
-    Key: { id: id },
-  };
-
   try {
-    const data = await ddbDocClient.send(new GetCommand(params));
-    var item = data.Item;
+    var item = await getItemById(id);
   } catch (err) {
     console.error("Error", err);
     return serverError('Failed to get item', event);
