@@ -40,6 +40,14 @@ Parameters:
     Type: String
     Description: Secrets Manager secret ARN containing the RSA private key PEM used to sign CloudFront cookies
     NoEcho: true
+  ProtectedReadAlias:
+    Type: String
+    Description: Custom hostname served by the protected CloudFront distribution
+    Default: hornygrail.madebyach.dev
+  ProtectedReadAcmCertificateArn:
+    Type: String
+    Description: ACM certificate ARN in us-east-1 for the protected CloudFront hostname
+    Default: arn:aws:acm:us-east-1:480485137817:certificate/1d08b612-8945-479e-971c-263b292d183a
   AccessCookieTtlSeconds:
     Type: Number
     Description: Number of seconds a successful access-code session remains valid
@@ -47,7 +55,7 @@ Parameters:
   CloudFrontCookieResource:
     Type: String
     Description: CloudFront signed-cookie resource scope. Use https://*/* for first deploy, then restrict to your protected domain if desired.
-    Default: https://*/*
+    Default: https://hornygrail.madebyach.dev/*
   AllowedCorsOrigins:
     Type: String
     Description: Comma-separated list of allowed CORS origins
@@ -258,52 +266,12 @@ Resources:
         
           return request;
         }
-
-          var request = event.request;
-          var uri = request.uri || '/';
-          var cookies = request.cookies || {};
-
-          function hasSignedAccessCookies() {
-            return !!cookies['CloudFront-Policy']
-              && !!cookies['CloudFront-Signature']
-              && !!cookies['CloudFront-Key-Pair-Id'];
-          }
-
-          if (uri === '/access' || uri === '/access/') {
-            request.uri = '/access.html';
-            return request;
-          }
-
-          if (!hasSignedAccessCookies()) {
-            return {
-              statusCode: 302,
-              statusDescription: 'Found',
-              headers: {
-                location: {
-                  value: '/access?next=' + encodeURIComponent(uri)
-                },
-                'cache-control': {
-                  value: 'no-store'
-                }
-              }
-            };
-          }
-
-          if (uri === '/' || uri === '') {
-            return request;
-          }
-
-          if (uri.indexOf('.') === -1) {
-            request.uri = '/200.html';
-          }
-
-          return request;
-        }
-
   ProtectedReadSiteDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
+        Aliases:
+          - !Ref ProtectedReadAlias
         Comment: !Sub Protected static site, API, and media distribution for ${AWS::StackName}
         Enabled: true
         HttpVersion: http2
@@ -471,7 +439,9 @@ Resources:
               - !Ref ProtectedReadKeyGroup
             ViewerProtocolPolicy: redirect-to-https
         ViewerCertificate:
-          CloudFrontDefaultCertificate: true
+          AcmCertificateArn: !Ref ProtectedReadAcmCertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
 
   ProtectedReadFrontendBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -932,13 +902,13 @@ Outputs:
     Value: !Ref ProtectedReadSiteDistribution
   ProtectedReadBaseUrl:
     Description: Base URL for the protected static frontend and media paths
-    Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}
+    Value: !Sub https://${ProtectedReadAlias}
   ProtectedReadApiBaseUrl:
     Description: Base URL the public frontend should use for read API requests
-    Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}/api
+    Value: !Sub https://${ProtectedReadAlias}/api
   ProtectedReadMediaBaseUrl:
     Description: Base URL the public frontend should use for image and thumbnail requests
-    Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}
+    Value: !Sub https://${ProtectedReadAlias}
 
 Globals:
   Function:

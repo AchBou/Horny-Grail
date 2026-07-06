@@ -21,26 +21,32 @@ function indentBlock(text, spaces) {
 }
 
 function replaceFunctionCode(template, resourceName, source) {
-  const resourceMarker = `${resourceName}:`;
-  const resourceIndex = template.indexOf(resourceMarker);
+  const newline = template.includes('\r\n') ? '\r\n' : '\n';
+  const lines = template.split(/\r?\n/);
+  const resourceLine = `  ${resourceName}:`;
+  const functionCodeLine = '      FunctionCode: |';
+  const resourceIndex = lines.findIndex((line) => line === resourceLine);
   if (resourceIndex === -1) {
     throw new Error(`Could not find resource ${resourceName} in template.yaml`);
   }
-
-  const functionCodeMarker = '      FunctionCode: |\n';
-  const functionCodeIndex = template.indexOf(functionCodeMarker, resourceIndex);
+  const functionCodeIndex = lines.findIndex(
+    (line, index) => index > resourceIndex && line === functionCodeLine
+  );
   if (functionCodeIndex === -1) {
     throw new Error(`Could not find FunctionCode block for ${resourceName}`);
   }
-
-  const blockStart = functionCodeIndex + functionCodeMarker.length;
-  let blockEnd = template.indexOf('\n  ', blockStart);
-  if (blockEnd === -1) {
-    blockEnd = template.length;
+  let blockEndIndex = functionCodeIndex + 1;
+  while (blockEndIndex < lines.length) {
+    const line = lines[blockEndIndex];
+    if (line === '' || line.startsWith('        ')) {
+      blockEndIndex += 1;
+      continue;
+    }
+    break;
   }
-
-  const replacement = `${functionCodeMarker}${indentBlock(source, 8)}\n`;
-  return `${template.slice(0, functionCodeIndex)}${replacement}${template.slice(blockEnd)}`;
+  const replacementLines = indentBlock(source, 8).split('\n');
+  lines.splice(functionCodeIndex + 1, blockEndIndex - functionCodeIndex - 1, ...replacementLines);
+  return lines.join(newline);
 }
 
 async function main() {
