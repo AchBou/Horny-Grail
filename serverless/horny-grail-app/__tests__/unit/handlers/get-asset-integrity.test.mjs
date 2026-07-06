@@ -23,6 +23,9 @@ describe('Test getAssetIntegrityHandler', () => {
 
     const result = await getAssetIntegrityHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-api-key': process.env.WRITE_API_KEY
+      },
       pathParameters: { id }
     });
 
@@ -56,6 +59,9 @@ describe('Test getAssetIntegrityHandler', () => {
 
     const result = await getAssetIntegrityHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-api-key': process.env.WRITE_API_KEY
+      },
       pathParameters: { id }
     });
 
@@ -76,6 +82,9 @@ describe('Test getAssetIntegrityHandler', () => {
 
     const result = await getAssetIntegrityHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-api-key': process.env.WRITE_API_KEY
+      },
       pathParameters: { id }
     });
 
@@ -93,6 +102,9 @@ describe('Test getAssetIntegrityHandler', () => {
   it('should reject invalid ids', async () => {
     const result = await getAssetIntegrityHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-api-key': process.env.WRITE_API_KEY
+      },
       pathParameters: { id: 'bad' }
     });
 

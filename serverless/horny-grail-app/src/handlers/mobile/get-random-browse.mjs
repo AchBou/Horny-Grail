@@ -1,8 +1,9 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../../config/env.mjs';
-import { requireReadOriginSecret } from '../../lib/auth.mjs';
-import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { requireMobileReadToken } from '../../lib/auth.mjs';
+import { corsPreflight, badRequest, jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
+import { createSignedMediaView } from '../../lib/mobile-media.mjs';
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 48;
@@ -59,23 +60,17 @@ function decodeCursor(rawCursor) {
 }
 
 async function querySegment({ seed, segment, startKey, limit }) {
-  const expressionAttributeValues = {
-    ':status': ACTIVE_STATUS,
-    ':seed': seed
-  };
-
-  const rangeExpression = segment === SEGMENT_AFTER
-    ? 'randomKey >= :seed'
-    : 'randomKey < :seed';
-
   const data = await ddbDocClient.send(new QueryCommand({
     TableName: getLookupTableName(),
     IndexName: INDEX_NAME,
-    KeyConditionExpression: `#status = :status AND ${rangeExpression}`,
+    KeyConditionExpression: `#status = :status AND ${segment === SEGMENT_AFTER ? 'randomKey >= :seed' : 'randomKey < :seed'}`,
     ExpressionAttributeNames: {
       '#status': 'status'
     },
-    ExpressionAttributeValues: expressionAttributeValues,
+    ExpressionAttributeValues: {
+      ':status': ACTIVE_STATUS,
+      ':seed': seed
+    },
     ExclusiveStartKey: startKey || undefined,
     Limit: limit,
     ScanIndexForward: true
@@ -87,13 +82,16 @@ async function querySegment({ seed, segment, startKey, limit }) {
   };
 }
 
-export const getRandomBrowseHandler = async (event) => {
+export const getMobileRandomBrowseHandler = async (event) => {
   const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+  if (method === 'OPTIONS') {
+    return corsPreflight(event);
+  }
   if (method && method !== 'GET') {
-    return methodNotAllowed(`getRandomBrowse only accepts GET method, you tried: ${method}`, event);
+    return methodNotAllowed(`getMobileRandomBrowse only accepts GET method, you tried: ${method}`, event);
   }
 
-  const authError = requireReadOriginSecret(event);
+  const authError = requireMobileReadToken(event);
   if (authError) {
     return authError;
   }
@@ -138,11 +136,7 @@ export const getRandomBrowseHandler = async (event) => {
       remaining = limit - items.length;
       lastEvaluatedKey = result.lastEvaluatedKey;
 
-      if (remaining === 0) {
-        break;
-      }
-
-      if (lastEvaluatedKey) {
+      if (remaining === 0 || lastEvaluatedKey) {
         break;
       }
 
@@ -155,7 +149,8 @@ export const getRandomBrowseHandler = async (event) => {
       break;
     }
 
-    const hasMore = Boolean(lastEvaluatedKey || (segment === SEGMENT_AFTER && items.length < limit));
+    const signedItems = await Promise.all(items.map((item) => createSignedMediaView(item)));
+    const hasMore = Boolean(lastEvaluatedKey || (segment === SEGMENT_AFTER && signedItems.length < limit));
     const nextCursor = hasMore
       ? encodeCursor({
           seed: state.seed,
@@ -165,14 +160,14 @@ export const getRandomBrowseHandler = async (event) => {
       : null;
 
     return jsonResponse(200, {
-      items,
+      items: signedItems,
       seed: state.seed,
       cursor: nextCursor,
       wrapped: segment === SEGMENT_BEFORE,
       hasMore
     }, event);
   } catch (error) {
-    console.error('Error browsing random images:', error);
+    console.error('Error browsing mobile random images:', error);
     return serverError('Failed to browse random images', event);
   }
 };

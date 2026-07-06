@@ -5,6 +5,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
 import { getAllItemsHandler } from './get-all-items.mjs';
+import { requireReadOriginSecret } from '../lib/auth.mjs';
 import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../lib/http.mjs';
 import { isValidImageId } from '../lib/validation.mjs';
 const client = new DynamoDBClient({});
@@ -17,6 +18,10 @@ export const getByIdHandler = async (event) => {
   const method = event?.httpMethod || event?.requestContext?.http?.method || '';
   if (method !== 'GET') {
     return methodNotAllowed(`getMethod only accepts GET method, you tried: ${method}`, event);
+  }
+  const authError = requireReadOriginSecret(event);
+  if (authError) {
+    return authError;
   }
   // All log statements are written to CloudWatch
   console.info('received:', event);

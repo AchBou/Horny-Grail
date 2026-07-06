@@ -2,6 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getBucketName, getBucketRegion, getLookupTableName } from '../../config/env.mjs';
+import { requireWriteApiKey } from '../../lib/auth.mjs';
 import { badRequest, jsonResponse, methodNotAllowed, serverError } from '../../lib/http.mjs';
 import { isValidImageExt, isValidImageId } from '../../lib/validation.mjs';
 
@@ -25,13 +26,7 @@ async function objectExists(key) {
   }
 }
 
-export const getAssetIntegrityHandler = async (event) => {
-  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
-  if (method !== 'GET') {
-    return methodNotAllowed(`getAssetIntegrity only accepts GET method, you tried: ${method}`, event);
-  }
-
-  const id = event?.pathParameters?.id;
+export async function buildAssetIntegrityResponse(id, event) {
   if (!isValidImageId(id)) {
     return badRequest('Invalid image id', event);
   }
@@ -78,4 +73,18 @@ export const getAssetIntegrityHandler = async (event) => {
     console.error('Error checking asset integrity', error);
     return serverError('Failed to check asset integrity', event);
   }
+}
+
+export const getAssetIntegrityHandler = async (event) => {
+  const method = event?.httpMethod || event?.requestContext?.http?.method || '';
+  if (method !== 'GET') {
+    return methodNotAllowed(`getAssetIntegrity only accepts GET method, you tried: ${method}`, event);
+  }
+
+  const authError = requireWriteApiKey(event);
+  if (authError) {
+    return authError;
+  }
+
+  return buildAssetIntegrityResponse(event?.pathParameters?.id, event);
 };

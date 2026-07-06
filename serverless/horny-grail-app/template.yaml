@@ -17,10 +17,6 @@ Parameters:
     Type: String
     Description: Name of the frontend S3 bucket used as the protected CloudFront origin
     Default: your-frontend-bucket-name
-  MediaOriginDomainName:
-    Type: String
-    Description: Existing media origin domain name that currently serves /files and /thumbnails
-    Default: your-media-origin.cloudfront.net
   BucketName:
     Type: String
     Description: Existing S3 bucket used for full images and thumbnails
@@ -37,6 +33,22 @@ Parameters:
     Type: String
     Description: Shared code accepted by the custom access page
     NoEcho: true
+  ReadOriginSecret:
+    Type: String
+    Description: Shared secret CloudFront sends to the raw API origin so public read routes cannot be called directly
+    NoEcho: true
+  MobileReadTokenSecret:
+    Type: String
+    Description: Shared secret used to sign short-lived bearer tokens for the mobile read API
+    NoEcho: true
+  MobileReadTokenTtlSeconds:
+    Type: Number
+    Description: Number of seconds a mobile read session token remains valid
+    Default: 3600
+  MobileSignedUrlTtlSeconds:
+    Type: Number
+    Description: Number of seconds signed media URLs returned to the mobile app remain valid
+    Default: 900
   CloudFrontPublicKeyParameterName:
     Type: String
     Description: SSM parameter name containing the PEM encoded RSA public key paired with the private key in Secrets Manager
@@ -47,7 +59,7 @@ Parameters:
   AccessCookieTtlSeconds:
     Type: Number
     Description: Number of seconds a successful access-code session remains valid
-    Default: 604800
+    Default: 3600
   CloudFrontCookieResource:
     Type: String
     Description: CloudFront signed-cookie resource scope. Use https://*/* for first deploy, then restrict to your protected domain if desired.
@@ -202,6 +214,16 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  ProtectedReadMediaOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-protected-read-media
+        Description: Origin access control for protected media objects
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
   ProtectedReadFrontendRewriteFunction:
     Type: AWS::CloudFront::Function
     Properties:
@@ -270,6 +292,9 @@ Resources:
             S3OriginConfig: {}
           - Id: ApiOrigin
             DomainName: !Sub ${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com
+            OriginCustomHeaders:
+              - HeaderName: x-read-origin-secret
+                HeaderValue: !Ref ReadOriginSecret
             CustomOriginConfig:
               HTTPPort: 80
               HTTPSPort: 443
@@ -277,13 +302,9 @@ Resources:
               OriginSSLProtocols:
                 - TLSv1.2
           - Id: MediaOrigin
-            DomainName: !Ref MediaOriginDomainName
-            CustomOriginConfig:
-              HTTPPort: 80
-              HTTPSPort: 443
-              OriginProtocolPolicy: https-only
-              OriginSSLProtocols:
-                - TLSv1.2
+            DomainName: !Sub ${BucketName}.s3.${BucketRegion}.amazonaws.com
+            OriginAccessControlId: !GetAtt ProtectedReadMediaOriginAccessControl.Id
+            S3OriginConfig: {}
         DefaultCacheBehavior:
           AllowedMethods:
             - GET
@@ -315,6 +336,19 @@ Resources:
             TargetOriginId: FrontendOrigin
             ViewerProtocolPolicy: redirect-to-https
           - PathPattern: /favicon*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+            Compress: true
+            TargetOriginId: FrontendOrigin
+            ViewerProtocolPolicy: redirect-to-https
+          - PathPattern: /styles/*
             AllowedMethods:
               - GET
               - HEAD
@@ -432,6 +466,26 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${ProtectedReadSiteDistribution}
 
+  ProtectedReadMediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BucketName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Id: PolicyForCloudFrontProtectedMedia
+        Statement:
+          - Sid: AllowProtectedReadMediaDistribution
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource:
+              - !Sub arn:aws:s3:::${BucketName}/files/*
+              - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${ProtectedReadSiteDistribution}
+
   createAccessSessionFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -451,6 +505,7 @@ Resources:
           CLOUDFRONT_KEY_PAIR_ID: !Ref ProtectedReadPublicKey
           CLOUDFRONT_COOKIE_RESOURCE: !Ref CloudFrontCookieResource
           ACCESS_COOKIE_TTL_SECONDS: !Ref AccessCookieTtlSeconds
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         AuthSessionPost:
           Type: HttpApi
@@ -468,6 +523,30 @@ Resources:
             Path: /auth/session
             Method: OPTIONS
 
+  createMobileAccessSessionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/auth/create-mobile-session.createMobileSessionHandler
+      Timeout: 10
+      Description: Validates the shared access code and issues a short-lived mobile bearer token.
+      Environment:
+        Variables:
+          READ_ACCESS_CODE: !Ref ReadAccessCode
+          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Events:
+        AuthMobileSessionPost:
+          Type: HttpApi
+          Properties:
+            Path: /auth/mobile/session
+            Method: POST
+        AuthMobileSessionOptions:
+          Type: HttpApi
+          Properties:
+            Path: /auth/mobile/session
+            Method: OPTIONS
+
   # Read handlers.
   getAllThumbnailsFunction:
     Type: AWS::Serverless::Function
@@ -481,6 +560,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
+          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -501,6 +581,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
+          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -550,6 +631,7 @@ Resources:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
+          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -584,6 +666,7 @@ Resources:
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
           CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
+          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -609,6 +692,7 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
+          READ_ORIGIN_SECRET: !Ref ReadOriginSecret
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -616,6 +700,84 @@ Resources:
           Properties:
             Path: /api/browse/random
             Method: GET
+  getMobileByIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/mobile/get-by-id.getMobileByIdHandler
+      Timeout: 100
+      Description: Returns one mobile media item with signed original and thumbnail URLs.
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref LookupTable
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTable
+          BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
+          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
+          MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/{id}
+            Method: GET
+        ApiOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/{id}
+            Method: OPTIONS
+
+  getMobileRandomBrowseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/mobile/get-random-browse.getMobileRandomBrowseHandler
+      Timeout: 60
+      Description: Returns randomized mobile browse pages with signed media URLs.
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref LookupTable
+        - Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:Query
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LookupTable}/index/RandomImageIndex
+        - Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - !Sub arn:aws:s3:::${BucketName}/files/*
+            - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTable
+          BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
+          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
+          MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/browse/random
+            Method: GET
+        ApiOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/browse/random
+            Method: OPTIONS
 
   # Upload and repair helpers.
   signUploadFunction:
@@ -671,6 +833,7 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
+          WRITE_API_KEY: !Ref WriteApiKey
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -678,6 +841,42 @@ Resources:
           Properties:
             Path: /api/assets/{id}/integrity
             Method: GET
+
+  getMobileAssetIntegrityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/mobile/get-asset-integrity.getMobileAssetIntegrityHandler
+      Timeout: 30
+      Description: Checks asset integrity for the mobile app after validating a mobile read token.
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref LookupTable
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTable
+          BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
+          MOBILE_READ_TOKEN_SECRET: !Ref MobileReadTokenSecret
+          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/assets/{id}/integrity
+            Method: GET
+        ApiOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/assets/{id}/integrity
+            Method: OPTIONS
 
   # Stack-level monitoring.
   ApplicationResourceGroup:
@@ -708,9 +907,6 @@ Outputs:
   ProtectedReadDistributionId:
     Description: CloudFront distribution ID for the protected static site, API, and media entrypoint
     Value: !Ref ProtectedReadSiteDistribution
-  ProtectedReadDistributionArn:
-    Description: CloudFront distribution ARN to use in the frontend bucket policy
-    Value: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${ProtectedReadSiteDistribution}
   ProtectedReadBaseUrl:
     Description: Base URL for the protected static frontend and media paths
     Value: !Sub https://${ProtectedReadSiteDistribution.DomainName}

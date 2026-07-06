@@ -21,7 +21,12 @@ describe('Test getRandomImageHandler', () => {
       Items: [{ id, ext: 'jpg', status: 'active', randomKey: 0.8 }]
     });
 
-    const result = await getRandomImageHandler({ httpMethod: 'GET' });
+    const result = await getRandomImageHandler({
+      httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      }
+    });
 
     expect(result.statusCode).toEqual(200);
     expect(JSON.parse(result.body)).toEqual({
@@ -51,7 +56,12 @@ describe('Test getRandomImageHandler', () => {
       .resolvesOnce({ Items: [] })
       .resolvesOnce({ Items: [{ id, ext: 'png', status: 'active', randomKey: 0.1 }] });
 
-    const result = await getRandomImageHandler({ httpMethod: 'GET' });
+    const result = await getRandomImageHandler({
+      httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      }
+    });
 
     expect(result.statusCode).toEqual(200);
     expect(JSON.parse(result.body)).toEqual(expect.objectContaining({
@@ -69,7 +79,12 @@ describe('Test getRandomImageHandler', () => {
   it('should return 404 when there are no active images', async () => {
     ddbMock.on(QueryCommand).resolves({ Items: [] });
 
-    const result = await getRandomImageHandler({ httpMethod: 'GET' });
+    const result = await getRandomImageHandler({
+      httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      }
+    });
 
     expect(result.statusCode).toEqual(404);
     expect(JSON.parse(result.body)).toEqual({

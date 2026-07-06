@@ -21,7 +21,10 @@ describe('Test getAllThumbnailsHandler', () => {
         }); 
  
         const event = { 
-            httpMethod: 'GET' 
+            httpMethod: 'GET',
+            headers: {
+                'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+            }
         };
  
         // Invoke handler

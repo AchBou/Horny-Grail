@@ -24,6 +24,9 @@ describe('Test getRandomBrowseHandler', () => {
 
     const result = await getRandomBrowseHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      },
       queryStringParameters: { limit: '1' }
     });
 
@@ -51,6 +54,9 @@ describe('Test getRandomBrowseHandler', () => {
 
     const result = await getRandomBrowseHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      },
       queryStringParameters: { cursor, limit: '1' }
     });
 
@@ -80,6 +86,9 @@ describe('Test getRandomBrowseHandler', () => {
 
     const result = await getRandomBrowseHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      },
       queryStringParameters: { limit: '2' }
     });
 
@@ -104,6 +113,9 @@ describe('Test getRandomBrowseHandler', () => {
 
     const result = await getRandomBrowseHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      },
       queryStringParameters: { limit: '2' }
     });
 
@@ -117,6 +129,9 @@ describe('Test getRandomBrowseHandler', () => {
   it('should reject invalid cursors', async () => {
     const result = await getRandomBrowseHandler({
       httpMethod: 'GET',
+      headers: {
+        'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+      },
       queryStringParameters: { cursor: 'bad-value' }
     });
 

@@ -6,7 +6,7 @@ AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity chec
 
 - Store image and video metadata in DynamoDB using SHA-256 `id` as the primary key
 - Maintain `status` and `randomKey` fields for random discovery
-- Serve read endpoints for item lookup, random item lookup, and randomized browse
+- Serve protected read endpoints for item lookup, random item lookup, randomized browse, and mobile read sessions
 - Validate upload requests and issue presigned S3 URLs for originals and thumbnails
 - Check whether metadata, originals, and thumbnails exist for repair flows
 - Expose a unified CloudFront entrypoint for the static frontend, `/api/*`, `/files/*`, and `/thumbnails/*`
@@ -24,7 +24,7 @@ AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity chec
 
 ## API Surface
 
-Read endpoints:
+Web read endpoints:
 
 - `GET /api`
 - `GET /api/`
@@ -32,14 +32,21 @@ Read endpoints:
 - `GET /api/get-random-image`
 - `GET /api/browse/random`
 - `GET /api/thumbnails`
-- `GET /api/assets/{id}/integrity`
+
+Mobile read endpoints:
+
+- `POST /auth/mobile/session`
+- `GET /api/mobile/{id}`
+- `GET /api/mobile/browse/random`
+- `GET /api/mobile/assets/{id}/integrity`
 
 Access endpoint:
 
 - `POST /auth/session`
 
-Write endpoints:
+Write and repair endpoints:
 
+- `GET /api/assets/{id}/integrity`
 - `POST /api`
 - `POST /api/uploads/sign`
 
@@ -74,11 +81,14 @@ Matching SAM parameters:
 - `LookupTableName`
 - `CloudFrontBaseUrl`
 - `FrontendBucketName`
-- `MediaOriginDomainName`
 - `BucketName`
 - `BucketRegion`
 - `WriteApiKey`
 - `ReadAccessCode`
+- `ReadOriginSecret`
+- `MobileReadTokenSecret`
+- `MobileReadTokenTtlSeconds`
+- `MobileSignedUrlTtlSeconds`
 - `CloudFrontPublicKeyParameterName`
 - `CloudFrontPrivateKeySecretArn`
 - `AccessCookieTtlSeconds`
@@ -93,10 +103,15 @@ Notes:
 - If a table with the target name already exists outside CloudFormation, import it or deploy with a new name.
 - `CloudFrontBaseUrl` is still used by read handlers that include media URLs in responses. The static frontend should build media URLs from `PUBLIC_CLOUDFRONT_BASE_URL` when possible.
 - `FrontendBucketName` is the private S3 bucket that stores the built frontend assets. S3 website hosting is not required.
-- `MediaOriginDomainName` should be the existing origin currently serving `/files/*` and `/thumbnails/*`.
+- `BucketName` is now both the upload target and the protected media origin behind CloudFront OAC.
 - `ReadAccessCode` is the shared code users enter on the static access page.
+- `ReadOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname.
+- `MobileReadTokenSecret` signs the short-lived bearer tokens returned by `POST /auth/mobile/session`.
+- `MobileReadTokenTtlSeconds` defaults to `3600` seconds, which keeps a successful mobile session for 1 hour.
+- `MobileSignedUrlTtlSeconds` defaults to `900` seconds, which keeps mobile media URLs valid for 15 minutes before the app refreshes them with another authenticated read request.
 - `CloudFrontPublicKeyParameterName` points to an SSM parameter containing the PEM public key CloudFront uses to verify signed cookies.
 - `CloudFrontPrivateKeySecretArn` points to a Secrets Manager secret containing the matching PEM private key.
+- `AccessCookieTtlSeconds` defaults to `3600` seconds, which keeps a successful session for 1 hour.
 - `CloudFrontCookieResource` defaults to `https://*/*` to avoid deployment ordering problems. After deployment, you can restrict it to the protected distribution domain and redeploy.
 
 ## Local Development
@@ -147,7 +162,6 @@ For the static public frontend, prefer these outputs from the protected CloudFro
 - `ProtectedReadApiBaseUrl`
 - `ProtectedReadMediaBaseUrl`
 - `ProtectedReadDistributionId`
-- `ProtectedReadDistributionArn`
 
 Point:
 
@@ -156,6 +170,10 @@ Point:
 - the frontend deploy invalidation target to `ProtectedReadDistributionId`
 
 Users access the static site through `ProtectedReadBaseUrl`. If the frontend route request does not include the signed-cookie names, CloudFront redirects to `/access`; after a correct code submission, `/auth/session` sets signed cookies and redirects back into the app. The API and media paths enforce those signed cookies through CloudFront trusted key groups.
+
+The raw `execute-api` read routes are no longer anonymous. Browser reads only work when CloudFront injects `ReadOriginSecret`, and the mobile app must exchange the same shared code for a bearer token through `POST /auth/mobile/session`.
+
+The protected distribution now reads both frontend assets and media directly from private S3 buckets through Origin Access Control. Once the stack-managed media bucket policy is in place, older public CloudFront media distributions that point at the same bucket will stop serving `files/*` and `thumbnails/*`.
 
 ### Access-code cookie keys
 
@@ -176,16 +194,7 @@ Use:
 
 ### Frontend bucket policy
 
-The frontend bucket policy is now managed by this stack and scoped to the protected distribution.
-
-Because `hornygrail-front` already has an unmanaged bucket policy today, the first adoption step is one-time:
-
-1. Delete the existing bucket policy from `hornygrail-front`.
-2. Redeploy this SAM stack.
-
-After that, CloudFormation owns the bucket policy and keeps it aligned with the current protected distribution.
-
-The managed policy statement looks like this:
+The frontend bucket policy is managed by this stack and scoped to the protected distribution. It allows only CloudFront Origin Access Control to read the private frontend bucket:
 
 ```json
 {
@@ -204,7 +213,7 @@ The managed policy statement looks like this:
 }
 ```
 
-This allows only the protected distribution to read the private frontend bucket through Origin Access Control.
+If the target bucket already has an unmanaged policy in a new environment, delete or import that policy before deploying this stack resource.
 
 ## Storage and Upload Rules
 

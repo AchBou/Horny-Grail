@@ -24,6 +24,9 @@ describe('Test getByIdHandler', () => {
  
         const event = { 
             httpMethod: 'GET', 
+            headers: {
+                'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+            },
             pathParameters: { 
                 id 
             } 
@@ -47,6 +50,9 @@ describe('Test getByIdHandler', () => {
     it('should reject invalid ids', async () => {
         const result = await getByIdHandler({
             httpMethod: 'GET',
+            headers: {
+                'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+            },
             pathParameters: {
                 id: 'not-a-valid-id'
             }
@@ -67,6 +73,9 @@ describe('Test getByIdHandler', () => {
 
         const result = await getByIdHandler({
             httpMethod: 'GET',
+            headers: {
+                'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
+            },
             pathParameters: {
                 id: ''
             }
