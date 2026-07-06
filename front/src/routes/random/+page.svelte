@@ -33,18 +33,6 @@
         };
     }
 
-    function inferExtFromUrl(url) {
-        try {
-            const pathname = new URL(url).pathname;
-            const ext = pathname.split('.').pop();
-            return ext ? ext.toLowerCase() : null;
-        } catch {
-            const base = url.split('?')[0];
-            const ext = base.split('.').pop();
-            return ext ? ext.toLowerCase() : null;
-        }
-    }
-
     async function generateRandomPic() {
         try {
             isLoading = true;
@@ -67,8 +55,6 @@
                 const data = await response.json();
                 if (data?.id && data?.ext) {
                     randomSrc = buildFileUrl(data.id, data.ext);
-                } else if (typeof data?.url === 'string') {
-                    randomSrc = data.url;
                 } else {
                     throw new Error('Invalid response format: missing media item');
                 }
@@ -77,7 +63,7 @@
                 randomSrc = text.replace(/^\"|\"$/g, '');
             }
 
-            mediaKind = getMediaKindFromExt(inferExtFromUrl(randomSrc));
+            mediaKind = getMediaKindFromExt(randomSrc.split('?')[0].split('.').pop() || null);
         } catch (err) {
             console.error(err);
             const failure = describeRandomFailure(err?.status, err.message || 'Unknown error');

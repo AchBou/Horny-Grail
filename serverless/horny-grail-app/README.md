@@ -70,7 +70,6 @@ Use `env.example.json` as the starting point for local SAM environment values.
 Required runtime env:
 
 - `LOOKUP_TABLE`
-- `CLOUDFRONT_BASE_URL`
 - `BUCKET_NAME`
 - `BUCKET_REGION`
 - `WRITE_API_KEY`
@@ -79,7 +78,6 @@ Required runtime env:
 Matching SAM parameters:
 
 - `LookupTableName`
-- `CloudFrontBaseUrl`
 - `FrontendBucketName`
 - `BucketName`
 - `BucketRegion`
@@ -98,7 +96,6 @@ Notes:
 - The table uses `id` as the primary key.
 - `RandomImageIndex` is required for `GET /api/get-random-image` and `GET /api/browse/random`.
 - If a table with the target name already exists outside CloudFormation, import it or deploy with a new name.
-- `CloudFrontBaseUrl` is still used by read handlers that include media URLs in responses. The static frontend should build media URLs from `PUBLIC_CLOUDFRONT_BASE_URL` when possible.
 - `FrontendBucketName` is the private S3 bucket that stores the built frontend assets. S3 website hosting is not required.
 - `BucketName` is now both the upload target and the protected media origin behind CloudFront OAC.
 - `AppSecretsSecretArn` points to a Secrets Manager JSON secret with these fields:

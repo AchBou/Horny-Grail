@@ -1,4 +1,3 @@
-const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
 const requireEnv = (name, value) => {
   if (!value) {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -9,12 +8,6 @@ const requireEnv = (name, value) => {
 
 export function getLookupTableName() {
   return requireEnv('LOOKUP_TABLE', process.env.LOOKUP_TABLE);
-}
-
-export function getCloudFrontBaseUrl() {
-  return trimTrailingSlash(
-    requireEnv('CLOUDFRONT_BASE_URL', process.env.CLOUDFRONT_BASE_URL)
-  );
 }
 
 export function getWriteApiKey() {
@@ -65,8 +58,4 @@ export function getBucketName() {
 
 export function getBucketRegion() {
   return requireEnv('BUCKET_REGION', process.env.BUCKET_REGION);
-}
-
-export function buildCloudFrontFileUrl(key) {
-  return `${getCloudFrontBaseUrl()}/files/${key}`;
 }

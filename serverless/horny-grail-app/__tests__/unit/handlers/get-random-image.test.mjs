@@ -31,8 +31,7 @@ describe('Test getRandomImageHandler', () => {
     expect(result.statusCode).toEqual(200);
     expect(JSON.parse(result.body)).toEqual({
       id,
-      ext: 'jpg',
-      url: `https://example.cloudfront.net/files/${id}.jpg`
+      ext: 'jpg'
     });
 
     const query = ddbMock.commandCalls(QueryCommand)[0].args[0].input;
@@ -66,8 +65,7 @@ describe('Test getRandomImageHandler', () => {
     expect(result.statusCode).toEqual(200);
     expect(JSON.parse(result.body)).toEqual(expect.objectContaining({
       id,
-      ext: 'png',
-      url: `https://example.cloudfront.net/files/${id}.png`
+      ext: 'png'
     }));
 
     const calls = ddbMock.commandCalls(QueryCommand);

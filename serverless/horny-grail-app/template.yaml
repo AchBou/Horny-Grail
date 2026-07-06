@@ -9,10 +9,6 @@ Parameters:
     Type: String
     Description: Name of the DynamoDB table managed by this stack
     Default: horny-grail-name-lookup
-  CloudFrontBaseUrl:
-    Type: String
-    Description: Legacy local/dev asset base URL used when running handlers outside the protected CloudFront stack
-    Default: https://your-cloudfront-domain.cloudfront.net
   FrontendBucketName:
     Type: String
     Description: Name of the frontend S3 bucket used as the protected CloudFront origin
@@ -618,7 +614,6 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
           READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
@@ -653,7 +648,6 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          CLOUDFRONT_BASE_URL: !Ref CloudFrontBaseUrl
           READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
