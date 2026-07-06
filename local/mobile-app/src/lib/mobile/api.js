@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
-import { buildApiUrl, writeApiKey } from '$lib/config/privateConfig.js';
+import { buildApiUrl, buildServiceUrl, writeApiKey } from '$lib/config/privateConfig.js';
+import { getReadAccessToken } from '$lib/mobile/readSession.js';
 
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const DEFAULT_RETRIES = 3;
@@ -15,6 +16,10 @@ function isRetryableStatus(status) {
 
 export function isAbortError(error) {
   return error?.name === 'AbortError';
+}
+
+export function isUnauthorizedError(error) {
+  return error?.status === 401;
 }
 
 function throwIfAborted(signal) {
@@ -136,22 +141,63 @@ function writeHeaders() {
   };
 }
 
+function readHeaders() {
+  const token = getReadAccessToken();
+  if (!token) {
+    const error = new Error('Enter the access code to continue');
+    error.status = 401;
+    error.code = 'unauthorized';
+    throw error;
+  }
+
+  return {
+    Authorization: `Bearer ${token}`
+  };
+}
+
+export function createMobileReadSession(code, { signal = null } = {}) {
+  return requestJson(buildServiceUrl('/auth/mobile/session'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ code }),
+    signal
+  }, { retries: 1 });
+}
+
 export function fetchRandomBrowsePage(cursor = null, limit = 18, { signal = null } = {}) {
-  const url = new URL(buildApiUrl('/browse/random'));
+  const url = new URL(buildApiUrl('/mobile/browse/random'));
   url.searchParams.set('limit', String(limit));
   if (cursor) {
     url.searchParams.set('cursor', cursor);
   }
 
-  return requestJson(url.toString(), { signal }, { retries: 2 });
+  return requestJson(url.toString(), {
+    signal,
+    headers: readHeaders()
+  }, { retries: 2 });
 }
 
 export function fetchItemById(id, { signal = null } = {}) {
-  return requestJson(buildApiUrl(`/${id}`), { signal }, { retries: 2 });
+  return requestJson(buildApiUrl(`/mobile/${id}`), {
+    signal,
+    headers: readHeaders()
+  }, { retries: 2 });
 }
 
 export function fetchAssetIntegrity(id, { signal = null } = {}) {
-  return requestJson(buildApiUrl(`/assets/${id}/integrity`), { signal }, { retries: 2 });
+  return requestJson(buildApiUrl(`/assets/${id}/integrity`), {
+    signal,
+    headers: writeHeaders()
+  }, { retries: 2 });
+}
+
+export function fetchMobileAssetIntegrity(id, { signal = null } = {}) {
+  return requestJson(buildApiUrl(`/mobile/assets/${id}/integrity`), {
+    signal,
+    headers: readHeaders()
+  }, { retries: 2 });
 }
 
 export function signUpload(body, { signal = null } = {}) {

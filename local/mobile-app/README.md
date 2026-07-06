@@ -5,6 +5,7 @@ Private Capacitor + SvelteKit mobile client for browsing and uploading HornyGrai
 ## Current UX
 
 - The home screen is a neutral chooser, not a gallery-first or upload-first screen.
+- Users must enter the shared access code before browsing or opening saved media.
 - Users explicitly choose `Browse Grail` or `Upload Media` on entry.
 - The randomized gallery is loaded only after the user opens browse mode.
 - Upload UI and queue details stay hidden until the user opens upload mode or resumes an active queue.
@@ -12,12 +13,14 @@ Private Capacitor + SvelteKit mobile client for browsing and uploading HornyGrai
 ## Implemented MVP
 
 - Private build-time config from `mobile.private.json`.
+- Shared-code unlock flow backed by `POST /auth/mobile/session`.
 - Chooser-first home screen with explicit browse and upload entry points.
-- Randomized browse feed backed by `GET /api/browse/random`.
+- Randomized browse feed backed by authenticated `GET /api/mobile/browse/random`.
 - Single media detail route at `/image/[id]`.
 - Image and WebM selection from the WebView file picker.
 - SHA-256 duplicate detection over original bytes.
-- Integrity checks through `GET /api/assets/{id}/integrity`.
+- Browse/detail integrity checks through authenticated `GET /api/mobile/assets/{id}/integrity`.
+- Upload integrity checks through `GET /api/assets/{id}/integrity` with the write API key.
 - Presigned original and thumbnail uploads through `POST /api/uploads/sign`.
 - Metadata registration through `POST /api/`.
 - Per-file upload states with retry, repair, cancellation, and duplicate outcomes.
@@ -51,12 +54,13 @@ Expected shape:
 ```json
 {
   "apiBaseUrl": "https://your-api-id.execute-api.your-region.amazonaws.com/api",
-  "cloudFrontBaseUrl": "https://your-cloudfront-domain.cloudfront.net",
   "writeApiKey": "replace-with-write-api-key"
 }
 ```
 
 `npm run dev`, `npm run build`, and `npm run cap:sync` generate `src/lib/generated/privateConfig.js` from that private file before starting.
+
+The app now expects the user to enter the shared access code on first launch or after the 1-hour mobile read session expires. After unlock, read requests carry a short-lived bearer token and the backend returns signed media URLs instead of relying on a public asset base URL.
 
 ## Commands
 

@@ -13,22 +13,17 @@ function fail(message) {
 
 function validateConfig(config) {
   const apiBaseUrl = config?.apiBaseUrl;
-  const cloudFrontBaseUrl = config?.cloudFrontBaseUrl;
   const writeApiKey = config?.writeApiKey;
 
   if (typeof apiBaseUrl !== 'string' || !apiBaseUrl.startsWith('http') || !apiBaseUrl.endsWith('/api')) {
     fail('mobile.private.json must contain apiBaseUrl ending with /api');
   }
 
-  if (typeof cloudFrontBaseUrl !== 'string' || !cloudFrontBaseUrl.startsWith('http') || cloudFrontBaseUrl.endsWith('/')) {
-    fail('mobile.private.json must contain cloudFrontBaseUrl without a trailing slash');
-  }
-
   if (typeof writeApiKey !== 'string' || writeApiKey.length === 0) {
     fail('mobile.private.json must contain a non-empty writeApiKey');
   }
 
-  return { apiBaseUrl, cloudFrontBaseUrl, writeApiKey };
+  return { apiBaseUrl, writeApiKey };
 }
 
 async function main() {

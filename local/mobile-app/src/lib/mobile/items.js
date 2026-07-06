@@ -1,8 +1,3 @@
-import {
-  buildCloudFrontFileUrl,
-  buildCloudFrontThumbnailUrl
-} from '$lib/config/privateConfig.js';
-
 const VIDEO_EXTENSIONS = new Set(['webm']);
 
 function getExtFromStringValue(value) {
@@ -64,10 +59,16 @@ export function createMediaView(item) {
     return null;
   }
 
+  const fileUrl = typeof item?.fileUrl === 'string' ? item.fileUrl : null;
+  const thumbnailUrl = typeof item?.thumbnailUrl === 'string' ? item.thumbnailUrl : null;
+  if (!fileUrl || !thumbnailUrl) {
+    return null;
+  }
+
   return {
     ...normalized,
-    thumbnailUrl: buildCloudFrontThumbnailUrl(normalized.id),
-    fileUrl: buildCloudFrontFileUrl(normalized.id, normalized.ext),
+    thumbnailUrl,
+    fileUrl,
     detailUrl: `/image/${normalized.id}`
   };
 }

@@ -1,7 +1,14 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
-  import { fetchRandomBrowsePage, isAbortError } from '$lib/mobile/api.js';
+  import ReadAccessGate from '$lib/components/ReadAccessGate.svelte';
+  import {
+    createMobileReadSession,
+    fetchRandomBrowsePage,
+    isAbortError,
+    isUnauthorizedError
+  } from '$lib/mobile/api.js';
   import { normalizeMediaViews } from '$lib/mobile/items.js';
+  import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
@@ -62,6 +69,10 @@
   let browseObserver;
   let observedBrowseSentinel = null;
   let browseAbortController = null;
+  let hasReadSession = false;
+  let accessCode = '';
+  let accessSubmitting = false;
+  let accessError = '';
 
   let uploadItems = [];
   let isProcessingQueue = false;
@@ -205,6 +216,20 @@
       hasLoadedBrowse = true;
     } catch (error) {
       if (isAbortError(error)) {
+        return;
+      }
+
+       if (isUnauthorizedError(error)) {
+        clearReadSession();
+        hasReadSession = false;
+        accessError = 'Your access session expired. Enter the code again.';
+        browseError = null;
+        browseItems = [];
+        browseCursor = null;
+        browseHasMore = false;
+        browseLoading = false;
+        browseLoadingMore = false;
+        homeMode = 'home';
         return;
       }
 
@@ -472,6 +497,10 @@
   }
 
   function openBrowse() {
+    if (!hasReadSession) {
+      return;
+    }
+
     homeMode = 'browse';
     hasBrowseIntent = true;
     if (!hasLoadedBrowse && !browseLoading && !browseLoadingMore) {
@@ -487,7 +516,28 @@
     homeMode = 'home';
   }
 
+  async function unlockReadAccess() {
+    accessSubmitting = true;
+    accessError = '';
+
+    try {
+      const session = await createMobileReadSession(accessCode.trim());
+      saveReadSession(session);
+      hasReadSession = true;
+      accessCode = '';
+      if (hasBrowseIntent && !hasLoadedBrowse) {
+        loadBrowsePage(null);
+      }
+    } catch (error) {
+      console.error('Failed to create mobile read session', error);
+      accessError = error?.status === 401 ? 'That code was not accepted.' : (error?.message || 'Could not unlock the app');
+    } finally {
+      accessSubmitting = false;
+    }
+  }
+
   onMount(() => {
+    hasReadSession = Boolean(getReadSession());
     browseObserver = new IntersectionObserver((entries) => {
       const [entry] = entries;
       if (!entry?.isIntersecting || browseLoading || browseLoadingMore || !browseHasMore || !browseCursor) {
@@ -574,6 +624,17 @@
   </header>
 
   <main class="shell">
+    {#if !hasReadSession}
+      <ReadAccessGate
+        bind:code={accessCode}
+        busy={accessSubmitting}
+        error={accessError}
+        title="Unlock HornyGrail"
+        copy="Enter the shared access code before browsing or opening saved media on this device."
+        submitLabel="Unlock"
+        on:submit={unlockReadAccess}
+      />
+    {:else}
     {#if homeMode === 'home'}
       <section class="home-panel">
         <div class="home-copy">
@@ -806,6 +867,7 @@
 
         <div bind:this={browseSentinel} class="scroll-sentinel" aria-hidden="true"></div>
       {/if}
+    {/if}
     {/if}
   </main>
 

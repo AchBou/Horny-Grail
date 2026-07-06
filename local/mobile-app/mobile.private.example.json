@@ -1,5 +1,4 @@
 {
   "apiBaseUrl": "https://your-api-id.execute-api.your-region.amazonaws.com/api",
-  "cloudFrontBaseUrl": "https://your-cloudfront-domain.cloudfront.net",
   "writeApiKey": "replace-with-write-api-key"
 }

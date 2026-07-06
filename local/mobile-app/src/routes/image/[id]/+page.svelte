@@ -1,13 +1,17 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
+  import ReadAccessGate from '$lib/components/ReadAccessGate.svelte';
   import { fly } from 'svelte/transition';
   import {
-    fetchAssetIntegrity,
+    createMobileReadSession,
+    fetchMobileAssetIntegrity,
     fetchItemById,
     fetchRandomBrowsePage,
-    isAbortError
+    isAbortError,
+    isUnauthorizedError
   } from '$lib/mobile/api.js';
   import { createMediaView, normalizeMediaViews } from '$lib/mobile/items.js';
+  import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
 
   const NEXT_MEDIA_PAGE_SIZE = 6;
   const NEXT_MEDIA_ATTEMPTS = 3;
@@ -36,6 +40,10 @@
   let swipeDirection = 1;
   let viewerNotice = '';
   let viewerNoticeTimer = null;
+  let hasReadSession = false;
+  let accessCode = '';
+  let accessSubmitting = false;
+  let accessError = '';
 
   function getRouteId() {
     const segments = window.location.pathname.split('/').filter(Boolean);
@@ -89,7 +97,7 @@
         throw new Error('Media was not found');
       }
 
-      const nextIntegrity = await fetchAssetIntegrity(nextId, { signal: activeController.signal });
+      const nextIntegrity = await fetchMobileAssetIntegrity(nextId, { signal: activeController.signal });
       id = nextId;
       media = nextMedia;
       integrity = nextIntegrity;
@@ -97,6 +105,14 @@
       return true;
     } catch (loadError) {
       if (isAbortError(loadError)) {
+        return false;
+      }
+
+      if (isUnauthorizedError(loadError)) {
+        clearReadSession();
+        hasReadSession = false;
+        accessError = 'Your access session expired. Enter the code again.';
+        error = null;
         return false;
       }
 
@@ -256,17 +272,38 @@
   }
 
   onMount(() => {
+    hasReadSession = Boolean(getReadSession());
     const handlePopState = () => {
       loadMedia(getRouteId(), { preserveMedia: Boolean(media) });
     };
 
     window.addEventListener('popstate', handlePopState);
-    loadMedia();
+    if (hasReadSession) {
+      loadMedia();
+    }
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
   });
+
+  async function unlockReadAccess() {
+    accessSubmitting = true;
+    accessError = '';
+
+    try {
+      const session = await createMobileReadSession(accessCode.trim());
+      saveReadSession(session);
+      hasReadSession = true;
+      accessCode = '';
+      await loadMedia();
+    } catch (unlockError) {
+      console.error('Failed to unlock mobile detail view', unlockError);
+      accessError = unlockError?.status === 401 ? 'That code was not accepted.' : (unlockError?.message || 'Could not unlock this view');
+    } finally {
+      accessSubmitting = false;
+    }
+  }
 
   onDestroy(() => {
     controller?.abort();
@@ -281,7 +318,17 @@
 </svelte:head>
 
 <div class="viewer">
-  {#if isLoading}
+  {#if !hasReadSession}
+    <ReadAccessGate
+      bind:code={accessCode}
+      busy={accessSubmitting}
+      error={accessError}
+      title="Unlock This View"
+      copy="Enter the access code to open this item and the rest of your collection."
+      submitLabel="Open item"
+      on:submit={unlockReadAccess}
+    />
+  {:else if isLoading}
     <section class="center-state">
       <div class="spinner"></div>
       <p>Opening...</p>

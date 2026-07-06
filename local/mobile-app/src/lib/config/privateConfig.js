@@ -9,8 +9,8 @@ function requireString(name, value) {
 }
 
 export const apiBaseUrl = requireString('apiBaseUrl', mobilePrivateConfig.apiBaseUrl);
-export const cloudFrontBaseUrl = requireString('cloudFrontBaseUrl', mobilePrivateConfig.cloudFrontBaseUrl);
 export const writeApiKey = requireString('writeApiKey', mobilePrivateConfig.writeApiKey);
+const apiOriginBaseUrl = apiBaseUrl.replace(/\/api$/, '');
 
 export function buildApiUrl(pathname = '') {
   if (pathname === '' || pathname === '/') {
@@ -21,18 +21,18 @@ export function buildApiUrl(pathname = '') {
   return `${apiBaseUrl}${normalizedPath}`;
 }
 
-export function buildCloudFrontFileUrl(id, ext) {
-  return `${cloudFrontBaseUrl}/files/${id}.${ext}`;
-}
+export function buildServiceUrl(pathname = '') {
+  if (pathname === '' || pathname === '/') {
+    return apiOriginBaseUrl;
+  }
 
-export function buildCloudFrontThumbnailUrl(id) {
-  return `${cloudFrontBaseUrl}/thumbnails/thumbnail-${id}.jpeg`;
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return `${apiOriginBaseUrl}${normalizedPath}`;
 }
 
 export function getPrivateConfigSummary() {
   return {
     apiBaseUrl,
-    cloudFrontBaseUrl,
     writeApiKeyLoaded: writeApiKey.length > 0,
     writeApiKeyLength: writeApiKey.length
   };
