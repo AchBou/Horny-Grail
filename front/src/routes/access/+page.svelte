@@ -64,6 +64,7 @@
     }
 
     .access-card {
+        box-sizing: border-box;
         width: min(420px, 100%);
         padding: 24px;
         border: 1px solid rgba(31, 43, 55, 0.14);
@@ -99,6 +100,7 @@
     }
 
     input {
+        box-sizing: border-box;
         width: 100%;
         min-height: 48px;
         padding: 12px 14px;

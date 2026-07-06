@@ -11,6 +11,8 @@
     let error = null;
     let errorTitle = "Random image unavailable";
     let mediaLoadFailed = false;
+    let randomVideoElement;
+    let videoControlsEnabled = false;
 
     function describeRandomFailure(status, fallbackMessage) {
         if (status === 404) {
@@ -41,6 +43,7 @@
             error = null;
             errorTitle = "Random image unavailable";
             mediaLoadFailed = false;
+            videoControlsEnabled = false;
 
             const response = await fetch(buildApiUrl("/get-random-image"));
             if (!response.ok) {
@@ -71,6 +74,30 @@
             error = failure.message;
         } finally {
             isLoading = false;
+        }
+    }
+
+    async function toggleVideoPlaybackMode() {
+        videoControlsEnabled = !videoControlsEnabled;
+
+        if (!randomVideoElement) {
+            return;
+        }
+
+        if (videoControlsEnabled) {
+            try {
+                await randomVideoElement.play();
+            } catch (playError) {
+                console.error('Unable to start random video playback with sound.', playError);
+            }
+            return;
+        }
+
+        randomVideoElement.currentTime = 0;
+        try {
+            await randomVideoElement.play();
+        } catch (playError) {
+            console.error('Unable to resume muted random video preview.', playError);
         }
     }
 
@@ -105,7 +132,18 @@
             <div class="image-wrapper" in:fade={{ duration: 300 }}>
                 {#if mediaKind === 'video'}
                     <!-- svelte-ignore a11y_media_has_caption -->
-                    <video class="random-media" src={randomSrc} autoplay loop muted playsinline preload="auto" on:error={handleMediaError}></video>
+                    <video
+                        bind:this={randomVideoElement}
+                        class="random-media"
+                        src={randomSrc}
+                        autoplay
+                        controls={videoControlsEnabled}
+                        loop={!videoControlsEnabled}
+                        muted={!videoControlsEnabled}
+                        playsinline
+                        preload="auto"
+                        on:error={handleMediaError}
+                    ></video>
                 {:else}
                     <img class="random-media" src={randomSrc} alt="Random selection" on:error={handleMediaError} />
                 {/if}
@@ -114,6 +152,42 @@
     </div>
 
     <div class="controls">
+        {#if mediaKind === 'video' && randomSrc && !isLoading && !error && !mediaLoadFailed}
+            <button
+                class="video-toggle-btn"
+                type="button"
+                aria-label={videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
+                title={videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
+                on:click={toggleVideoPlaybackMode}
+            >
+                {#if videoControlsEnabled}
+                    <span class="icon-pair" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M14 5.23v13.54a1 1 0 0 1-1.64.77L7.6 16H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h3.6l4.76-3.54A1 1 0 0 1 14 5.23Z"></path>
+                            <path d="M18.36 8.05a1 1 0 0 1 1.41 0A5.97 5.97 0 0 1 21.5 12a5.97 5.97 0 0 1-1.73 3.95 1 1 0 0 1-1.41-1.41A3.98 3.98 0 0 0 19.5 12a3.98 3.98 0 0 0-1.14-2.54 1 1 0 0 1 0-1.41Z"></path>
+                            <path d="M3.71 3.71a1 1 0 0 1 1.41 0l15.17 15.17a1 1 0 0 1-1.41 1.41L3.71 5.12a1 1 0 0 1 0-1.41Z"></path>
+                        </svg>
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M4 6a2 2 0 0 1 2-2h3v2H6v12h3v2H6a2 2 0 0 1-2-2V6Zm14.59 6L14 8.41V11H9v2h5v2.59L18.59 12Z"></path>
+                            <path d="M20 5h-7v2h7v10h-7v2h7a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"></path>
+                        </svg>
+                    </span>
+                {:else}
+                    <span class="icon-pair" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M14 5.23v13.54a1 1 0 0 1-1.64.77L7.6 16H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1h3.6l4.76-3.54A1 1 0 0 1 14 5.23Z"></path>
+                            <path d="M17.66 8.34a1 1 0 0 1 1.41 0A5.51 5.51 0 0 1 20.75 12a5.51 5.51 0 0 1-1.68 3.66 1 1 0 1 1-1.41-1.41A3.5 3.5 0 0 0 18.75 12a3.5 3.5 0 0 0-1.09-2.25 1 1 0 0 1 0-1.41Z"></path>
+                        </svg>
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M8 6.82v10.36a1 1 0 0 0 1.53.85l8.14-5.18a1 1 0 0 0 0-1.7L9.53 5.97A1 1 0 0 0 8 6.82Z"></path>
+                        </svg>
+                    </span>
+                {/if}
+                <span class="sr-only">
+                    {videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
+                </span>
+            </button>
+        {/if}
         <Button on:click={generateRandomPic} text="Get Another" primary={true} size="medium"/>
     </div>
 </div>
@@ -171,6 +245,50 @@
         margin-top: 30px;
         display: flex;
         justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .video-toggle-btn {
+        min-width: 64px;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 6px;
+        background-color: #1f6f8b;
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .video-toggle-btn:hover {
+        background-color: #175569;
+    }
+
+    .icon-pair {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .icon-pair svg {
+        width: 20px;
+        height: 20px;
+        fill: currentColor;
+        flex: 0 0 auto;
+    }
+
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
     }
 
     .loading {
