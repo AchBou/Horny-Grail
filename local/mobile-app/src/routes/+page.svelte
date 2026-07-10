@@ -628,9 +628,18 @@
 
 <div class="page">
   <header class="app-bar">
-    <div class="app-bar-copy">
-      <p class="kicker">Private Vault</p>
-      <h1>{homeMode === 'browse' ? 'Collection' : homeMode === 'upload' ? 'Add Media' : 'HornyGrail'}</h1>
+    <div class="app-bar-brand">
+      <img
+        class="app-logo"
+        src="/brand/horny-grail-mobile.svg"
+        alt=""
+        width="52"
+        height="52"
+      />
+      <div class="app-bar-copy">
+        <p class="kicker">Private Vault</p>
+        <h1>{homeMode === 'browse' ? 'Collection' : homeMode === 'upload' ? 'Add Media' : 'HornyGrail'}</h1>
+      </div>
     </div>
 
     {#if homeMode === 'home'}
@@ -1005,7 +1014,7 @@
     top: 0;
     z-index: 5;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem;
@@ -1014,8 +1023,28 @@
     border-bottom: 1px solid rgba(40, 29, 22, 0.05);
   }
 
+  .app-bar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.72rem;
+    min-width: 0;
+  }
+
+  .app-logo {
+    width: 3.25rem;
+    height: 3.25rem;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 7px 14px rgba(40, 29, 22, 0.12));
+  }
+
   .app-bar-copy {
     min-width: 0;
+  }
+
+  .app-bar-copy h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .shell {
