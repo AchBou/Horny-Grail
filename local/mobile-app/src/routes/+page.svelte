@@ -83,6 +83,8 @@
   let hasLoadedBrowse = false;
   let hasRestoredUploadQueue = false;
   let queuePersistenceTimer = null;
+  let copiedUploadLocalId = null;
+  let copiedUploadTimeout = null;
   let queuePersistenceSequence = Promise.resolve();
 
   $: activeUploadCount = uploadItems.filter((item) => CANCELLABLE_STATUSES.has(item.status)).length;
@@ -133,6 +135,24 @@
 
   function updateUploadItem(localId, patch) {
     uploadItems = uploadItems.map((item) => item.localId === localId ? { ...item, ...patch } : item);
+  }
+
+  async function copyUploadFileName(item) {
+    try {
+      await navigator.clipboard.writeText(item.name);
+      copiedUploadLocalId = item.localId;
+
+      clearTimeout(copiedUploadTimeout);
+      copiedUploadTimeout = setTimeout(() => {
+        copiedUploadLocalId = null;
+        copiedUploadTimeout = null;
+      }, 1400);
+    } catch (error) {
+      console.error('Failed to copy filename', error);
+      updateUploadItem(item.localId, {
+        message: 'Filename could not be copied on this device.'
+      });
+    }
   }
 
   function sanitizeUploadItemsForState(items) {
@@ -590,6 +610,7 @@
     browseAbortController?.abort();
     browseObserver?.disconnect();
     clearTimeout(queuePersistenceTimer);
+    clearTimeout(copiedUploadTimeout);
     for (const item of uploadItems) {
       item.controller?.abort();
       releasePreview(item.previewUrl);
@@ -771,9 +792,19 @@
                   <div class="upload-body">
                     <div class="upload-line">
                       <div>
-                        <h3>{item.name}</h3>
+                        <button
+                          class="upload-name-button"
+                          type="button"
+                          title={`Copy ${item.name}`}
+                          on:click={() => copyUploadFileName(item)}
+                        >
+                          {item.name}
+                        </button>
                         <p>{statusText(item)} / {formatFileSize(item.size)}</p>
                       </div>
+                      {#if copiedUploadLocalId === item.localId}
+                        <span class="copy-pill">Copied</span>
+                      {/if}
                       <span class={`status-dot ${item.status}`}></span>
                     </div>
                     <div class="item-meter" aria-label={`${statusText(item)} progress`}>
@@ -1393,14 +1424,30 @@
     gap: 0.6rem;
   }
 
-  .upload-line h3 {
+  .upload-name-button {
     max-width: 12rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: #fff9f3;
     font-family: var(--font-ui);
+    font-size: 1rem;
     font-weight: 700;
+    line-height: 1.2;
+    text-align: left;
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+
+  .copy-pill {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    color: #14231d;
+    background: #a4e4cd;
+    font-size: 0.68rem;
+    font-weight: 800;
   }
 
   .upload-line p,
