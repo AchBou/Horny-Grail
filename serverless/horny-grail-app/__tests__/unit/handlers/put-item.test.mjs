@@ -101,5 +101,23 @@ describe('Test putItemHandler', function () {
         expect(result.statusCode).toEqual(200);
         expect(JSON.parse(result.body)).toEqual(expect.objectContaining({ id, ext: 'webm' }));
     });
+
+    it('should accept mp4 items', async () => {
+        const id = 'f'.repeat(64);
+        ddbMock.on(PutCommand).resolves({
+            Attributes: undefined
+        });
+
+        const result = await putItemHandler({
+            httpMethod: 'POST',
+            headers: {
+                'x-api-key': 'test-write-api-key'
+            },
+            body: JSON.stringify({ id, ext: 'mp4' })
+        });
+
+        expect(result.statusCode).toEqual(200);
+        expect(JSON.parse(result.body)).toEqual(expect.objectContaining({ id, ext: 'mp4' }));
+    });
 }); 
  

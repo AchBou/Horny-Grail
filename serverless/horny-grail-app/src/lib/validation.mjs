@@ -1,5 +1,5 @@
 const HASH_RE = /^[a-fA-F0-9]{64}$/;
-const EXT_RE = /^(jpe?g|png|gif|webp|bmp|tiff?|webm)$/i;
+const EXT_RE = /^(jpe?g|png|gif|webp|bmp|tiff?|webm|mp4)$/i;
 const MIME_BY_EXT = Object.freeze({
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
@@ -9,7 +9,8 @@ const MIME_BY_EXT = Object.freeze({
   bmp: 'image/bmp',
   tif: 'image/tiff',
   tiff: 'image/tiff',
-  webm: 'video/webm'
+  webm: 'video/webm',
+  mp4: 'video/mp4'
 });
 
 export const ORIGINAL_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;

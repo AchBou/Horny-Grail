@@ -60,6 +60,27 @@ describe('Test signUploadHandler', () => {
     expect(body.key).toEqual(`files/${id}.webm`);
   });
 
+  it('should issue a signed URL for mp4 uploads', async () => {
+    const id = 'f'.repeat(64);
+    const result = await signUploadHandler({
+      httpMethod: 'POST',
+      headers: {
+        'x-api-key': 'test-write-api-key'
+      },
+      body: JSON.stringify({
+        path: 'files',
+        id,
+        ext: 'mp4',
+        contentType: 'video/mp4',
+        sizeBytes: 54321
+      })
+    });
+
+    expect(result.statusCode).toEqual(200);
+    const body = JSON.parse(result.body);
+    expect(body.key).toEqual(`files/${id}.mp4`);
+  });
+
   it('should issue a signed URL for thumbnail uploads', async () => {
     const id = 'e'.repeat(64);
     const result = await signUploadHandler({
