@@ -6,6 +6,7 @@
 
     let imageUrl = '';
     let mediaKind = 'image';
+    let mediaExt = '';
     let isLoading = true;
     let error = null;
     let errorTitle = 'Unable to load item';
@@ -39,6 +40,14 @@
         };
     }
 
+    function isPlayerVideoExt(ext) {
+        return typeof ext === 'string' && ext.toLowerCase() === 'mp4';
+    }
+
+    function hasInteractiveVideoControls() {
+        return mediaKind === 'video' && (isPlayerVideoExt(mediaExt) || videoControlsEnabled);
+    }
+
     async function toggleVideoPlaybackMode() {
         videoControlsEnabled = !videoControlsEnabled;
 
@@ -69,6 +78,7 @@
             error = null;
             errorTitle = 'Unable to load item';
             imageUrl = '';
+            mediaExt = '';
             videoControlsEnabled = false;
             id = getCurrentIdFromPath();
 
@@ -101,6 +111,7 @@
             }
 
             const ext = item?.ext || 'jpeg';
+            mediaExt = typeof ext === 'string' ? ext.toLowerCase() : '';
             mediaKind = getMediaKindFromExt(ext);
             imageUrl = USE_MOCK_GALLERY ? buildMockFileUrl(id) : buildFileUrl(id, ext);
         } catch (e) {
@@ -151,10 +162,10 @@
                         bind:this={videoElement}
                         class="media"
                         src={imageUrl}
-                        autoplay
-                        controls={videoControlsEnabled}
-                        loop={!videoControlsEnabled}
-                        muted={!videoControlsEnabled}
+                        autoplay={!isPlayerVideoExt(mediaExt)}
+                        controls={hasInteractiveVideoControls()}
+                        loop={mediaKind === 'video' && !hasInteractiveVideoControls()}
+                        muted={mediaKind === 'video' && !hasInteractiveVideoControls()}
                         playsinline
                         preload="auto"
                         on:error={handleMediaError}
@@ -167,7 +178,7 @@
     </div>
 
     <div class="controls">
-        {#if mediaKind === 'video' && imageUrl && !isLoading && !error}
+        {#if mediaKind === 'video' && imageUrl && !isLoading && !error && !isPlayerVideoExt(mediaExt)}
             <button
                 class="btn secondary-btn icon-toggle-btn"
                 type="button"

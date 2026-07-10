@@ -8,6 +8,7 @@
 
     let randomSrc = "";
     let mediaKind = "image";
+    let mediaExt = "";
     let isLoading = true;
     let error = null;
     let errorTitle = "Random image unavailable";
@@ -36,11 +37,20 @@
         };
     }
 
+    function isPlayerVideoExt(ext) {
+        return typeof ext === 'string' && ext.toLowerCase() === 'mp4';
+    }
+
+    function hasInteractiveVideoControls() {
+        return mediaKind === 'video' && (isPlayerVideoExt(mediaExt) || videoControlsEnabled);
+    }
+
     async function generateRandomPic() {
         try {
             isLoading = true;
             randomSrc = "";
             mediaKind = "image";
+            mediaExt = "";
             error = null;
             errorTitle = "Random image unavailable";
             mediaLoadFailed = false;
@@ -54,6 +64,7 @@
 
                 randomSrc = buildMockFileUrl(item.id);
                 mediaKind = item.kind;
+                mediaExt = typeof item.ext === 'string' ? item.ext.toLowerCase() : '';
             } else {
                 const response = await fetch(buildApiUrl("/get-random-image"));
                 if (!response.ok) {
@@ -76,7 +87,8 @@
                     randomSrc = text.replace(/^\"|\"$/g, '');
                 }
 
-                mediaKind = getMediaKindFromExt(randomSrc.split('?')[0].split('.').pop() || null);
+                mediaExt = (randomSrc.split('?')[0].split('.').pop() || '').toLowerCase();
+                mediaKind = getMediaKindFromExt(mediaExt || null);
             }
         } catch (err) {
             console.error(err);
@@ -147,10 +159,10 @@
                         bind:this={randomVideoElement}
                         class="random-media"
                         src={randomSrc}
-                        autoplay
-                        controls={videoControlsEnabled}
-                        loop={!videoControlsEnabled}
-                        muted={!videoControlsEnabled}
+                        autoplay={!isPlayerVideoExt(mediaExt)}
+                        controls={hasInteractiveVideoControls()}
+                        loop={mediaKind === 'video' && !hasInteractiveVideoControls()}
+                        muted={mediaKind === 'video' && !hasInteractiveVideoControls()}
                         playsinline
                         preload="auto"
                         on:error={handleMediaError}
@@ -163,7 +175,7 @@
     </div>
 
     <div class="controls">
-        {#if mediaKind === 'video' && randomSrc && !isLoading && !error && !mediaLoadFailed}
+        {#if mediaKind === 'video' && randomSrc && !isLoading && !error && !mediaLoadFailed && !isPlayerVideoExt(mediaExt)}
             <button
                 class="video-toggle-btn"
                 type="button"
