@@ -8,7 +8,7 @@
  * @property {string|null} dateAdded - ISO timestamp string when the picture was added (or null if unknown).
  */
 
-const VIDEO_EXTENSIONS = new Set(['webm']);
+const VIDEO_EXTENSIONS = new Set(['webm', 'mp4']);
 
 /**
  * @param {string | null | undefined} ext
