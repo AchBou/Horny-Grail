@@ -1,6 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte';
   import ReadAccessGate from '$lib/components/ReadAccessGate.svelte';
+  import { cubicInOut, cubicOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
   import {
     createMobileReadSession,
@@ -17,7 +18,9 @@
   const NEXT_MEDIA_ATTEMPTS = 3;
   const SWIPE_THRESHOLD_PX = 56;
   const SWIPE_MAX_VERTICAL_DRIFT_PX = 88;
-  const SWIPE_TRANSITION_OFFSET_PX = 42;
+  const SWIPE_TRANSITION_OFFSET_PX = 58;
+  const SWIPE_IN_DURATION_MS = 260;
+  const SWIPE_OUT_DURATION_MS = 220;
 
   let id = '';
   let media = null;
@@ -153,7 +156,7 @@
   }
 
   async function loadRandomNextMedia(direction = 1) {
-    if (!media || isLoading || isAdvancing || videoControlsEnabled) {
+    if (!media || isLoading || isAdvancing) {
       return;
     }
 
@@ -198,7 +201,7 @@
   }
 
   function handleTouchStart(event) {
-    if (event.touches.length !== 1 || isLoading || isAdvancing || hasInteractiveVideoControls()) {
+    if (event.touches.length !== 1 || isLoading || isAdvancing) {
       resetGesture();
       return;
     }
@@ -369,16 +372,16 @@
             muted={media.kind === 'video' && !hasInteractiveVideoControls()}
             playsinline
             preload="auto"
-            in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: 180, opacity: 0.22 }}
-            out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: 160, opacity: 0.1 }}
+            in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_IN_DURATION_MS, opacity: 0.18, easing: cubicOut }}
+            out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_OUT_DURATION_MS, opacity: 0.08, easing: cubicInOut }}
           ></video>
         {:else}
           <img
             class="media"
             src={media.fileUrl}
             alt="Saved media"
-            in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: 180, opacity: 0.22 }}
-            out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: 160, opacity: 0.1 }}
+            in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_IN_DURATION_MS, opacity: 0.18, easing: cubicOut }}
+            out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_OUT_DURATION_MS, opacity: 0.08, easing: cubicInOut }}
           />
         {/if}
       {/key}
@@ -397,8 +400,8 @@
     <nav class={`top-bar ${showChrome ? 'visible' : ''}`} aria-label="Detail navigation">
       <a class="pill" href="/">Back</a>
       <div class="top-actions">
-        <button class="pill" type="button" disabled={isLoading || isAdvancing || videoControlsEnabled} on:click={loadRandomNextMedia}>
-          {isAdvancing ? 'Loading' : 'Next'}
+        <button class="pill" type="button" disabled={isLoading || isAdvancing} on:click={loadRandomNextMedia}>
+          {isAdvancing ? 'Load' : 'Next'}
         </button>
         {#if media.kind === 'video' && !isPlayerVideoMedia(media)}
           <button class="pill solid" type="button" on:click={toggleVideoPlaybackMode}>
@@ -413,16 +416,12 @@
     </nav>
 
     <section class={`info-sheet ${showChrome && !hasInteractiveVideoControls() ? 'visible' : ''}`}>
-      <div class="info-row">
-        <div>
-          <p class="eyebrow">{media.kind === 'video' ? 'Clip ID' : 'Image ID'}</p>
-          <h1 class="item-id">{media.id}</h1>
-        </div>
-        <p class="swipe-copy">Swipe for another</p>
-      </div>
-
       {#if showDetails}
         <dl class="details">
+          <div>
+            <dt>{media.kind === 'video' ? 'Clip ID' : 'Image ID'}</dt>
+            <dd>{media.id}</dd>
+          </div>
           <div>
             <dt>Type</dt>
             <dd>{media.ext}</dd>
@@ -631,21 +630,10 @@
     margin: 0 auto;
   }
 
-  .info-row,
   .details {
     border: 1px solid rgba(255, 249, 243, 0.12);
     background: rgba(22, 17, 13, 0.64);
     backdrop-filter: blur(18px);
-  }
-
-  .info-row {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 0.8rem;
-    padding: 0.82rem 0.9rem;
-    border-radius: 1.1rem;
-    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
   }
 
   h1,
@@ -661,31 +649,6 @@
     letter-spacing: -0.03em;
     font-family: var(--font-display);
     font-weight: 700;
-  }
-
-  .item-id {
-    max-width: 100%;
-    overflow-wrap: anywhere;
-    font-family: var(--font-ui);
-    font-size: 0.88rem;
-    line-height: 1.22;
-    letter-spacing: 0.01em;
-  }
-
-  .eyebrow {
-    margin-bottom: 0.28rem;
-    color: #ffc79f;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-  }
-
-  .swipe-copy {
-    color: rgba(255, 249, 243, 0.72);
-    font-size: 0.76rem;
-    line-height: 1.2;
-    text-align: right;
   }
 
   .details {
