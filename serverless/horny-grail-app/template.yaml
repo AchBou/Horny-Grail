@@ -840,6 +840,32 @@ Resources:
             Path: /api/assets/{id}/integrity
             Method: GET
 
+  deleteAssetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/assets/delete-asset.deleteAssetHandler
+      Timeout: 30
+      Description: Deletes a metadata entry from DynamoDB without removing S3 objects.
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LookupTable
+      Environment:
+        Variables:
+          LOOKUP_TABLE: !Ref LookupTable
+          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
+          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}
+            Method: DELETE
+        ApiOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}
+            Method: OPTIONS
+
   getMobileAssetIntegrityFunction:
     Type: AWS::Serverless::Function
     Properties:

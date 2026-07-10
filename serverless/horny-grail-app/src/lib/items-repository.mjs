@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
 
 const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -19,4 +19,14 @@ export async function scanAllItems() {
   }));
 
   return data.Items || [];
+}
+
+export async function deleteItemById(id) {
+  const data = await ddbDocClient.send(new DeleteCommand({
+    TableName: getLookupTableName(),
+    Key: { id },
+    ReturnValues: 'ALL_OLD'
+  }));
+
+  return data.Attributes || null;
 }

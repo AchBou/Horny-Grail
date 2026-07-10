@@ -3,7 +3,7 @@ export const jsonHeaders = {
 };
 
 const corsAllowHeaders = 'content-type,authorization,x-api-key,x-requested-with';
-const corsAllowMethods = 'GET,POST,OPTIONS';
+const corsAllowMethods = 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
 
 function getAllowedCorsOrigins() {
   return (process.env.CORS_ALLOWED_ORIGINS || '')
