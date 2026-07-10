@@ -8,10 +8,12 @@ import { isValidImageExt, isValidImageId } from '../../lib/validation.mjs';
 
 const s3Client = new S3Client({ region: getBucketRegion() });
 
-async function objectExists(key) {
+async function objectExists(key, context = {}) {
+  const bucket = getBucketName();
+
   try {
     await s3Client.send(new HeadObjectCommand({
-      Bucket: getBucketName(),
+      Bucket: bucket,
       Key: key
     }));
     return true;
@@ -21,6 +23,15 @@ async function objectExists(key) {
     if (statusCode === 404 || code === 'NotFound' || code === 'NoSuchKey') {
       return false;
     }
+    console.error('S3 asset existence check failed', {
+      ...context,
+      bucket,
+      key,
+      statusCode,
+      code,
+      requestId: error?.$metadata?.requestId,
+      extendedRequestId: error?.$metadata?.extendedRequestId
+    });
     throw error;
   }
 }
@@ -48,8 +59,10 @@ export async function buildAssetIntegrityResponse(id, event) {
     const originalKey = isValidImageExt(ext) ? `files/${id}.${ext}` : null;
     const thumbnailKey = `thumbnails/thumbnail-${id}.jpeg`;
 
-    const originalExists = originalKey ? await objectExists(originalKey) : false;
-    const thumbnailExists = await objectExists(thumbnailKey);
+    const originalExists = originalKey
+      ? await objectExists(originalKey, { id, assetType: 'original' })
+      : false;
+    const thumbnailExists = await objectExists(thumbnailKey, { id, assetType: 'thumbnail' });
 
     const missing = [];
     if (!originalExists) missing.push('original');

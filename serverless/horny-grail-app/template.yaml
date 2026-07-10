@@ -821,6 +821,11 @@ Resources:
           Resource:
           - !Sub arn:aws:s3:::${BucketName}/files/*
           - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          Resource: !Sub arn:aws:s3:::${BucketName}
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
@@ -851,6 +856,11 @@ Resources:
           Resource:
           - !Sub arn:aws:s3:::${BucketName}/files/*
           - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          Resource: !Sub arn:aws:s3:::${BucketName}
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
