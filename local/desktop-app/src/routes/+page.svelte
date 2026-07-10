@@ -657,7 +657,16 @@
 </script>
 
 <main class="container">
-  <h1 class="app-title">The Horny Grail Uploader</h1>
+  <div class="brand-header">
+    <img
+      class="brand-logo"
+      src="/brand/horny-grail-uploader.svg"
+      alt=""
+      width="76"
+      height="76"
+    />
+    <h1 class="app-title">The Horny Grail Uploader</h1>
+  </div>
 
   <div class="file-explorer">
     <div class="controls">
@@ -856,7 +865,22 @@
 
   h1 {
     text-align: center;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
+  }
+
+  .brand-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .brand-logo {
+    width: 4.75rem;
+    height: 4.75rem;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 8px 14px rgba(59, 130, 246, 0.18));
   }
   
   .app-title {
@@ -864,7 +888,7 @@
     font-weight: bold;
     color: #3b82f6;
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
     letter-spacing: 1px;
     position: relative;
@@ -880,6 +904,23 @@
     width: 100px;
     height: 3px;
     background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  }
+
+  @media (max-width: 720px) {
+    .brand-header {
+      flex-direction: column;
+      gap: 0.55rem;
+      margin-bottom: 1rem;
+    }
+
+    .brand-logo {
+      width: 3.75rem;
+      height: 3.75rem;
+    }
+
+    .app-title {
+      font-size: 2rem;
+    }
   }
 
   .file-explorer {
