@@ -21,6 +21,7 @@ Supported original extensions and MIME types:
 | `bmp` | `image/bmp` |
 | `tif`, `tiff` | `image/tiff` |
 | `webm` | `video/webm` |
+| `mp4` | `video/mp4` |
 
 Maximum original size: `104857600` bytes.
 
