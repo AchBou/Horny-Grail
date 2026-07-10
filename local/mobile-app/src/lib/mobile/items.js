@@ -1,4 +1,4 @@
-const VIDEO_EXTENSIONS = new Set(['webm']);
+const VIDEO_EXTENSIONS = new Set(['webm', 'mp4']);
 
 function getExtFromStringValue(value) {
   const base = value.split('/').pop() || '';

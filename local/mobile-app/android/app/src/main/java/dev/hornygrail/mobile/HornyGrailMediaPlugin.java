@@ -110,7 +110,14 @@ public class HornyGrailMediaPlugin extends Plugin {
 
         String base64Payload = sourceDataUrl.substring(separatorIndex + 1);
         byte[] bytes = Base64.decode(base64Payload, Base64.DEFAULT);
-        String suffix = "video/webm".equals(mimeType) ? ".webm" : ".video";
+        String suffix;
+        if ("video/webm".equals(mimeType)) {
+            suffix = ".webm";
+        } else if ("video/mp4".equals(mimeType)) {
+            suffix = ".mp4";
+        } else {
+            suffix = ".video";
+        }
         File tempFile = File.createTempFile("hornygrail-video-", suffix, getContext().getCacheDir());
 
         try (FileOutputStream output = new FileOutputStream(tempFile)) {

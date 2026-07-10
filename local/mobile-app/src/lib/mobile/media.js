@@ -9,8 +9,10 @@ const MIME_BY_EXT = Object.freeze({
   bmp: 'image/bmp',
   tif: 'image/tiff',
   tiff: 'image/tiff',
-  webm: 'video/webm'
+  webm: 'video/webm',
+  mp4: 'video/mp4'
 });
+const VIDEO_EXTENSIONS = new Set(['webm', 'mp4']);
 
 const THUMBNAIL_SIZE = 320;
 const THUMBNAIL_QUALITY = 0.9;
@@ -154,7 +156,7 @@ function normalizeNativeThumbnailResult(result) {
   throw new Error('Native thumbnail plugin returned no JPEG data');
 }
 
-async function createNativeVideoThumbnail(file, signal) {
+async function createNativeVideoThumbnail(file, ext, signal) {
   throwIfAborted(signal);
 
   try {
@@ -163,7 +165,7 @@ async function createNativeVideoThumbnail(file, signal) {
 
     const result = await HornyGrailMedia.createVideoThumbnail({
       sourceDataUrl,
-      mimeType: file.type || MIME_BY_EXT.webm,
+      mimeType: file.type || MIME_BY_EXT[ext] || MIME_BY_EXT.webm,
       maxDimension: THUMBNAIL_SIZE,
       quality: NATIVE_THUMBNAIL_QUALITY
     });
@@ -176,7 +178,7 @@ async function createNativeVideoThumbnail(file, signal) {
     }
 
     const reason = error?.message || String(error);
-    throw new Error(`Native WebM thumbnail generation failed. Register the HornyGrailMedia Capacitor plugin before uploading WebM on mobile. ${reason}`);
+    throw new Error(`Native video thumbnail generation failed. Register the HornyGrailMedia Capacitor plugin before uploading video on mobile. ${reason}`);
   }
 }
 
@@ -228,9 +230,9 @@ export async function createThumbnail(file, { signal = null } = {}) {
     throw new Error('Unsupported file type');
   }
 
-  if (ext === 'webm') {
+  if (VIDEO_EXTENSIONS.has(ext)) {
     if (Capacitor.isNativePlatform()) {
-      return createNativeVideoThumbnail(file, signal);
+      return createNativeVideoThumbnail(file, ext, signal);
     }
 
     return createWebPreviewVideoThumbnail(file, signal);

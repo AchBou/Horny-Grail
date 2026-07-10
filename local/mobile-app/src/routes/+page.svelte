@@ -13,7 +13,7 @@
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
   const BROWSE_PAGE_SIZE = 24;
-  const ACCEPTED_TYPES = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.webm,image/*,video/webm';
+  const ACCEPTED_TYPES = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.webm,.mp4,image/*,video/webm,video/mp4';
   const STATUS_LABELS = {
     preparing: 'Preparing',
     queued: 'Queued',
@@ -332,7 +332,7 @@
   }
 
   function isVideoUpload(item) {
-    return item.file.type.startsWith('video/') || item.name.toLowerCase().endsWith('.webm');
+    return item.file.type.startsWith('video/') || /\.(webm|mp4)$/i.test(item.name);
   }
 
   function canCancel(item) {
