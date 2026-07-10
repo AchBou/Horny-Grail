@@ -38,6 +38,8 @@
   let isScanningMetadata = $state(false);
   let scannedMetadataCount = $state(0);
   let totalMetadataCount = $state(0);
+  let copiedFilePath = $state("");
+  let copiedFileTimeout: number | null = $state(null);
   let scanGeneration = 0;
 
   // Only process and show supported media files.
@@ -425,6 +427,30 @@
     }
   }
 
+  async function copyFileName(file: FileEntry): Promise<void> {
+    if (file.isDirectory) {
+      await navigateToDirectory(file);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(file.name);
+      copiedFilePath = file.path;
+
+      if (copiedFileTimeout) {
+        clearTimeout(copiedFileTimeout);
+      }
+
+      copiedFileTimeout = window.setTimeout(() => {
+        copiedFilePath = "";
+        copiedFileTimeout = null;
+      }, 1400);
+    } catch (error) {
+      console.error("Failed to copy filename:", error);
+      errorMessage = `Failed to copy ${file.name}: ${error instanceof Error ? error.message : "Clipboard unavailable"}`;
+    }
+  }
+
   async function handleFileRepair(file: FileEntry): Promise<void> {
     if (file.isDirectory || !isMediaFile(file.name)) {
       return;
@@ -554,6 +580,11 @@
       clearTimeout(updateTimeout);
       updateTimeout = null;
     }
+
+    if (copiedFileTimeout) {
+      clearTimeout(copiedFileTimeout);
+      copiedFileTimeout = null;
+    }
   });
 </script>
 
@@ -616,11 +647,15 @@
           {#each files as file}
             <li class="file-item">
               <button 
-                onclick={() => navigateToDirectory(file)}
+                onclick={() => copyFileName(file)}
                 class="file-button"
+                title={file.isDirectory ? `Open ${file.name}` : `Copy ${file.name}`}
               >
                 <span class="file-icon" title={file.name.split('.').pop()?.toUpperCase()}>{getIconForFile(file.name)}</span>
                 <span class="file-name" title={file.name}>{file.name}</span>
+                {#if copiedFilePath === file.path}
+                  <span class="copied-badge">Copied</span>
+                {/if}
               </button>
               
               {#if !file.isDirectory}
@@ -964,6 +999,17 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .copied-badge {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.72rem;
+    color: #065f46;
+    background-color: #d1fae5;
+    border: 1px solid #34d399;
+    border-radius: 9999px;
     white-space: nowrap;
   }
   
