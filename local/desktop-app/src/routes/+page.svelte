@@ -6,7 +6,6 @@
   import { uploadFile } from "$lib/functions/uploadFile.js";
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
-  import { checkFileExistsByHex } from "$lib/functions/checkFileExists.js";
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
   import { join } from "@tauri-apps/api/path";
 
@@ -16,6 +15,8 @@
     path: string;
     isDirectory: boolean;
   }
+
+  type FileCheckStatus = 'pending' | 'done' | 'failed';
 
   let selectedPath = $state("");
   let files = $state<FileEntry[]>([]);
@@ -31,7 +32,7 @@
   let uploadedFiles = $state<string[]>([]);
   let fileHashes = $state<{[key: string]: string}>({});
   let fileExists = $state<{[key: string]: boolean}>({});
-  let fileCheckStatus = $state<{[key: string]: 'pending' | 'done'}>({});
+  let fileCheckStatus = $state<{[key: string]: FileCheckStatus}>({});
   let fileRepairNeeded = $state<{[key: string]: boolean}>({});
   let fileMissingParts = $state<{[key: string]: string[]}>({});
   let isScanningMetadata = $state(false);
@@ -121,8 +122,11 @@
         const f = filesToCheck[i];
         try {
           const hex = await computeFileHash(f.path);
-          const exists = await checkFileExistsByHex(hex);
-          const integrity = exists ? await checkAssetIntegrityByHex(hex) : null;
+          const integrity = await checkAssetIntegrityByHex(hex);
+          if (!integrity) {
+            throw new Error("Integrity check failed");
+          }
+          const exists = Boolean(integrity?.metadataExists);
           if (generation !== scanGeneration) return;
 
           fileHashes[f.path] = hex;
@@ -135,9 +139,10 @@
           if (generation !== scanGeneration) return;
 
           fileExists[f.path] = false;
-          fileCheckStatus[f.path] = 'done';
+          fileCheckStatus[f.path] = 'failed';
           fileRepairNeeded[f.path] = false;
           fileMissingParts[f.path] = [];
+          errorMessage ||= "Some files could not be checked. Recheck before uploading them.";
         } finally {
           if (generation === scanGeneration) {
             scannedMetadataCount += 1;
@@ -326,7 +331,7 @@
       const visibleFiles = mapped.filter(f => !f.isDirectory && isMediaFile(f.name));
       files = visibleFiles;
 
-      const nextStatus = {} as {[key: string]: 'pending' | 'done'};
+      const nextStatus = {} as {[key: string]: FileCheckStatus};
       const filesToCheck: FileEntry[] = [];
       for (const file of visibleFiles) {
         const hasCachedMetadata = typeof fileHashes[file.path] === 'string' && typeof fileExists[file.path] === 'boolean';
@@ -619,7 +624,9 @@
               </button>
               
               {#if !file.isDirectory}
-                {#if fileCheckStatus[file.path] !== "done"}
+                {#if fileCheckStatus[file.path] === "failed"}
+                  <span class="repair-badge" title="This file could not be checked against the backend">Check failed</span>
+                {:else if fileCheckStatus[file.path] !== "done"}
                   <span class="checking-badge" title="Computing hash and checking whether this file already exists">Checking...</span>
                 {:else if fileExists[file.path] && fileRepairNeeded[file.path]}
                   <div class="repair-actions">
@@ -640,12 +647,14 @@
                     <button
                       onclick={() => handleThumbnailRegeneration(file)}
                       class="thumbnail-button"
+                      title="Regenerate thumbnail"
+                      aria-label={`Regenerate thumbnail for ${file.name}`}
                       disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
                     >
                       {#if uploadStatus[file.path] === "thumbnailing"}
-                        Regenerating...
+                        ...
                       {:else}
-                        Regenerate Thumbnail
+                        ↻
                       {/if}
                     </button>
                   </div>
@@ -655,12 +664,14 @@
                     <button
                       onclick={() => handleThumbnailRegeneration(file)}
                       class="thumbnail-button"
+                      title="Regenerate thumbnail"
+                      aria-label={`Regenerate thumbnail for ${file.name}`}
                       disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
                     >
                       {#if uploadStatus[file.path] === "thumbnailing"}
-                        Regenerating...
+                        ...
                       {:else}
-                        Regenerate Thumbnail
+                        ↻
                       {/if}
                     </button>
                   </div>
@@ -1023,9 +1034,11 @@
   }
 
   .thumbnail-button {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-    min-width: 150px;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1;
     text-align: center;
     background-color: #2563eb;
     color: white;
@@ -1033,6 +1046,7 @@
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.2s;
+    flex: 0 0 auto;
   }
 
   .thumbnail-button:hover:not(:disabled) {
