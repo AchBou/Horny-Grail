@@ -50,6 +50,34 @@ function getFileExt(filePath) {
 }
 
 /**
+ * @param {unknown} error
+ * @returns {string}
+ */
+function errorMessage(error) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+/**
+ * Native ffmpeg already proved the input is not a decodable video stream.
+ * Running the browser decode fallback after these errors only hides the cause.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isUnrecoverableVideoDecodeError(error) {
+  const message = errorMessage(error).toLowerCase();
+  return [
+    'invalid data found when processing input',
+    'ebml header parsing failed',
+    'error opening input',
+    'moov atom not found',
+    'failed to decode video'
+  ].some((token) => message.includes(token));
+}
+
+/**
  * @param {Uint8Array} srcBytes
  * @returns {Promise<HTMLImageElement>}
  */
@@ -345,6 +373,7 @@ export async function uploadThumbnail(filePath, hex) {
   const fileExt = getFileExt(filePath);
   const isWebm = fileExt === 'webm';
   let thumbBytes;
+  let nativeThumbnailError = null;
   if (isWebm) {
     try {
       const nativeVideoThumbBytes = await withTimeout(invoke('generate_video_thumbnail', {
@@ -354,6 +383,10 @@ export async function uploadThumbnail(filePath, hex) {
       }), NATIVE_THUMB_TIMEOUT_MS, 'Native video thumbnail generation');
       thumbBytes = Uint8Array.from(/** @type {number[]} */ (nativeVideoThumbBytes));
     } catch (error) {
+      nativeThumbnailError = error;
+      if (isUnrecoverableVideoDecodeError(error)) {
+        throw new Error(`Failed to generate video thumbnail: ${errorMessage(error)}`);
+      }
       console.warn('Falling back to JS video thumbnail generation:', error);
     }
   } else {
@@ -371,12 +404,21 @@ export async function uploadThumbnail(filePath, hex) {
 
   if (!thumbBytes) {
     const srcBytes = await readFile(filePath);
-    thumbBytes = await makeJpegThumbnailBytes(
-      srcBytes,
-      isWebm ? 'video/webm' : `image/${fileExt || 'jpeg'}`,
-      MAX_DIMENSION,
-      JPEG_QUALITY
-    );
+    try {
+      thumbBytes = await makeJpegThumbnailBytes(
+        srcBytes,
+        isWebm ? 'video/webm' : `image/${fileExt || 'jpeg'}`,
+        MAX_DIMENSION,
+        JPEG_QUALITY
+      );
+    } catch (fallbackError) {
+      if (nativeThumbnailError) {
+        throw new Error(
+          `Failed to generate thumbnail: ${errorMessage(nativeThumbnailError)}. JS fallback also failed: ${errorMessage(fallbackError)}`
+        );
+      }
+      throw fallbackError;
+    }
   }
 
   const signResponse = await withTimeout(httpFetch(buildApiUrl("/uploads/sign"), {

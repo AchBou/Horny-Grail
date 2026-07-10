@@ -65,6 +65,28 @@
     return name.split('.').pop()?.toLowerCase() || '';
   }
 
+  function getErrorDetail(error: unknown): string {
+    return error instanceof Error ? error.message : "Unknown error";
+  }
+
+  function formatUploadFailureMessage(file: FileEntry, prefix: string, error: unknown): string {
+    const detail = getErrorDetail(error);
+    const normalized = detail.toLowerCase();
+
+    if (
+      getFileExt(file.name) === "webm" &&
+      (
+        normalized.includes("invalid data found when processing input") ||
+        normalized.includes("ebml header parsing failed") ||
+        normalized.includes("error opening input file")
+      )
+    ) {
+      return `${prefix} ${file.name}: the source video is corrupted or not a valid WebM, so the thumbnail cannot be regenerated until the file is replaced.`;
+    }
+
+    return `${prefix} ${file.name}: ${detail}`;
+  }
+
   function getIconForFile(name: string): string {
     const ext = getFileExt(name);
     return extIconMap[ext] || '🖼️';
@@ -485,7 +507,7 @@
     } catch (error) {
       console.error("Error repairing file:", error);
       uploadStatus[file.path] = "failed";
-      errorMessage = `Failed to repair ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`;
+      errorMessage = formatUploadFailureMessage(file, "Failed to repair", error);
     } finally {
       const activeUploads = Object.values(uploadStatus).filter((status) => status === "uploading" || status === "repairing");
       if (activeUploads.length === 0) {
@@ -529,7 +551,7 @@
     } catch (error) {
       console.error("Error regenerating thumbnail:", error);
       uploadStatus[file.path] = "failed";
-      errorMessage = `Failed to regenerate thumbnail for ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`;
+      errorMessage = formatUploadFailureMessage(file, "Failed to regenerate thumbnail for", error);
     } finally {
       const activeUploads = Object.values(uploadStatus).filter((status) =>
         status === "uploading" || status === "repairing" || status === "thumbnailing"
