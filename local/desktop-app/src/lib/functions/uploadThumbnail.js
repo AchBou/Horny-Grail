@@ -106,10 +106,10 @@ async function bytesToImage(srcBytes) {
  * @param {Uint8Array} srcBytes
  * @returns {Promise<{ video: HTMLVideoElement, revoke: () => void }>}
  */
-async function bytesToVideo(srcBytes) {
+async function bytesToVideo(srcBytes, mimeType = 'video/webm') {
   return withTimeout(new Promise((resolve, reject) => {
     try {
-      const blob = new Blob([toArrayBuffer(srcBytes)], { type: 'video/webm' });
+      const blob = new Blob([toArrayBuffer(srcBytes)], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const video = document.createElement('video');
       let settled = false;
@@ -321,8 +321,8 @@ async function drawContainedJpeg(source, sourceWidth, sourceHeight, maxDim, qual
  * @returns {Promise<Uint8Array>}
  */
 async function makeJpegThumbnailBytes(srcBytes, mimeType = 'application/octet-stream', maxDim = MAX_DIMENSION, quality = JPEG_QUALITY) {
-  if (mimeType === 'video/webm') {
-    const { video, revoke } = await bytesToVideo(srcBytes);
+  if (mimeType.startsWith('video/')) {
+    const { video, revoke } = await bytesToVideo(srcBytes, mimeType);
     try {
       const iw = video.videoWidth;
       const ih = video.videoHeight;
@@ -371,10 +371,10 @@ async function makeJpegThumbnailBytes(srcBytes, mimeType = 'application/octet-st
  */
 export async function uploadThumbnail(filePath, hex) {
   const fileExt = getFileExt(filePath);
-  const isWebm = fileExt === 'webm';
+  const isVideo = fileExt === 'webm' || fileExt === 'mp4';
   let thumbBytes;
   let nativeThumbnailError = null;
-  if (isWebm) {
+  if (isVideo) {
     try {
       const nativeVideoThumbBytes = await withTimeout(invoke('generate_video_thumbnail', {
         path: filePath,
@@ -407,7 +407,7 @@ export async function uploadThumbnail(filePath, hex) {
     try {
       thumbBytes = await makeJpegThumbnailBytes(
         srcBytes,
-        isWebm ? 'video/webm' : `image/${fileExt || 'jpeg'}`,
+        isVideo ? (fileExt === 'mp4' ? 'video/mp4' : 'video/webm') : `image/${fileExt || 'jpeg'}`,
         MAX_DIMENSION,
         JPEG_QUALITY
       );

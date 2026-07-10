@@ -7,6 +7,7 @@
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
+  import { purgeAssetMetadata } from "$lib/functions/purgeAssetMetadata.js";
   import { join } from "@tauri-apps/api/path";
 
 
@@ -43,7 +44,7 @@
   let scanGeneration = 0;
 
   // Only process and show supported media files.
-  const mediaExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','webm'];
+  const mediaExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','webm','mp4'];
   function isMediaFile(name: string): boolean {
     const ext = name.split('.').pop()?.toLowerCase() || '';
     return mediaExtensions.includes(ext);
@@ -65,6 +66,10 @@
     return name.split('.').pop()?.toLowerCase() || '';
   }
 
+  function isVideoExt(ext: string): boolean {
+    return ext === "webm" || ext === "mp4";
+  }
+
   function getErrorDetail(error: unknown): string {
     return error instanceof Error ? error.message : "Unknown error";
   }
@@ -74,14 +79,15 @@
     const normalized = detail.toLowerCase();
 
     if (
-      getFileExt(file.name) === "webm" &&
+      isVideoExt(getFileExt(file.name)) &&
       (
         normalized.includes("invalid data found when processing input") ||
         normalized.includes("ebml header parsing failed") ||
-        normalized.includes("error opening input file")
+        normalized.includes("error opening input file") ||
+        normalized.includes("moov atom not found")
       )
     ) {
-      return `${prefix} ${file.name}: the source video is corrupted or not a valid WebM, so the thumbnail cannot be regenerated until the file is replaced.`;
+      return `${prefix} ${file.name}: the source video is corrupted or not a valid video file, so the thumbnail cannot be regenerated until the file is replaced.`;
     }
 
     return `${prefix} ${file.name}: ${detail}`;
@@ -562,6 +568,46 @@
     }
   }
 
+  async function handleAssetPurge(file: FileEntry): Promise<void> {
+    if (file.isDirectory || !isMediaFile(file.name)) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete the DynamoDB metadata entry for ${file.name}? This leaves the local file and uploaded S3 objects untouched.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      uploadStatus[file.path] = "purging";
+      isUploading = true;
+
+      const fileHash = fileHashes[file.path] || await computeFileHash(file.path);
+      await purgeAssetMetadata(fileHash);
+
+      fileHashes[file.path] = fileHash;
+      fileExists[file.path] = false;
+      fileCheckStatus[file.path] = "done";
+      fileRepairNeeded[file.path] = false;
+      fileMissingParts[file.path] = [];
+      uploadStatus[file.path] = "completed";
+      errorMessage = "";
+    } catch (error) {
+      console.error("Error purging asset metadata:", error);
+      uploadStatus[file.path] = "failed";
+      errorMessage = `Failed to purge ${file.name}: ${getErrorDetail(error)}`;
+    } finally {
+      const activeUploads = Object.values(uploadStatus).filter((status) =>
+        status === "uploading" || status === "repairing" || status === "thumbnailing" || status === "purging"
+      );
+      if (activeUploads.length === 0) {
+        isUploading = false;
+      }
+    }
+  }
+
   // Compute list of files eligible for bulk upload
   function getEligibleFiles(): FileEntry[] {
     return files.filter(
@@ -702,6 +748,18 @@
                       {/if}
                     </button>
                     <button
+                      onclick={() => handleAssetPurge(file)}
+                      class="purge-button"
+                      title="Delete metadata entry from DynamoDB"
+                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging")}
+                    >
+                      {#if uploadStatus[file.path] === "purging"}
+                        Purging...
+                      {:else}
+                        Purge
+                      {/if}
+                    </button>
+                    <button
                       onclick={() => handleThumbnailRegeneration(file)}
                       class="thumbnail-button"
                       title="Regenerate thumbnail"
@@ -718,6 +776,18 @@
                 {:else if fileExists[file.path]}
                   <div class="repair-actions">
                     <span class="exists-badge" title="This file's hash already exists in the database and its stored assets look complete">Already exists</span>
+                    <button
+                      onclick={() => handleAssetPurge(file)}
+                      class="purge-button"
+                      title="Delete metadata entry from DynamoDB"
+                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging")}
+                    >
+                      {#if uploadStatus[file.path] === "purging"}
+                        Purging...
+                      {:else}
+                        Purge
+                      {/if}
+                    </button>
                     <button
                       onclick={() => handleThumbnailRegeneration(file)}
                       class="thumbnail-button"
@@ -1099,6 +1169,23 @@
 
   .repair-button:hover:not(:disabled) {
     background-color: #c2410c;
+  }
+
+  .purge-button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 80px;
+    text-align: center;
+    background-color: #b91c1c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .purge-button:hover:not(:disabled) {
+    background-color: #991b1b;
   }
 
   .thumbnail-button {

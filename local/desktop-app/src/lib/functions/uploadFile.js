@@ -13,7 +13,8 @@ const MIME_BY_EXT = {
     bmp: "image/bmp",
     tif: "image/tiff",
     tiff: "image/tiff",
-    webm: "video/webm"
+    webm: "video/webm",
+    mp4: "video/mp4"
 };
 
 /**
