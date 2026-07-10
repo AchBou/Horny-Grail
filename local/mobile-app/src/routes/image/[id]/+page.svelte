@@ -45,6 +45,14 @@
   let accessSubmitting = false;
   let accessError = '';
 
+  function isPlayerVideoMedia(currentMedia) {
+    return currentMedia?.kind === 'video' && currentMedia?.ext === 'mp4';
+  }
+
+  function hasInteractiveVideoControls() {
+    return media?.kind === 'video' && (isPlayerVideoMedia(media) || videoControlsEnabled);
+  }
+
   function getRouteId() {
     const segments = window.location.pathname.split('/').filter(Boolean);
     return segments[segments.length - 1] || '';
@@ -190,7 +198,7 @@
   }
 
   function handleTouchStart(event) {
-    if (event.touches.length !== 1 || isLoading || isAdvancing || videoControlsEnabled) {
+    if (event.touches.length !== 1 || isLoading || isAdvancing || hasInteractiveVideoControls()) {
       resetGesture();
       return;
     }
@@ -341,7 +349,7 @@
     </section>
   {:else if media}
     <main
-      class={`stage ${showChrome && !videoControlsEnabled ? 'with-info' : ''} ${showDetails ? 'with-details' : ''} ${isTransitioning ? 'busy' : ''}`}
+      class={`stage ${showChrome && !hasInteractiveVideoControls() ? 'with-info' : ''} ${showDetails ? 'with-details' : ''} ${isTransitioning ? 'busy' : ''}`}
       on:touchstart={handleTouchStart}
       on:touchmove={handleTouchMove}
       on:touchend={handleTouchEnd}
@@ -355,10 +363,10 @@
             class="media"
             src={media.fileUrl}
             poster={media.thumbnailUrl}
-            autoplay
-            controls={videoControlsEnabled}
-            loop={!videoControlsEnabled}
-            muted={!videoControlsEnabled}
+            autoplay={!isPlayerVideoMedia(media)}
+            controls={hasInteractiveVideoControls()}
+            loop={media.kind === 'video' && !hasInteractiveVideoControls()}
+            muted={media.kind === 'video' && !hasInteractiveVideoControls()}
             playsinline
             preload="auto"
             in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: 180, opacity: 0.22 }}
@@ -375,7 +383,7 @@
         {/if}
       {/key}
 
-      {#if media.kind !== 'video' || !videoControlsEnabled}
+      {#if media.kind !== 'video' || !hasInteractiveVideoControls()}
         <button class="media-toggle" type="button" aria-label="Toggle viewer controls" on:click={toggleChrome}></button>
       {/if}
 
@@ -392,7 +400,7 @@
         <button class="pill" type="button" disabled={isLoading || isAdvancing || videoControlsEnabled} on:click={loadRandomNextMedia}>
           {isAdvancing ? 'Loading' : 'Next'}
         </button>
-        {#if media.kind === 'video'}
+        {#if media.kind === 'video' && !isPlayerVideoMedia(media)}
           <button class="pill solid" type="button" on:click={toggleVideoPlaybackMode}>
             {videoControlsEnabled ? 'Preview' : 'Sound'}
           </button>
@@ -404,7 +412,7 @@
       </div>
     </nav>
 
-    <section class={`info-sheet ${showChrome && !videoControlsEnabled ? 'visible' : ''}`}>
+    <section class={`info-sheet ${showChrome && !hasInteractiveVideoControls() ? 'visible' : ''}`}>
       <div class="info-row">
         <div>
           <p class="eyebrow">{media.kind === 'video' ? 'Clip ID' : 'Image ID'}</p>
