@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500">
+  <rect width="1200" height="1500" fill="#f5f0f7"/>
+  <rect x="110" y="110" width="980" height="1280" rx="44" fill="#40514e"/>
+  <rect x="180" y="190" width="840" height="420" rx="28" fill="#f0ece2"/>
+  <rect x="180" y="670" width="250" height="520" rx="28" fill="#dfc6b8"/>
+  <rect x="490" y="670" width="530" height="110" rx="22" fill="#f0ece2"/>
+  <rect x="490" y="830" width="430" height="110" rx="22" fill="#ded8cf"/>
+  <rect x="490" y="990" width="360" height="110" rx="22" fill="#ded8cf"/>
+  <text x="600" y="1290" fill="#f0ece2" font-family="Arial, sans-serif" font-size="72" text-anchor="middle">mock-04</text>
+</svg>

@@ -1,7 +1,13 @@
 <script>
 	import { onMount } from 'svelte';
 	import Thumbnail from '../../components/Thumbnail.svelte';
-	import { buildApiUrl, buildThumbnailUrl } from '$lib/config/publicEnv.js';
+	import {
+		USE_MOCK_GALLERY,
+		buildApiUrl,
+		buildMockThumbnailUrl,
+		buildThumbnailUrl
+	} from '$lib/config/publicEnv.js';
+	import { getMockBrowsePage } from '$lib/mocks/gallery.js';
 	import { normalizeImages } from '$lib/models/image.js';
 
 	const PAGE_SIZE = 24;
@@ -18,9 +24,6 @@
 	let observer;
 
 	const seenIds = new Set();
-
-	$: videoCount = images.filter((image) => image.kind === 'video').length;
-	$: imageCount = Math.max(images.length - videoCount, 0);
 
 	function describeRequestFailure(status, fallbackMessage) {
 		if (status === 404) {
@@ -73,20 +76,25 @@
 		}
 
 		try {
-			const response = await fetch(buildBrowseUrl(cursor));
-			if (!response.ok) {
-				const payload = await response.json().catch(() => null);
-				const requestError = new Error(
-					describeRequestFailure(
-						response.status,
-						payload?.message || `HTTP error! Status: ${response.status}`
-					)
-				);
-				requestError.status = response.status;
-				throw requestError;
-			}
+			const payload = USE_MOCK_GALLERY
+				? getMockBrowsePage(cursor, PAGE_SIZE)
+				: await (async () => {
+					const response = await fetch(buildBrowseUrl(cursor));
+					if (!response.ok) {
+						const body = await response.json().catch(() => null);
+						const requestError = new Error(
+							describeRequestFailure(
+								response.status,
+								body?.message || `HTTP error! Status: ${response.status}`
+							)
+						);
+						requestError.status = response.status;
+						throw requestError;
+					}
 
-			const payload = await response.json();
+					return response.json();
+				})();
+
 			mergeImages(normalizeImages(payload.items), replace);
 			hasMore = Boolean(payload.hasMore);
 			nextCursor = typeof payload.cursor === 'string' ? payload.cursor : null;
@@ -146,37 +154,16 @@
 </script>
 
 <div class="browse-shell">
-	<section class="browse-hero">
-		<p class="eyebrow">Shuffled Collection</p>
-		<h2>Browse Images</h2>
-		<p class="hero-copy">
-			A randomized pass through the collection with larger cards, faster scanning, and direct open on tap.
-		</p>
-
-		<div class="hero-stats" aria-label="Gallery summary">
-			<div class="stat-chip">
-				<span class="stat-value">{images.length}</span>
-				<span class="stat-label">Loaded</span>
-			</div>
-			<div class="stat-chip">
-				<span class="stat-value">{imageCount}</span>
-				<span class="stat-label">Images</span>
-			</div>
-			<div class="stat-chip">
-				<span class="stat-value">{videoCount}</span>
-				<span class="stat-label">Videos</span>
-			</div>
-		</div>
-	</section>
+	<h2>Browse Images</h2>
 
 	{#if isLoading}
 		<div class="state-card loading">
 			<div class="spinner"></div>
-			<p>Building your shuffled gallery...</p>
+			<p>Loading gallery...</p>
 		</div>
 	{:else if error}
 		<div class="state-card">
-			<h3>Browse is unavailable right now</h3>
+			<h3>Gallery unavailable</h3>
 			<p>{error}</p>
 			<div class="actions">
 				<button type="button" class="primary-action" on:click={retryInitialLoad}>Try Again</button>
@@ -185,8 +172,7 @@
 		</div>
 	{:else if images.length === 0}
 		<div class="state-card">
-			<h3>Nothing to browse yet</h3>
-			<p>Upload media first, then come back here for the shuffled gallery.</p>
+			<h3>No items yet</h3>
 			<div class="actions">
 				<a class="primary-link" href="/random">Try Random</a>
 				<a class="secondary-action" href="/">Back Home</a>
@@ -194,17 +180,6 @@
 		</div>
 	{:else}
 		<section class="gallery-panel">
-			<div class="gallery-heading">
-				<div>
-					<p class="section-label">Now Showing</p>
-					<h3>Shuffled Gallery</h3>
-				</div>
-				<div class="gallery-meta">
-					<span>{images.length} loaded</span>
-					<span>{hasMore ? 'More incoming' : 'Shuffle complete'}</span>
-				</div>
-			</div>
-
 			<div class="gallery">
 				{#each images as img (img.id)}
 					<a
@@ -214,7 +189,7 @@
 						aria-label={`Open ${img.kind === 'video' ? 'video' : 'image'} ${img.id}`}
 					>
 						<Thumbnail
-							src={buildThumbnailUrl(img.id)}
+							src={USE_MOCK_GALLERY ? buildMockThumbnailUrl(img.id) : buildThumbnailUrl(img.id)}
 							alt={img.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'}
 							kind={img.kind}
 						/>
@@ -227,11 +202,11 @@
 			{#if isLoadingMore}
 				<div class="loading loading-more">
 					<div class="spinner small"></div>
-					<p>Pulling more from the shuffle...</p>
+					<p>Loading more...</p>
 				</div>
 			{:else if loadMoreError}
 				<div class="state-card inline-error">
-					<h3>Could not load more items</h3>
+					<h3>Could not load more</h3>
 					<p>{loadMoreError}</p>
 					<div class="actions">
 						<button type="button" class="primary-action" on:click={() => fetchPage({ cursor: nextCursor })}>Try Again</button>
@@ -240,11 +215,7 @@
 				</div>
 			{:else if !hasMore}
 				<div class="end-state">
-					<p class="end-kicker">End of This Shuffle</p>
-					<h3>You reached the end of the current pass.</h3>
-					<p>
-						Reload the gallery for a fresh randomized order or jump straight into a single random item.
-					</p>
+					<h3>End of gallery</h3>
 					<div class="actions">
 						<button type="button" class="primary-action" on:click={retryInitialLoad}>Shuffle Again</button>
 						<a class="secondary-action" href="/random">Open Random</a>
@@ -264,82 +235,13 @@
 		margin: 0 auto;
 	}
 
-	.browse-hero {
-		margin-bottom: 28px;
-		padding: clamp(24px, 4vw, 40px);
-		border-radius: 28px;
-		background:
-			radial-gradient(circle at top left, rgba(231, 76, 60, 0.16), transparent 28%),
-			radial-gradient(circle at top right, rgba(31, 111, 139, 0.14), transparent 24%),
-			linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 249, 251, 0.9));
-		box-shadow:
-			0 24px 60px rgba(44, 62, 80, 0.08),
-			inset 0 0 0 1px rgba(44, 62, 80, 0.08);
-	}
-
-	.eyebrow,
-	.section-label,
-	.end-kicker {
-		margin: 0 0 10px;
-		color: #e74c3c;
-		font-family: 'Montserrat', sans-serif;
-		font-size: 0.8rem;
-		font-weight: 800;
-		letter-spacing: 0.16em;
-		text-transform: uppercase;
-	}
-
 	h2 {
 		color: #23364a;
-		margin: 0 0 12px;
+		margin: 0 0 24px;
 		text-align: center;
-		font-size: clamp(2.4rem, 5vw, 4.2rem);
+		font-size: clamp(2.1rem, 4vw, 3.2rem);
 		font-weight: 800;
 		letter-spacing: -0.04em;
-	}
-
-	.hero-copy {
-		max-width: 760px;
-		margin: 0 auto;
-		color: #5a6673;
-		font-size: 1.08rem;
-		line-height: 1.7;
-		text-align: center;
-	}
-
-	.hero-stats {
-		display: flex;
-		justify-content: center;
-		flex-wrap: wrap;
-		gap: 14px;
-		margin-top: 26px;
-	}
-
-	.stat-chip {
-		min-width: 120px;
-		padding: 14px 18px;
-		border-radius: 18px;
-		background: rgba(255, 255, 255, 0.78);
-		box-shadow: inset 0 0 0 1px rgba(44, 62, 80, 0.08);
-		text-align: center;
-	}
-
-	.stat-value {
-		display: block;
-		color: #23364a;
-		font-family: 'Montserrat', sans-serif;
-		font-size: 1.2rem;
-		font-weight: 800;
-	}
-
-	.stat-label {
-		display: block;
-		margin-top: 4px;
-		color: #66727f;
-		font-size: 0.8rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
 	}
 
 	.gallery-panel {
@@ -351,15 +253,6 @@
 			inset 0 0 0 1px rgba(44, 62, 80, 0.08);
 	}
 
-	.gallery-heading {
-		display: flex;
-		align-items: end;
-		justify-content: space-between;
-		gap: 16px;
-		margin-bottom: 22px;
-	}
-
-	.gallery-heading h3,
 	.state-card h3,
 	.end-state h3 {
 		margin: 0;
@@ -367,24 +260,6 @@
 		font-size: 1.75rem;
 		font-weight: 800;
 		letter-spacing: -0.03em;
-	}
-
-	.gallery-meta {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: flex-end;
-		gap: 10px;
-	}
-
-	.gallery-meta span {
-		padding: 8px 12px;
-		border-radius: 999px;
-		background: #eef3f7;
-		color: #4f5d6d;
-		font-size: 0.82rem;
-		font-weight: 700;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 	}
 
 	.gallery {
@@ -468,7 +343,6 @@
 	}
 
 	.state-card p,
-	.end-state p,
 	.loading p {
 		color: #555;
 		font-size: 1.05rem;
@@ -477,8 +351,7 @@
 		max-width: 660px;
 	}
 
-	.state-card p,
-	.end-state p {
+	.state-card p {
 		margin-bottom: 20px;
 	}
 
@@ -546,10 +419,11 @@
 
 	.end-state {
 		margin-top: 14px;
+		min-height: 0;
 	}
 
 	.end-state .actions {
-		margin-top: 8px;
+		margin-top: 0;
 	}
 
 	.scroll-sentinel {
@@ -562,34 +436,15 @@
 			padding: 12px 0 40px;
 		}
 
-		.browse-hero,
 		.gallery-panel,
 		.state-card,
 		.end-state {
 			border-radius: 20px;
 		}
 
-		.gallery-heading {
-			flex-direction: column;
-			align-items: flex-start;
-		}
-
 		h2 {
-			text-align: left;
+			text-align: center;
 			font-size: 2.4rem;
-		}
-
-		.hero-copy {
-			text-align: left;
-			margin: 0;
-		}
-
-		.hero-stats {
-			justify-content: flex-start;
-		}
-
-		.stat-chip {
-			min-width: 104px;
 		}
 
 		.gallery {

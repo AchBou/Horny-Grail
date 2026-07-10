@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500">
+  <rect width="1200" height="1500" fill="#eff5fb"/>
+  <rect x="95" y="95" width="1010" height="1310" rx="40" fill="#355c7d"/>
+  <rect x="175" y="175" width="850" height="760" rx="28" fill="#6c9bd2"/>
+  <path d="M175 840 L410 610 L560 760 L760 500 L1025 935 L175 935 Z" fill="#f4f8fc"/>
+  <rect x="175" y="1010" width="850" height="180" rx="28" fill="#f8fbff"/>
+  <text x="600" y="1290" fill="#f8fbff" font-family="Arial, sans-serif" font-size="72" text-anchor="middle">mock-05</text>
+</svg>

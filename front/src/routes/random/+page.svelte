@@ -2,7 +2,8 @@
     import Button from "../../components/Button.svelte";
     import { onMount } from "svelte";
     import { fade } from 'svelte/transition';
-    import { buildApiUrl, buildFileUrl } from "$lib/config/publicEnv.js";
+    import { USE_MOCK_GALLERY, buildApiUrl, buildFileUrl, buildMockFileUrl } from "$lib/config/publicEnv.js";
+    import { getMockRandomItem } from "$lib/mocks/gallery.js";
     import { getMediaKindFromExt } from "$lib/models/image.js";
 
     let randomSrc = "";
@@ -45,28 +46,38 @@
             mediaLoadFailed = false;
             videoControlsEnabled = false;
 
-            const response = await fetch(buildApiUrl("/get-random-image"));
-            if (!response.ok) {
-                const payload = await response.json().catch(() => null);
-                const requestError = new Error(payload?.message || `HTTP error! Status: ${response.status}`);
-                requestError.status = response.status;
-                throw requestError;
-            }
-
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                const data = await response.json();
-                if (data?.id && data?.ext) {
-                    randomSrc = buildFileUrl(data.id, data.ext);
-                } else {
-                    throw new Error('Invalid response format: missing media item');
+            if (USE_MOCK_GALLERY) {
+                const item = getMockRandomItem();
+                if (!item) {
+                    throw new Error('Mock gallery is empty');
                 }
-            } else {
-                const text = await response.text();
-                randomSrc = text.replace(/^\"|\"$/g, '');
-            }
 
-            mediaKind = getMediaKindFromExt(randomSrc.split('?')[0].split('.').pop() || null);
+                randomSrc = buildMockFileUrl(item.id);
+                mediaKind = item.kind;
+            } else {
+                const response = await fetch(buildApiUrl("/get-random-image"));
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => null);
+                    const requestError = new Error(payload?.message || `HTTP error! Status: ${response.status}`);
+                    requestError.status = response.status;
+                    throw requestError;
+                }
+
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const data = await response.json();
+                    if (data?.id && data?.ext) {
+                        randomSrc = buildFileUrl(data.id, data.ext);
+                    } else {
+                        throw new Error('Invalid response format: missing media item');
+                    }
+                } else {
+                    const text = await response.text();
+                    randomSrc = text.replace(/^\"|\"$/g, '');
+                }
+
+                mediaKind = getMediaKindFromExt(randomSrc.split('?')[0].split('.').pop() || null);
+            }
         } catch (err) {
             console.error(err);
             const failure = describeRandomFailure(err?.status, err.message || 'Unknown error');
@@ -111,7 +122,7 @@
 </script>
 
 <div class="random-container">
-    <h2>Random {mediaKind === 'video' ? 'Video' : 'Image'}</h2>
+    <h2>Random Pick</h2>
 
     <div class="img-container">
         {#if isLoading}

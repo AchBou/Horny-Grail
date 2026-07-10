@@ -1,6 +1,7 @@
 <script>
     import { onMount } from 'svelte';
-    import { buildApiUrl, buildFileUrl } from '$lib/config/publicEnv.js';
+    import { USE_MOCK_GALLERY, buildApiUrl, buildFileUrl, buildMockFileUrl } from '$lib/config/publicEnv.js';
+    import { getMockItemById } from '$lib/mocks/gallery.js';
     import { getMediaKindFromExt } from '$lib/models/image.js';
 
     let imageUrl = '';
@@ -77,20 +78,31 @@
                 throw routeError;
             }
 
-            const resp = await fetch(buildApiUrl(`/${id}`));
-            if (!resp.ok) {
-                const payload = await resp.json().catch(() => null);
-                const requestError = new Error(
-                    payload?.message || `Failed to load image metadata (status ${resp.status})`
-                );
-                requestError.status = resp.status;
-                throw requestError;
+            const item = USE_MOCK_GALLERY
+                ? getMockItemById(id)
+                : await (async () => {
+                    const resp = await fetch(buildApiUrl(`/${id}`));
+                    if (!resp.ok) {
+                        const payload = await resp.json().catch(() => null);
+                        const requestError = new Error(
+                            payload?.message || `Failed to load image metadata (status ${resp.status})`
+                        );
+                        requestError.status = resp.status;
+                        throw requestError;
+                    }
+
+                    return resp.json();
+                })();
+
+            if (!item) {
+                const missingItemError = new Error(`No mock item found for id ${id}`);
+                missingItemError.status = 404;
+                throw missingItemError;
             }
 
-            const item = await resp.json();
             const ext = item?.ext || 'jpeg';
             mediaKind = getMediaKindFromExt(ext);
-            imageUrl = buildFileUrl(id, ext);
+            imageUrl = USE_MOCK_GALLERY ? buildMockFileUrl(id) : buildFileUrl(id, ext);
         } catch (e) {
             console.error(e);
             const failure = describeDetailFailure(e?.status, id || 'unknown', e?.message || 'Unknown error');
@@ -115,8 +127,6 @@
 </script>
 
 <div class="image-container-page">
-    <h2>{mediaKind === 'video' ? 'Video' : 'Image'}</h2>
-
     <div class="img-box">
         {#if isLoading}
             <div class="loading">
@@ -203,16 +213,6 @@
         display: flex;
         flex-direction: column;
         min-height: calc(100vh - 200px);
-    }
-
-    h2 {
-        color: #2c3e50;
-        margin-bottom: 30px;
-        text-align: center;
-        font-size: 2.4em;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
     }
 
     .img-box {
