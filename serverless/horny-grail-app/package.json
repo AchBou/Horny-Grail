@@ -18,7 +18,8 @@
         "cloudfront:sync": "node ./scripts/sync-cloudfront-functions.mjs",
         "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
         "sam:dev": "npm run cloudfront:sync && sam build && sam local start-api",
-        "sam:deploy": "npm run cloudfront:sync && sam build && sam deploy"
+        "sam:deploy": "npm run cloudfront:sync && sam build && sam deploy",
+        "sam:sync": "sam sync --stack-name horny-grail-app --code --dependency-layer"
     },
     "jest": {
         "testMatch": [

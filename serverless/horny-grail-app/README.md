@@ -153,6 +153,14 @@ Subsequent deploys:
 npm run sam:deploy
 ```
 
+For Lambda handler-only changes, use the faster code sync path instead of rebuilding and deploying the whole CloudFormation stack:
+
+```bash
+npm run sam:sync
+```
+
+`sam:sync` updates deployed Lambda code without applying template changes and puts shared dependencies in a layer to reduce repeated uploads. Use the full `sam:deploy` command after changing `template.yaml`, SAM parameters, IAM policies, API routes, environment variables, or CloudFront resources. The stack must already exist before `sam:sync` can be used.
+
 The template outputs the deployed API base URL. Clients should use that URL with the `/api` suffix.
 
 For the static public frontend, prefer these outputs from the protected CloudFront distribution:
