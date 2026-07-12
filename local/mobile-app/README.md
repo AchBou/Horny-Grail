@@ -17,7 +17,7 @@ Private Capacitor + SvelteKit mobile client for browsing and uploading HornyGrai
 - Chooser-first home screen with explicit browse and upload entry points.
 - Randomized browse feed backed by authenticated `GET /api/mobile/browse/random`.
 - Single media detail route at `/image/[id]`.
-- Image and WebM selection from the WebView file picker.
+- Native Android media selection preserves eligible MediaStore URIs for optional system-confirmed deletion after upload; web builds use the standard file picker.
 - SHA-256 duplicate detection over original bytes.
 - Browse/detail integrity checks through authenticated `GET /api/mobile/assets/{id}/integrity`.
 - Upload integrity checks through `GET /api/assets/{id}/integrity` with the write API key.
@@ -96,4 +96,4 @@ The Android implementation accepts either `sourcePath` or `sourceDataUrl` and re
 }
 ```
 
-`sourceDataUrl` is used by the current WebView file-picker flow. `sourcePath` is supported for a future native file-picker bridge that avoids base64 transfer for large videos.
+The native picker uses `sourcePath` so video thumbnailing avoids a base64 transfer for newly selected files. The standard WebView picker continues to use `sourceDataUrl`.

@@ -24,6 +24,45 @@ export const THUMBNAIL_MIME_TYPE = 'image/jpeg';
 export const THUMBNAIL_EXT = 'jpeg';
 export const SUPPORTED_EXTENSIONS = Object.keys(MIME_BY_EXT);
 
+function attachNativeMediaMetadata(file, sourceUri, sourcePath) {
+  Object.defineProperties(file, {
+    nativeSourceUri: { value: sourceUri || null, configurable: true },
+    nativeSourcePath: { value: sourcePath || null, configurable: true }
+  });
+  return file;
+}
+
+export async function pickNativeMedia() {
+  if (!Capacitor.isNativePlatform()) {
+    return null;
+  }
+
+  const result = await HornyGrailMedia.pickMedia();
+  const items = Array.isArray(result?.items) ? result.items : [];
+  return Promise.all(items.map(async (item) => {
+    const response = await fetch(Capacitor.convertFileSrc(item.cachePath));
+    if (!response.ok) {
+      throw new Error(`Could not read selected media: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const file = new File([blob], item.name || 'media', {
+      type: item.mimeType || blob.type,
+      lastModified: Date.now()
+    });
+    return attachNativeMediaMetadata(file, item.sourceUri, item.sourcePath);
+  }));
+}
+
+export async function deleteNativeMedia(sourceUri) {
+  const sourceUris = Array.isArray(sourceUri) ? sourceUri : [sourceUri];
+  if (!Capacitor.isNativePlatform() || sourceUris.length === 0 || sourceUris.some((uri) => !uri)) {
+    throw new Error('This file cannot be deleted from device storage');
+  }
+
+  return HornyGrailMedia.deletePickedMedia({ sourceUris });
+}
+
 function throwIfAborted(signal) {
   if (signal?.aborted) {
     throw new DOMException('Operation cancelled', 'AbortError');
@@ -160,11 +199,8 @@ async function createNativeVideoThumbnail(file, ext, signal) {
   throwIfAborted(signal);
 
   try {
-    const sourceDataUrl = await blobToDataUrl(file);
-    throwIfAborted(signal);
-
     const result = await HornyGrailMedia.createVideoThumbnail({
-      sourceDataUrl,
+      ...(file.nativeSourcePath ? { sourcePath: file.nativeSourcePath } : { sourceDataUrl: await blobToDataUrl(file) }),
       mimeType: file.type || MIME_BY_EXT[ext] || MIME_BY_EXT.webm,
       maxDimension: THUMBNAIL_SIZE,
       quality: NATIVE_THUMBNAIL_QUALITY

@@ -10,6 +10,7 @@
   } from '$lib/mobile/api.js';
   import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
+  import { deleteNativeMedia, pickNativeMedia } from '$lib/mobile/media.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
@@ -107,6 +108,9 @@
     .slice(-4)
     .reverse();
   $: homePreviewItems = recentUploads.length > 0 ? recentUploads : browseItems.slice(0, 4);
+  $: deletableUploadItems = uploadItems.filter((item) =>
+    item.sourceUri && (item.status === 'complete' || item.status === 'duplicate')
+  );
 
   function nextLocalId() {
     return `upload-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
@@ -118,10 +122,13 @@
 
   async function copyPickerFile(file) {
     const buffer = await file.arrayBuffer();
-    return new File([buffer], file.name, {
+    const copiedFile = new File([buffer], file.name, {
       type: file.type,
       lastModified: file.lastModified
     });
+    Object.defineProperty(copiedFile, 'nativeSourcePath', { value: file.nativeSourcePath || null });
+    Object.defineProperty(copiedFile, 'nativeSourceUri', { value: file.nativeSourceUri || null });
+    return copiedFile;
   }
 
   function releasePreview(url) {
@@ -440,6 +447,7 @@
       ext: null,
       outcome: null,
       thumbnailUrl: null,
+      sourceUri: file.nativeSourceUri || null,
       integrity: null,
       controller: new AbortController()
     }));
@@ -523,13 +531,88 @@
     uploadItems = uploadItems.filter((entry) => entry.localId !== localId);
   }
 
+  async function deleteUploadFromPhone(localId) {
+    const item = getUploadItem(localId);
+    if (!item?.sourceUri) {
+      return;
+    }
+
+    updateUploadItem(localId, { error: null, message: 'Waiting for Android confirmation' });
+    try {
+      const result = await deleteNativeMedia(item.sourceUri);
+      if (result?.deleted) {
+        updateUploadItem(localId, {
+          sourceUri: null,
+          message: 'Deleted from phone',
+          error: null
+        });
+      } else {
+        updateUploadItem(localId, { message: 'Kept on phone', error: null });
+      }
+    } catch (error) {
+      console.error('Could not delete uploaded media from phone', error);
+      updateUploadItem(localId, {
+        error: error?.message || 'Could not delete this file from phone',
+        message: 'Still on phone'
+      });
+    }
+  }
+
+  async function deleteAllUploadsFromPhone() {
+    const items = [...deletableUploadItems];
+    if (items.length === 0) {
+      return;
+    }
+
+    for (const item of items) {
+      updateUploadItem(item.localId, { error: null, message: 'Waiting for Android confirmation' });
+    }
+
+    try {
+      const result = await deleteNativeMedia(items.map((item) => item.sourceUri));
+      if (result?.deleted) {
+        for (const item of items) {
+          updateUploadItem(item.localId, {
+            sourceUri: null,
+            message: 'Deleted from phone',
+            error: null
+          });
+        }
+      } else {
+        for (const item of items) {
+          updateUploadItem(item.localId, { message: 'Kept on phone', error: null });
+        }
+      }
+    } catch (error) {
+      console.error('Could not delete uploaded media from phone', error);
+      for (const item of items) {
+        updateUploadItem(item.localId, {
+          error: error?.message || 'Could not delete these files from phone',
+          message: 'Still on phone'
+        });
+      }
+    }
+  }
+
   function retryBrowse() {
     homeMode = 'browse';
     hasBrowseIntent = true;
     loadBrowsePage(null);
   }
 
-  function openPicker() {
+  async function openPicker() {
+    try {
+      const nativeFiles = await pickNativeMedia();
+      if (nativeFiles !== null) {
+        if (nativeFiles.length > 0) {
+          enqueueFiles(nativeFiles);
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('Native media picker failed', error);
+    }
+
     fileInput?.click();
   }
 
@@ -803,6 +886,13 @@
           <div class="queue-meter" aria-hidden="true">
             <span style={`width: ${uploadQueueProgress}%`}></span>
           </div>
+          {#if deletableUploadItems.length > 0}
+            <div class="queue-actions">
+              <button class="text-button strong" type="button" on:click={deleteAllUploadsFromPhone}>
+                Delete all from phone ({deletableUploadItems.length})
+              </button>
+            </div>
+          {/if}
 
           {#if showUploadQueue}
             <div class="upload-list">
@@ -856,6 +946,9 @@
                       {/if}
                       {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
                         <a class="text-button strong" href={detailUrlForUpload(item)}>Open</a>
+                      {/if}
+                      {#if item.sourceUri && (item.status === 'complete' || item.status === 'duplicate')}
+                        <button class="text-button" type="button" on:click={() => deleteUploadFromPhone(item.localId)}>Delete from phone</button>
                       {/if}
                       <button class="text-button" type="button" on:click={() => removeUpload(item.localId)}>Remove</button>
                     </div>
