@@ -30,7 +30,7 @@ export const getMobileByIdHandler = async (event) => {
 
     return jsonResponse(200, await createSignedMediaView(item), event);
   } catch (error) {
-    console.error('Error getting mobile item', error);
+    console.error('Error getting mobile item', { id, error: error?.message || String(error) });
     return serverError('Failed to get item', event);
   }
 };

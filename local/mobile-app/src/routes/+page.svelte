@@ -12,6 +12,7 @@
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
   import { deleteNativeMedia, pickNativeMedia } from '$lib/mobile/media.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
+  import { createUploadQueueProcessor } from '$lib/mobile/uploadQueueController.js';
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
   const BROWSE_PAGE_SIZE = 24;
@@ -77,7 +78,6 @@
   let accessError = '';
 
   let uploadItems = [];
-  let isProcessingQueue = false;
   let fileInput;
   let showUploadQueue = false;
   let homeMode = 'home';
@@ -365,72 +365,16 @@
     }
   }
 
-  async function processQueue() {
-    if (isProcessingQueue) {
-      return;
-    }
-
-    isProcessingQueue = true;
-
-    try {
-      while (true) {
-        const nextItem = uploadItems.find((item) => item.status === 'queued');
-        if (!nextItem) {
-          break;
-        }
-
-        const controller = nextItem.controller || new AbortController();
-        updateUploadItem(nextItem.localId, {
-          controller,
-          status: 'hashing',
-          error: null,
-          message: ''
-        });
-
-        try {
-          const result = await runUploadFlow(nextItem.file, (status, detail = null) => {
-            updateUploadItem(nextItem.localId, {
-              status,
-              id: detail?.id || getUploadItem(nextItem.localId)?.id || null,
-              integrity: detail?.integrity || getUploadItem(nextItem.localId)?.integrity || null
-            });
-          }, { signal: controller.signal });
-
-          updateUploadItem(nextItem.localId, {
-            status: result.outcome === 'duplicate' ? 'duplicate' : 'complete',
-            id: result.id,
-            ext: result.ext,
-            outcome: result.outcome,
-            integrity: result.integrity,
-            thumbnailUrl: await resolveUploadThumbnail(result.id),
-            message: outcomeText(result.outcome)
-          });
-        } catch (error) {
-          if (isAbortError(error)) {
-            updateUploadItem(nextItem.localId, {
-              status: 'cancelled',
-              error: null,
-              message: 'Cancelled'
-            });
-            continue;
-          }
-
-          console.error('Upload flow failed', error);
-          updateUploadItem(nextItem.localId, {
-            status: 'failed',
-            error: error?.message || 'Upload failed',
-            message: 'Could not save this file'
-          });
-        }
-      }
-    } finally {
-      isProcessingQueue = false;
-
-      if (uploadItems.some((item) => item.status === 'queued')) {
-        processQueue();
-      }
-    }
-  }
+  const uploadQueue = createUploadQueueProcessor({
+    getItems: () => uploadItems,
+    getItem: getUploadItem,
+    updateItem: updateUploadItem,
+    runFlow: runUploadFlow,
+    resolveThumbnail: resolveUploadThumbnail,
+    outcomeText,
+    isAbortError
+  });
+  const processQueue = uploadQueue.process;
 
   async function enqueueFiles(fileList) {
     const pickerFiles = Array.from(fileList || []);

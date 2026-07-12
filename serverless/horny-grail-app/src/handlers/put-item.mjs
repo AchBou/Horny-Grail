@@ -83,8 +83,5 @@ export const putItemHandler = async (event) => {
         return serverError('Failed to write item', event);
       }
 
-    const response = jsonResponse(200, item, event);
-
-    console.info('putItem response', { path: requestPath, statusCode: response.statusCode, id, ext });
-    return response;
+    return jsonResponse(200, item, event);
 };

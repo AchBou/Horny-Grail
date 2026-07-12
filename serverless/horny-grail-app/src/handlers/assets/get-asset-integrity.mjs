@@ -78,7 +78,7 @@ export async function buildAssetIntegrityResponse(id, event) {
       item
     }, event);
   } catch (error) {
-    console.error('Error checking asset integrity', error);
+    console.error('Error checking asset integrity', { id, error: error?.message || String(error) });
     return serverError('Failed to check asset integrity', event);
   }
 }

@@ -17,9 +17,6 @@ export const getByIdHandler = async (event) => {
   if (guardError) {
     return guardError;
   }
-  // All log statements are written to CloudWatch
-  console.info('received:', event);
- 
   // Get id from pathParameters from APIGateway because of `/{id}` at template.yaml
   const id = event?.pathParameters?.id;
   if (!id) {
@@ -39,7 +36,5 @@ export const getByIdHandler = async (event) => {
  
   const response = jsonResponse(200, item || null, event);
  
-  // All log statements are written to CloudWatch
-  console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);
   return response;
 }

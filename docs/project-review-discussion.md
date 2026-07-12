@@ -97,39 +97,39 @@ References: [`uploadFile.js`](../local/desktop-app/src/lib/functions/uploadFile.
 
 Reference: [`front/tests/test.js`](../front/tests/test.js:3)
 
-### 8. LOW / ARCHITECTURE - The mobile home page is an oversized UI/controller module
+### 8. LOW / ARCHITECTURE - The mobile home page is an oversized UI/controller module - IMPROVED
 
 **Evidence:** The route owns browse state, access handling, IndexedDB persistence, upload orchestration, cancellation, deletion, and presentation styling.
 
 **Impact:** State transitions are difficult to reason about, and the most failure-prone behavior is hard to test independently.
 
-**Suggested direction:** Extract browse and upload stores/controllers plus queue components, keeping the route responsible mainly for composition.
+**Resolution:** Extracted the upload queue processor into `src/lib/mobile/uploadQueueController.js`. The route still owns presentation state, but queue concurrency, progress mapping, cancellation handling, and retry completion now live behind a dedicated controller boundary.
 
 Reference: [`local/mobile-app/src/routes/+page.svelte`](../local/mobile-app/src/routes/+page.svelte:368)
 
-### 9. LOW / ARCHITECTURE - Backend logging is excessive
+### 9. LOW / ARCHITECTURE - Backend logging is excessive - IMPROVED
 
 **Evidence:** Several handlers log complete events, scan results, and serialized response bodies.
 
 **Impact:** This increases CloudWatch cost and may expose request details or collection contents in logs.
 
-**Suggested direction:** Log structured identifiers, counts, latency, and error codes; avoid full payloads except under controlled diagnostics.
+**Resolution:** Removed full request-event and serialized-response logging from the list and item handlers. Error logs now retain identifiers and messages rather than whole error/request objects where practical.
 
 References: [`get-all-items.mjs`](../serverless/horny-grail-app/src/handlers/get-all-items.mjs:19), [`get-by-id.mjs`](../serverless/horny-grail-app/src/handlers/get-by-id.mjs:21)
 
-### 10. LOW / ARCHITECTURE - Tests are concentrated on Lambda handlers
+### 10. LOW / ARCHITECTURE - Tests are concentrated on Lambda handlers - IMPROVED
 
 **Evidence:** The backend has broad unit coverage, but there are no comparable automated tests for mobile recovery, desktop watcher races, thumbnail fallback, or queue cancellation.
 
 **Impact:** Cross-client protocol regressions can pass all current tests.
 
-**Suggested direction:** Add focused tests around upload state machines and watcher concurrency, using mocked API/S3/native boundaries.
+**Resolution:** Added a mobile Node test runner and focused upload-queue tests covering successful completion, failure recovery, and cancellation. Desktop watcher and native thumbnail integration tests remain future work.
 
 ## Verification Snapshot
 
 - Backend: 40/40 Jest tests passed.
-- Frontend: production build passed; Playwright failed on the stale heading assertion described above.
-- Mobile: build/check passed.
+- Frontend: production build and Playwright smoke test passed.
+- Mobile: build/check passed; upload queue tests pass 3/3.
 - Desktop: Svelte check and Rust `cargo check` passed.
 - Worktree: clean after review.
 
