@@ -64,6 +64,7 @@ function toStoredItem(item) {
     id: item.id || null,
     ext: item.ext || null,
     outcome: item.outcome || null,
+    thumbnailUrl: item.thumbnailUrl || null,
     integrity: item.integrity || null
   };
 }
@@ -86,6 +87,7 @@ function toRestoredItem(storedItem) {
     id: storedItem.id || null,
     ext: storedItem.ext || null,
     outcome: wasInterrupted ? null : storedItem.outcome || null,
+    thumbnailUrl: wasInterrupted ? null : storedItem.thumbnailUrl || null,
     integrity: storedItem.integrity || null,
     wasInterrupted
   };

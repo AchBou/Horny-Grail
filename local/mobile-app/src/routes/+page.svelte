@@ -5,7 +5,8 @@
     createMobileReadSession,
     fetchRandomBrowsePage,
     isAbortError,
-    isUnauthorizedError
+    isUnauthorizedError,
+    fetchItemById
   } from '$lib/mobile/api.js';
   import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
@@ -343,6 +344,20 @@
     return item.id ? `/image/${item.id}` : '';
   }
 
+  async function resolveUploadThumbnail(id) {
+    if (!id) {
+      return null;
+    }
+
+    try {
+      const media = await fetchItemById(id);
+      return typeof media?.thumbnailUrl === 'string' ? media.thumbnailUrl : null;
+    } catch (error) {
+      console.warn('Could not load uploaded thumbnail', error);
+      return null;
+    }
+  }
+
   async function processQueue() {
     if (isProcessingQueue) {
       return;
@@ -380,6 +395,7 @@
             ext: result.ext,
             outcome: result.outcome,
             integrity: result.integrity,
+            thumbnailUrl: await resolveUploadThumbnail(result.id),
             message: outcomeText(result.outcome)
           });
         } catch (error) {
@@ -423,6 +439,7 @@
       id: null,
       ext: null,
       outcome: null,
+      thumbnailUrl: null,
       integrity: null,
       controller: new AbortController()
     }));
@@ -708,7 +725,7 @@
             {#each homePreviewItems as item}
               {#if item.localId}
                 <button class="preview-card" type="button" on:click={openUpload}>
-                  <img src={item.previewUrl} alt={item.name} />
+                  <img src={item.thumbnailUrl || item.previewUrl} alt={item.name} />
                 </button>
               {:else}
                 <a class="preview-card" href={item.detailUrl}>
@@ -792,7 +809,9 @@
               {#each uploadItems as item (item.localId)}
                 <article class="upload-card">
                   <div class="upload-thumb">
-                    {#if isVideoUpload(item)}
+                    {#if item.thumbnailUrl}
+                      <img src={item.thumbnailUrl} alt={`${item.name} thumbnail`} />
+                    {:else if isVideoUpload(item)}
                       <video src={item.previewUrl} muted playsinline preload="metadata"></video>
                     {:else}
                       <img src={item.previewUrl} alt={item.name} />
