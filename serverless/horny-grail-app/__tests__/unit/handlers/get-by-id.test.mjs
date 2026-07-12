@@ -82,7 +82,7 @@ describe('Test getByIdHandler', () => {
         });
 
         expect(result.statusCode).toEqual(200);
-        expect(result.body).toEqual(JSON.stringify(items));
+        expect(JSON.parse(result.body)).toEqual({ items, cursor: null });
     });
 }); 
  

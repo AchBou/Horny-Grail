@@ -2,7 +2,7 @@
 
 // Create a DocumentClient that represents the query to add an item
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
 import { requireWriteApiKey } from '../lib/auth.mjs';
 import { badRequest, jsonResponse, serverError } from '../lib/http.mjs';
@@ -42,28 +42,48 @@ export const putItemHandler = async (event) => {
         return badRequest('Invalid image extension', event);
     }
 
-    // Creates a new item, or replaces an old item with a new item
-    // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#put-property
-    var params = {
+    // Metadata is immutable after creation so retries cannot change browse order or extension.
+    const item = {
+        id,
+        ext,
+        date: body.date || new Date().toISOString(),
+        status: 'active',
+        randomKey: Math.random()
+    };
+    const params = {
         TableName : getLookupTableName(),
-        Item: {
-            id,
-            ext,
-            date: body.date || new Date().toISOString(),
-            status: 'active',
-            randomKey: Math.random()
-        }
+        Item: item,
+        ConditionExpression: 'attribute_not_exists(#id)',
+        ExpressionAttributeNames: { '#id': 'id' }
     };
 
     try {
         await ddbDocClient.send(new PutCommand(params));
         console.info('putItem succeeded', { path: requestPath, id, ext });
       } catch (err) {
+        if (err?.name === 'ConditionalCheckFailedException') {
+          try {
+            const existing = await ddbDocClient.send(new GetCommand({
+              TableName: getLookupTableName(),
+              Key: { id }
+            }));
+            if (!existing.Item) {
+              return serverError('Failed to resolve existing item', event);
+            }
+            if (existing.Item.ext !== ext) {
+              return badRequest('Image id is already registered with a different extension', event);
+            }
+            return jsonResponse(200, existing.Item, event);
+          } catch (lookupError) {
+            console.error('Failed to resolve existing item', { path: requestPath, id, error: lookupError });
+            return serverError('Failed to resolve existing item', event);
+          }
+        }
         console.error('putItem failed', { path: requestPath, id, ext, error: err });
         return serverError('Failed to write item', event);
       }
 
-    const response = jsonResponse(200, params.Item, event);
+    const response = jsonResponse(200, item, event);
 
     console.info('putItem response', { path: requestPath, statusCode: response.statusCode, id, ext });
     return response;

@@ -1,7 +1,7 @@
 // Import putItemHandler function from put-item.mjs 
 import { putItemHandler } from '../../../src/handlers/put-item.mjs';
 // Import dynamodb from aws-sdk 
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from "aws-sdk-client-mock";
 import { jest } from '@jest/globals';
 // This includes all tests for putItemHandler() 
@@ -100,6 +100,50 @@ describe('Test putItemHandler', function () {
 
         expect(result.statusCode).toEqual(200);
         expect(JSON.parse(result.body)).toEqual(expect.objectContaining({ id, ext: 'webm' }));
+    });
+
+    it('should return the existing item unchanged when registration is retried', async () => {
+        const id = 'a'.repeat(64);
+        const existing = {
+            id,
+            ext: 'jpg',
+            date: '2025-01-01T00:00:00.000Z',
+            status: 'active',
+            randomKey: 0.11
+        };
+        ddbMock.on(PutCommand).rejects(Object.assign(new Error('already exists'), {
+            name: 'ConditionalCheckFailedException'
+        }));
+        ddbMock.on(GetCommand).resolves({ Item: existing });
+
+        const result = await putItemHandler({
+            httpMethod: 'POST',
+            headers: { 'x-api-key': 'test-write-api-key' },
+            body: JSON.stringify({ id, ext: 'jpg', date: '2030-01-01T00:00:00.000Z' })
+        });
+
+        expect(result.statusCode).toBe(200);
+        expect(JSON.parse(result.body)).toEqual(existing);
+        expect(ddbMock.commandCalls(PutCommand)[0].args[0].input.ConditionExpression)
+            .toBe('attribute_not_exists(#id)');
+    });
+
+    it('should reject a duplicate id registered with a different extension', async () => {
+        const id = 'c'.repeat(64);
+        ddbMock.on(PutCommand).rejects(Object.assign(new Error('already exists'), {
+            name: 'ConditionalCheckFailedException'
+        }));
+        ddbMock.on(GetCommand).resolves({ Item: { id, ext: 'jpg' } });
+
+        const result = await putItemHandler({
+            httpMethod: 'POST',
+            headers: { 'x-api-key': 'test-write-api-key' },
+            body: JSON.stringify({ id, ext: 'png' })
+        });
+
+        expect(result.statusCode).toBe(400);
+        expect(JSON.parse(result.body).message)
+            .toBe('Image id is already registered with a different extension');
     });
 
     it('should accept mp4 items', async () => {

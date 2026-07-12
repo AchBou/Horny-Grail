@@ -3,7 +3,7 @@
   import {readDir, watch} from "@tauri-apps/plugin-fs";
   import type { UnwatchFn } from "@tauri-apps/plugin-fs";
   import { onDestroy } from "svelte";
-  import { uploadFile } from "$lib/functions/uploadFile.js";
+  import { registerUploadedFile, uploadFile } from "$lib/functions/uploadFile.js";
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
@@ -416,13 +416,10 @@
       isUploading = true;
       
       // Upload the file
-      const fileHash = await uploadFile(file.path);
-      // Mark as existing now that it's uploaded
+      const fileHash = fileHashes[file.path] || await computeFileHash(file.path);
+      await uploadFile(file.path, fileHash, { registerMetadata: false });
       fileHashes[file.path] = fileHash;
-      fileExists[file.path] = true;
       fileCheckStatus[file.path] = "done";
-      fileRepairNeeded[file.path] = false;
-      fileMissingParts[file.path] = [];
       
       // Upload a thumbnail preview for every supported media file.
       const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
@@ -435,9 +432,14 @@
           fileRepairNeeded[file.path] = true;
           fileMissingParts[file.path] = ["thumbnail"];
           errorMessage = `Uploaded ${file.name}, but thumbnail generation/upload failed: ${thumbnailError instanceof Error ? thumbnailError.message : "Unknown error"}`;
+          throw thumbnailError;
         }
       }
-      
+      await registerUploadedFile(fileHash, fileExt);
+      fileExists[file.path] = true;
+      fileRepairNeeded[file.path] = false;
+      fileMissingParts[file.path] = [];
+
       // Update status
       uploadStatus[file.path] = "completed";
       uploadedFiles = [...uploadedFiles, file.path];
@@ -497,7 +499,7 @@
       }
 
       if (!integrity.originalExists) {
-        await uploadFile(file.path);
+        await uploadFile(file.path, fileHash);
       }
 
       if (!integrity.thumbnailExists) {

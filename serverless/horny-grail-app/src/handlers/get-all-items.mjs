@@ -1,6 +1,6 @@
 import { requireReadOriginSecret } from '../lib/auth.mjs';
-import { jsonResponse, serverError } from '../lib/http.mjs';
-import { scanAllItems } from '../lib/items-repository.mjs';
+import { badRequest, jsonResponse, serverError } from '../lib/http.mjs';
+import { decodeScanCursor, parseScanLimit, scanItemsPage } from '../lib/items-repository.mjs';
 import { guardRequest } from '../lib/request-guards.mjs';
 
 /**
@@ -15,27 +15,23 @@ export const getAllItemsHandler = async (event) => {
     if (guardError) {
         return guardError;
     }
-    // All log statements are written to CloudWatch
-    console.info('received:', event);
+    const limit = parseScanLimit(event?.queryStringParameters?.limit);
+    if (limit == null) {
+        return badRequest('Invalid limit. Expected an integer between 1 and 100.', event);
+    }
+    const cursor = decodeScanCursor(event?.queryStringParameters?.cursor);
+    if (cursor === undefined) {
+        return badRequest('Invalid cursor', event);
+    }
 
-    // get all items from the table (only first 1MB data, you can use `LastEvaluatedKey` to get the rest of data)
-    // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#scan-property
-    // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
-    let items = [];
+    let page;
     try {
-        items = await scanAllItems();
-        console.info('Raw scan items:', JSON.stringify(items));
+        page = await scanItemsPage({ cursor, limit });
     } catch (err) {
         console.error('Error scanning table:', err);
-        // Return a 500 if scan fails
         return serverError('Failed to scan table', event);
     }
 
 
-    const response = jsonResponse(200, items, event);
-
-    // All log statements are written to CloudWatch
-    const path = event?.path || event?.rawPath || '';
-    console.info(`response from: ${path} statusCode: ${response.statusCode} body: ${response.body}`);
-    return response;
+    return jsonResponse(200, page, event);
 }

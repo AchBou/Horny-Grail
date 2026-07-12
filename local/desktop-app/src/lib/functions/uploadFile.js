@@ -57,7 +57,7 @@ async function requestUploadTarget(path, id, ext, sizeBytes, contentType) {
  * @param {string} ext
  * @returns {Promise<void>}
  */
-async function registerUploadedFile(id, ext) {
+export async function registerUploadedFile(id, ext) {
     const response = await httpFetch(API_BASE_URL, {
         method: "POST",
         headers: {
@@ -77,18 +77,19 @@ async function registerUploadedFile(id, ext) {
 
 /**
  * @param {string} filePath
+ * @param {string} [knownHash]
+ * @param {{registerMetadata?: boolean}} [options]
  * @returns {Promise<string>}
  */
-export async function uploadFile(filePath) {
+export async function uploadFile(filePath, knownHash, { registerMetadata = true } = {}) {
     // Read the file as binary data
     const fileData = await readFile(filePath);
     
-    // Convert the binary data to a format that can be hashed
-    const wordArray = CryptoJS.lib.WordArray.create(fileData);
-    
-    // Create SHA-256 hash
-    const hash = CryptoJS.SHA256(wordArray);
-    const hex = hash.toString(CryptoJS.enc.Hex);
+    // Hash locally only when the caller does not already have the streaming hash.
+    const suppliedHash = typeof knownHash === 'string' ? knownHash : '';
+    const hex = /^[a-f0-9]{64}$/i.test(suppliedHash)
+        ? suppliedHash.toLowerCase()
+        : CryptoJS.SHA256(CryptoJS.lib.WordArray.create(fileData)).toString(CryptoJS.enc.Hex);
     
     // Get file extension
     const fileExtension = filePath.split('.').pop()?.toLowerCase() || 'bin';
@@ -112,7 +113,9 @@ export async function uploadFile(filePath) {
         }
         console.log("Upload Success via presigned URL");
         
-        await registerUploadedFile(hex, fileExtension);
+        if (registerMetadata) {
+            await registerUploadedFile(hex, fileExtension);
+        }
         
         return hex;
     } catch (err) {

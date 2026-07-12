@@ -1,14 +1,10 @@
 // Create clients and set shared const values outside of the handler.
 
 // Create a DocumentClient that represents the query to add an item
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
-import { getLookupTableName } from '../../config/env.mjs';
 import { requireReadOriginSecret } from '../../lib/auth.mjs';
-import { jsonResponse, serverError } from '../../lib/http.mjs';
+import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
-const client = new DynamoDBClient({});
-const ddbDocClient = DynamoDBDocumentClient.from(client);
+import { decodeScanCursor, parseScanLimit, scanItemsPage } from '../../lib/items-repository.mjs';
 
 /**
  * HTTP GET method to get all thumbnails (id.ext) from a DynamoDB table.
@@ -22,29 +18,25 @@ export const getAllThumbnailsHandler = async (event) => {
   if (guardError) {
     return guardError;
   }
-    // All log statements are written to CloudWatch
-    console.info('received:', event);
+    const limit = parseScanLimit(event?.queryStringParameters?.limit);
+    if (limit == null) {
+        return badRequest('Invalid limit. Expected an integer between 1 and 100.', event);
+    }
+    const cursor = decodeScanCursor(event?.queryStringParameters?.cursor);
+    if (cursor === undefined) {
+        return badRequest('Invalid cursor', event);
+    }
 
-    // get all items from the table (only first 1MB data, you can use `LastEvaluatedKey` to get the rest of data)
-    // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#scan-property
-    // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
-    const params = {
-        TableName: getLookupTableName()
-    };
-
-    let items = [];
+    let page;
     try {
-        const data = await ddbDocClient.send(new ScanCommand(params));
-        items = data.Items || [];
-        console.info('Raw scan items:', JSON.stringify(items));
+        page = await scanItemsPage({ cursor, limit });
     } catch (err) {
         console.error('Error scanning table:', err);
-        // Return a 500 if scan fails
         return serverError('Failed to scan table', event);
     }
 
     // Map items to an array of thumbnail filenames expected by the front: "thumbnail-<id>.jpeg"
-    const thumbnails = items
+    const thumbnails = page.items
         .map((item) => {
             // With DynamoDBDocumentClient, items are plain JS objects
             const id = item?.id;
@@ -53,10 +45,5 @@ export const getAllThumbnailsHandler = async (event) => {
         })
         .filter(Boolean);
 
-    const response = jsonResponse(200, thumbnails, event);
-
-    // All log statements are written to CloudWatch
-    const path = event?.path || event?.rawPath || '';
-    console.info(`response from: ${path} statusCode: ${response.statusCode} body: ${response.body}`);
-    return response;
+    return jsonResponse(200, { items: thumbnails, cursor: page.cursor }, event);
 }
