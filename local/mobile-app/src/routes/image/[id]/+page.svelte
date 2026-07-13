@@ -27,6 +27,7 @@
   let integrity = null;
   let isLoading = true;
   let error = null;
+  let mediaError = '';
   let videoElement;
   let videoControlsEnabled = false;
   let showDetails = false;
@@ -88,6 +89,7 @@
     isLoading = !preserveMedia;
     isTransitioning = preserveMedia;
     error = null;
+    mediaError = '';
 
     if (!preserveMedia) {
       media = null;
@@ -282,6 +284,10 @@
     showChrome = !showChrome;
   }
 
+  function handleMediaError() {
+    mediaError = 'This media could not be loaded.';
+  }
+
   onMount(() => {
     hasReadSession = Boolean(getReadSession());
     const handlePopState = () => {
@@ -352,7 +358,7 @@
     </section>
   {:else if media}
     <main
-      class={`stage ${showChrome && !hasInteractiveVideoControls() ? 'with-info' : ''} ${showDetails ? 'with-details' : ''} ${isTransitioning ? 'busy' : ''}`}
+      class={`stage ${(showChrome && !hasInteractiveVideoControls()) || showDetails ? 'with-info' : ''} ${showDetails ? 'with-details' : ''} ${isTransitioning ? 'busy' : ''}`}
       on:touchstart={handleTouchStart}
       on:touchmove={handleTouchMove}
       on:touchend={handleTouchEnd}
@@ -366,6 +372,8 @@
             class="media"
             src={media.fileUrl}
             poster={media.thumbnailUrl}
+            aria-label="Saved video"
+            on:error={handleMediaError}
             autoplay={!isPlayerVideoMedia(media)}
             controls={hasInteractiveVideoControls()}
             loop={media.kind === 'video' && !hasInteractiveVideoControls()}
@@ -379,7 +387,8 @@
           <img
             class="media"
             src={media.fileUrl}
-            alt="Saved media"
+            alt="Saved media preview"
+            on:error={handleMediaError}
             in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_IN_DURATION_MS, opacity: 0.18, easing: cubicOut }}
             out:fly={{ x: swipeDirection * -SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_OUT_DURATION_MS, opacity: 0.08, easing: cubicInOut }}
           />
@@ -395,27 +404,41 @@
           <div class="spinner small"></div>
         </div>
       {/if}
+
+      {#if mediaError}
+        <div class="media-error" role="alert">
+          <strong>Media unavailable</strong>
+          <span>{mediaError}</span>
+          <button class="pill solid" type="button" on:click={() => loadMedia(id)}>Try again</button>
+        </div>
+      {:else if showChrome && !showDetails && !hasInteractiveVideoControls()}
+        <p class="viewer-hint" aria-hidden="true">Swipe to discover more</p>
+      {/if}
     </main>
 
     <nav class={`top-bar ${showChrome ? 'visible' : ''}`} aria-label="Detail navigation">
-      <a class="pill" href="/">Back</a>
+      <a class="viewer-action back-action" href="/" aria-label="Back to collection" title="Back to collection">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7M8 12h12" /></svg>
+      </a>
       <div class="top-actions">
-        <button class="pill" type="button" disabled={isLoading || isAdvancing} on:click={loadRandomNextMedia}>
-          {isAdvancing ? 'Load' : 'Next'}
+        <button class="viewer-action" type="button" aria-label={isAdvancing ? 'Loading next item' : 'Open next random item'} title="Next item" disabled={isLoading || isAdvancing} on:click={loadRandomNextMedia}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" /></svg>
         </button>
         {#if media.kind === 'video' && !isPlayerVideoMedia(media)}
-          <button class="pill solid" type="button" on:click={toggleVideoPlaybackMode}>
-            {videoControlsEnabled ? 'Preview' : 'Sound'}
+          <button class="viewer-action solid" type="button" aria-label={videoControlsEnabled ? 'Switch to muted preview' : 'Enable sound'} title={videoControlsEnabled ? 'Muted preview' : 'Enable sound'} aria-pressed={videoControlsEnabled} on:click={toggleVideoPlaybackMode}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4M17 9.5a4 4 0 0 1 0 5M19.5 7a7.5 7.5 0 0 1 0 10" /></svg>
           </button>
         {/if}
-        <button class="pill" type="button" on:click={() => showDetails = !showDetails}>
-          {showDetails ? 'Hide info' : 'Info'}
+        <button class="viewer-action" type="button" aria-label={showDetails ? 'Hide media information' : 'Show media information'} title={showDetails ? 'Hide info' : 'Info'} aria-pressed={showDetails} on:click={() => showDetails = !showDetails}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 10.5v5M12 7.5h.01" /></svg>
         </button>
-        <a class="pill solid" href={media.fileUrl} target="_blank" rel="noreferrer">Original</a>
+        <a class="viewer-action solid" href={media.fileUrl} target="_blank" rel="noreferrer" aria-label="Open original media" title="Original">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5l-9 9M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+        </a>
       </div>
     </nav>
 
-    <section class={`info-sheet ${showChrome && !hasInteractiveVideoControls() ? 'visible' : ''}`}>
+    <section class={`info-sheet ${showChrome && (showDetails || !hasInteractiveVideoControls()) ? 'visible' : ''}`}>
       {#if showDetails}
         <dl class="details">
           <div>
@@ -586,6 +609,49 @@
     gap: 0.5rem;
   }
 
+  .viewer-action {
+    display: inline-flex;
+    width: 2.65rem;
+    height: 2.65rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 249, 243, 0.18);
+    border-radius: 0.85rem;
+    background: rgba(255, 249, 243, 0.1);
+    color: #fff9f3;
+    backdrop-filter: blur(16px);
+    cursor: pointer;
+  }
+
+  .viewer-action.solid {
+    border-color: transparent;
+    background: #fff9f3;
+    color: #1f1814;
+  }
+
+  .viewer-action:disabled {
+    opacity: 0.56;
+    cursor: default;
+  }
+
+  .viewer-action:active {
+    transform: translateY(1px);
+  }
+
+  .viewer-action svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+  }
+
+  .back-action {
+    flex: 0 0 auto;
+  }
+
   .pill {
     display: inline-flex;
     align-items: center;
@@ -623,6 +689,41 @@
 
   .info-sheet.visible {
     transform: translateY(0);
+  }
+
+  .viewer-hint {
+    position: absolute;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+    margin: 0;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid rgba(255, 249, 243, 0.12);
+    border-radius: 999px;
+    background: rgba(22, 17, 13, 0.58);
+    color: rgba(255, 249, 243, 0.72);
+    font-size: 0.72rem;
+    pointer-events: none;
+    backdrop-filter: blur(14px);
+  }
+
+  .media-error {
+    position: absolute;
+    z-index: 2;
+    display: grid;
+    max-width: min(20rem, calc(100vw - 2rem));
+    gap: 0.55rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 124, 102, 0.32);
+    border-radius: 1rem;
+    background: rgba(48, 25, 21, 0.88);
+    color: #fff9f3;
+    text-align: center;
+    backdrop-filter: blur(18px);
+  }
+
+  .media-error span {
+    color: rgba(255, 249, 243, 0.72);
+    font-size: 0.8rem;
   }
 
   .info-sheet > * {
