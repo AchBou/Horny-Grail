@@ -48,7 +48,9 @@ public class HornyGrailMediaPlugin extends Plugin {
                 "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff",
                 "video/webm", "video/mp4"
             })
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(call, intent, "handleMediaPick");
     }
 
@@ -114,11 +116,36 @@ public class HornyGrailMediaPlugin extends Plugin {
             call.reject("No media files were selected for deletion");
             return;
         }
+        boolean allDownloads = true;
+        boolean allMediaStore = true;
         for (Uri uri : uris) {
-            if (!"content".equals(uri.getScheme()) || !MediaStore.AUTHORITY.equals(uri.getAuthority())) {
+            boolean isMediaStore = "content".equals(uri.getScheme()) && MediaStore.AUTHORITY.equals(uri.getAuthority());
+            boolean isDownload = isDeletableDownloadUri(uri);
+            allMediaStore &= isMediaStore;
+            allDownloads &= isDownload;
+            if (!isMediaStore && !isDownload) {
                 call.reject("This file cannot be deleted through Android media storage");
                 return;
             }
+        }
+        if (allDownloads) {
+            try {
+                boolean deleted = true;
+                for (Uri uri : uris) {
+                    deleted &= DocumentsContract.deleteDocument(getContext().getContentResolver(), uri);
+                }
+                JSObject response = new JSObject();
+                response.put("deleted", deleted);
+                response.put("cancelled", false);
+                call.resolve(response);
+            } catch (Exception error) {
+                call.reject("Could not delete the file from Downloads", error);
+            }
+            return;
+        }
+        if (!allMediaStore) {
+            call.reject("Mixed phone storage providers cannot be deleted together");
+            return;
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             call.unavailable("Deleting uploaded media requires Android 11 or later");
@@ -226,7 +253,8 @@ public class HornyGrailMediaPlugin extends Plugin {
     private JSObject copyPickedMedia(Uri uri) throws IOException {
         ContentResolver resolver = getContext().getContentResolver();
         try {
-            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            resolver.takePersistableUriPermission(uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         } catch (SecurityException ignored) {
             // Providers that do not support persisted grants are still readable for this selection.
         }
@@ -254,8 +282,17 @@ public class HornyGrailMediaPlugin extends Plugin {
         Uri deletableUri = toMediaStoreUri(uri);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && deletableUri != null) {
             item.put("sourceUri", deletableUri.toString());
+        } else if (isDeletableDownloadUri(uri)) {
+            item.put("sourceUri", uri.toString());
         }
         return item;
+    }
+
+    private boolean isDeletableDownloadUri(Uri uri) {
+        return uri != null
+            && "content".equals(uri.getScheme())
+            && "com.android.providers.downloads.documents".equals(uri.getAuthority())
+            && DocumentsContract.isDocumentUri(getContext(), uri);
     }
 
     private Uri toMediaStoreUri(Uri uri) {

@@ -1,39 +1,42 @@
 package dev.hornygrail.mobile;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.content.IntentSender;
 import android.os.Bundle;
+import android.os.Build;
+import androidx.activity.ComponentActivity;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.activity.result.IntentSenderRequest;
 
 /** Hosts Android's media-delete confirmation so the Capacitor plugin receives a normal activity result. */
-public class DeleteMediaConfirmationActivity extends Activity {
-    private static final int DELETE_CONFIRMATION_REQUEST = 1;
-
+public class DeleteMediaConfirmationActivity extends ComponentActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        IntentSender intentSender = getIntent().getParcelableExtra("intentSender");
+        IntentSender intentSender = readIntentSender();
         if (intentSender == null) {
             setResult(RESULT_CANCELED);
             finish();
             return;
         }
 
-        try {
-            startIntentSenderForResult(intentSender, DELETE_CONFIRMATION_REQUEST, null, 0, 0, 0);
-        } catch (IntentSender.SendIntentException error) {
-            setResult(RESULT_CANCELED);
-            finish();
-        }
+        var confirmationLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartIntentSenderForResult(),
+            result -> {
+                setResult(result.getResultCode());
+                finish();
+            }
+        );
+
+        confirmationLauncher.launch(new IntentSenderRequest.Builder(intentSender).build());
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == DELETE_CONFIRMATION_REQUEST) {
-            setResult(resultCode);
-            finish();
+    @SuppressWarnings("deprecation")
+    private IntentSender readIntentSender() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return getIntent().getParcelableExtra("intentSender", IntentSender.class);
         }
+        return getIntent().getParcelableExtra("intentSender");
     }
 }

@@ -80,6 +80,7 @@
   let uploadItems = [];
   let fileInput;
   let showUploadQueue = false;
+  let showDeleteAllDialog = false;
   let homeMode = 'home';
   let hasBrowseIntent = false;
   let hasLoadedBrowse = false;
@@ -512,30 +513,55 @@
       updateUploadItem(item.localId, { error: null, message: 'Waiting for Android confirmation' });
     }
 
-    try {
-      const result = await deleteNativeMedia(items.map((item) => item.sourceUri));
-      if (result?.deleted) {
-        for (const item of items) {
-          updateUploadItem(item.localId, {
-            sourceUri: null,
-            message: 'Deleted from phone',
-            error: null
-          });
-        }
-      } else {
-        for (const item of items) {
-          updateUploadItem(item.localId, { message: 'Kept on phone', error: null });
-        }
-      }
-    } catch (error) {
-      console.error('Could not delete uploaded media from phone', error);
-      for (const item of items) {
+    const downloadItems = items.filter((item) => item.sourceUri.includes('com.android.providers.downloads.documents'));
+    const mediaStoreItems = items.filter((item) => !item.sourceUri.includes('com.android.providers.downloads.documents'));
+
+    for (const item of downloadItems) {
+      try {
+        const result = await deleteNativeMedia(item.sourceUri);
+        updateUploadItem(item.localId, result?.deleted
+          ? { sourceUri: null, message: 'Deleted from phone', error: null }
+          : { message: 'Kept on phone', error: null });
+      } catch (error) {
+        console.error('Could not delete uploaded Downloads media', error);
         updateUploadItem(item.localId, {
           error: error?.message || 'Could not delete these files from phone',
           message: 'Still on phone'
         });
       }
     }
+
+    if (mediaStoreItems.length === 0) {
+      return;
+    }
+
+    try {
+      const result = await deleteNativeMedia(mediaStoreItems.map((item) => item.sourceUri));
+      for (const item of mediaStoreItems) {
+        updateUploadItem(item.localId, result?.deleted
+          ? { sourceUri: null, message: 'Deleted from phone', error: null }
+          : { message: 'Kept on phone', error: null });
+      }
+    } catch (error) {
+      console.error('Could not delete uploaded media from phone', error);
+      for (const item of mediaStoreItems) {
+        updateUploadItem(item.localId, {
+          error: error?.message || 'Could not delete these files from phone',
+          message: 'Still on phone'
+        });
+      }
+    }
+  }
+
+  function requestDeleteAllUploads() {
+    if (deletableUploadItems.length > 0) {
+      showDeleteAllDialog = true;
+    }
+  }
+
+  async function confirmDeleteAllUploads() {
+    showDeleteAllDialog = false;
+    await deleteAllUploadsFromPhone();
   }
 
   function retryBrowse() {
@@ -819,7 +845,7 @@
       </section>
 
       {#if uploadItems.length > 0}
-        <section class={`upload-dock ${showUploadQueue ? 'expanded' : ''}`}>
+        <section class={`upload-dock ${showUploadQueue ? 'expanded' : ''} ${activeUploadCount > 0 ? 'active' : ''}`}>
           <button class="dock-summary" type="button" on:click={() => showUploadQueue = !showUploadQueue}>
             <span>
               <span class="dock-label">Uploads</span>
@@ -832,8 +858,13 @@
           </div>
           {#if deletableUploadItems.length > 0}
             <div class="queue-actions">
-              <button class="text-button strong" type="button" on:click={deleteAllUploadsFromPhone}>
-                Delete all from phone ({deletableUploadItems.length})
+              <button class="bulk-delete-button" type="button" on:click={requestDeleteAllUploads}>
+                <span class="bulk-delete-icon" aria-hidden="true"></span>
+                <span class="bulk-delete-copy">
+                  <strong>Delete all from phone</strong>
+                  <small>Remove saved files from this device</small>
+                </span>
+                <span class="bulk-delete-count">{deletableUploadItems.length}</span>
               </button>
             </div>
           {/if}
@@ -853,7 +884,7 @@
                   </div>
                   <div class="upload-body">
                     <div class="upload-line">
-                      <div>
+                      <div class="upload-heading">
                         <button
                           class="upload-name-button"
                           type="button"
@@ -862,12 +893,14 @@
                         >
                           {item.name}
                         </button>
-                        <p>{statusText(item)} / {formatFileSize(item.size)}</p>
+                        <div class="upload-meta">
+                          <span class={`status-badge ${item.status}`}>{statusText(item)}</span>
+                          <span>{formatFileSize(item.size)}</span>
+                        </div>
                       </div>
                       {#if copiedUploadLocalId === item.localId}
                         <span class="copy-pill">Copied</span>
                       {/if}
-                      <span class={`status-dot ${item.status}`}></span>
                     </div>
                     <div class="item-meter" aria-label={`${statusText(item)} progress`}>
                       <span style={`width: ${uploadProgress(item)}%`}></span>
@@ -889,12 +922,18 @@
                         <button class="text-button strong" type="button" on:click={() => retryUpload(item.localId)}>Retry</button>
                       {/if}
                       {#if item.id && (item.status === 'complete' || item.status === 'duplicate')}
-                        <a class="text-button strong" href={detailUrlForUpload(item)}>Open</a>
+                        <a class="upload-action" href={detailUrlForUpload(item)} aria-label={`Open ${item.name}`} title="Open">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4 11 13M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4" /></svg>
+                        </a>
                       {/if}
                       {#if item.sourceUri && (item.status === 'complete' || item.status === 'duplicate')}
-                        <button class="text-button" type="button" on:click={() => deleteUploadFromPhone(item.localId)}>Delete from phone</button>
+                        <button class="upload-action danger" type="button" on:click={() => deleteUploadFromPhone(item.localId)} aria-label={`Delete ${item.name} from phone`} title="Delete from phone">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
+                        </button>
                       {/if}
-                      <button class="text-button" type="button" on:click={() => removeUpload(item.localId)}>Remove</button>
+                      <button class="upload-action" type="button" on:click={() => removeUpload(item.localId)} aria-label={`Remove ${item.name} from queue`} title="Remove from queue">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                      </button>
                     </div>
                   </div>
                 </article>
@@ -966,6 +1005,23 @@
     {/if}
     {/if}
   </main>
+
+  {#if showDeleteAllDialog}
+    <div class="dialog-backdrop" role="presentation" on:click={(event) => event.currentTarget === event.target && (showDeleteAllDialog = false)}>
+      <dialog open class="confirm-dialog" aria-labelledby="delete-all-title" aria-describedby="delete-all-copy">
+        <div class="dialog-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
+        </div>
+        <p class="eyebrow">Phone storage</p>
+        <h2 id="delete-all-title">Delete {deletableUploadItems.length} files?</h2>
+        <p id="delete-all-copy">These uploaded files will be removed from your phone. Your saved copies in the Grail will remain.</p>
+        <div class="dialog-actions">
+          <button class="secondary-button" type="button" on:click={() => showDeleteAllDialog = false}>Cancel</button>
+          <button class="danger-button" type="button" on:click={confirmDeleteAllUploads}>Delete files</button>
+        </div>
+      </dialog>
+    </div>
+  {/if}
 
   {#if homeMode === 'browse'}
     <button class="floating-add" type="button" aria-label="Add media" on:click={() => { openUpload(); openPicker(); }}>
@@ -1398,14 +1454,18 @@
   }
 
   .upload-dock {
-    position: sticky;
-    top: calc(4.85rem + env(safe-area-inset-top, 0px));
+    position: static;
     z-index: 4;
     border-radius: 1.15rem;
     background: rgba(26, 20, 16, 0.94);
     color: #fff9f3;
     overflow: hidden;
     box-shadow: 0 16px 36px rgba(22, 17, 13, 0.18);
+  }
+
+  .upload-dock.active {
+    position: sticky;
+    top: calc(4.85rem + env(safe-area-inset-top, 0px));
   }
 
   .dock-summary {
@@ -1466,6 +1526,108 @@
     transition: width 180ms ease;
   }
 
+  .queue-actions {
+    padding: 0.1rem 0.75rem 0.8rem;
+  }
+
+  .bulk-delete-button {
+    display: flex;
+    width: 100%;
+    min-height: 3.15rem;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(255, 124, 102, 0.36);
+    border-radius: 0.85rem;
+    background: linear-gradient(135deg, rgba(117, 42, 35, 0.72), rgba(71, 31, 29, 0.9));
+    color: #ffe8e2;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  }
+
+  .bulk-delete-button:hover,
+  .bulk-delete-button:focus-visible {
+    border-color: rgba(255, 157, 139, 0.72);
+    background: linear-gradient(135deg, rgba(139, 49, 40, 0.82), rgba(82, 35, 32, 0.96));
+  }
+
+  .bulk-delete-button:active {
+    transform: translateY(1px);
+  }
+
+  .bulk-delete-icon {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 1px solid rgba(255, 232, 226, 0.35);
+    border-radius: 0.55rem;
+    background: rgba(255, 232, 226, 0.1);
+  }
+
+  .bulk-delete-icon::before {
+    position: absolute;
+    top: 0.48rem;
+    left: 0.48rem;
+    width: 0.78rem;
+    height: 0.85rem;
+    border: 1.5px solid #ffe8e2;
+    border-top: 0;
+    border-radius: 0 0 0.18rem 0.18rem;
+    content: '';
+  }
+
+  .bulk-delete-icon::after {
+    position: absolute;
+    top: 0.31rem;
+    left: 0.39rem;
+    width: 0.96rem;
+    height: 0.12rem;
+    border-radius: 999px;
+    background: #ffe8e2;
+    box-shadow: 0.23rem -0.16rem 0 -0.03rem #ffe8e2;
+    content: '';
+  }
+
+  .bulk-delete-copy {
+    display: grid;
+    min-width: 0;
+    gap: 0.12rem;
+  }
+
+  .bulk-delete-copy strong {
+    color: #fff4f1;
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+
+  .bulk-delete-copy small {
+    overflow: hidden;
+    color: rgba(255, 232, 226, 0.66);
+    font-size: 0.68rem;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bulk-delete-count {
+    display: inline-flex;
+    min-width: 1.8rem;
+    min-height: 1.8rem;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    padding: 0 0.42rem;
+    border-radius: 999px;
+    background: #ff8e79;
+    color: #3e1714;
+    font-size: 0.75rem;
+    font-weight: 900;
+  }
+
   .upload-list {
     display: grid;
     gap: 0.55rem;
@@ -1509,6 +1671,12 @@
     gap: 0.6rem;
   }
 
+  .upload-heading {
+    display: grid;
+    min-width: 0;
+    gap: 0.28rem;
+  }
+
   .upload-name-button {
     max-width: 12rem;
     overflow: hidden;
@@ -1535,7 +1703,6 @@
     font-weight: 800;
   }
 
-  .upload-line p,
   .message,
   .text-button {
     color: rgba(255, 249, 243, 0.72);
@@ -1555,6 +1722,41 @@
   .text-button.strong {
     color: #fff9f3;
     font-weight: 700;
+  }
+
+  .upload-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    color: rgba(255, 249, 243, 0.58);
+    font-size: 0.68rem;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.25rem;
+    padding: 0.1rem 0.42rem;
+    border: 1px solid rgba(237, 184, 103, 0.3);
+    border-radius: 999px;
+    background: rgba(237, 184, 103, 0.12);
+    color: #ffd395;
+    font-size: 0.64rem;
+    font-weight: 800;
+  }
+
+  .status-badge.complete,
+  .status-badge.duplicate {
+    border-color: rgba(92, 200, 160, 0.32);
+    background: rgba(92, 200, 160, 0.13);
+    color: #a4e4cd;
+  }
+
+  .status-badge.failed,
+  .status-badge.cancelled {
+    border-color: rgba(255, 124, 102, 0.34);
+    background: rgba(255, 124, 102, 0.14);
+    color: #ffbcaf;
   }
 
   .success {
@@ -1592,9 +1794,115 @@
 
   .upload-card-actions {
     display: flex;
-    gap: 0.75rem;
+    align-items: center;
+    gap: 0.42rem;
     margin-top: 0.45rem;
     flex-wrap: wrap;
+  }
+
+  .upload-action {
+    display: inline-flex;
+    width: 2.15rem;
+    height: 2.15rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 249, 243, 0.14);
+    border-radius: 0.65rem;
+    background: rgba(255, 249, 243, 0.07);
+    color: rgba(255, 249, 243, 0.82);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  }
+
+  .upload-action:hover,
+  .upload-action:focus-visible {
+    border-color: rgba(255, 249, 243, 0.34);
+    background: rgba(255, 249, 243, 0.15);
+    color: #fff9f3;
+  }
+
+  .upload-action.danger:hover,
+  .upload-action.danger:focus-visible {
+    border-color: rgba(255, 124, 102, 0.55);
+    background: rgba(255, 124, 102, 0.17);
+    color: #ffbcaf;
+  }
+
+  .upload-action svg,
+  .dialog-icon svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+  }
+
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background: rgba(18, 13, 10, 0.62);
+    backdrop-filter: blur(8px);
+  }
+
+  .confirm-dialog {
+    width: min(100%, 23rem);
+    padding: 1.25rem;
+    border: 1px solid rgba(255, 249, 243, 0.14);
+    border-radius: 1.2rem;
+    background: #241b17;
+    color: #fff9f3;
+    box-shadow: 0 24px 70px rgba(12, 8, 5, 0.42);
+  }
+
+  .dialog-icon {
+    display: grid;
+    width: 2.8rem;
+    height: 2.8rem;
+    place-items: center;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(255, 124, 102, 0.34);
+    border-radius: 0.8rem;
+    background: rgba(255, 124, 102, 0.14);
+    color: #ffbcaf;
+  }
+
+  .confirm-dialog h2 {
+    margin: 0.35rem 0 0.55rem;
+    font-family: var(--font-display);
+    font-size: 1.55rem;
+    line-height: 1;
+  }
+
+  .confirm-dialog > p:not(.eyebrow) {
+    margin: 0;
+    color: rgba(255, 249, 243, 0.7);
+    font-size: 0.84rem;
+    line-height: 1.5;
+  }
+
+  .dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+    margin-top: 1.25rem;
+  }
+
+  .danger-button {
+    min-height: 3rem;
+    border: 1px solid rgba(255, 124, 102, 0.45);
+    border-radius: 999px;
+    background: #ff806b;
+    color: #3e1714;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
   }
 
   .browse-top {
