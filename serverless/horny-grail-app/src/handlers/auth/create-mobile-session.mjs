@@ -25,7 +25,7 @@ export const createMobileSessionHandler = async (event) => {
   }
 
   const body = parseBody(event);
-  const outcome = await attemptLogin(event, body?.code);
+  const outcome = await attemptLogin(body?.code);
 
   switch (outcome.status) {
     case 'ok':

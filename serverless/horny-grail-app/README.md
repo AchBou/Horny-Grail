@@ -89,8 +89,7 @@ Matching SAM parameters:
 - `AccessCookieTtlSeconds`
 - `CloudFrontCookieResource`
 - `AllowedCorsOrigins`
-- `LoginIpFreeFailures` (default `5`)
-- `LoginGlobalFailuresPerHour` (default `50`)
+- `LoginGlobalFailuresPerHour` (default `20`)
 - `BudgetAlertEmail` (optional; empty skips the budget)
 - `MonthlyBudgetUsd` (default `5`)
 
@@ -192,10 +191,9 @@ The protected distribution now reads both frontend assets and media directly fro
 
 Both `POST /auth/session` (web) and `POST /auth/mobile/session` (mobile) go through a login limiter backed by the stack's `LoginAttemptsTable`:
 
-- After `LoginIpFreeFailures` wrong codes from one IP (IPv6: one /64), that IP is locked for 1 minute, then 2, 4, 8… up to 24 hours. A correct code resets it.
-- After `LoginGlobalFailuresPerHour` wrong codes across all IPs in an hour, every login pauses for 1 hour and a `LOGIN_GLOBAL_LOCK` warning is logged.
+- After `LoginGlobalFailuresPerHour` wrong codes (from anyone) in a clock hour, every login pauses for 1 hour and a `LOGIN_GLOBAL_LOCK` warning is logged.
 - If the limiter table cannot be reached, logins are refused (fail closed).
-- Behind CloudFront the viewer IP comes from `CloudFront-Viewer-Address`, trusted only when the request also carries `readOriginSecret`.
+- There is no per-IP tracking on purpose: the site sits behind Cloudflare, so the IP the backend sees is a Cloudflare proxy, not the visitor.
 
 The passphrase is case-insensitive and ignores extra spaces. Four or more random words are recommended.
 

@@ -135,7 +135,7 @@ export const createSessionHandler = async (event) => {
   const next = normalizeRedirect(body?.next);
   const nextParam = `next=${encodeURIComponent(next)}`;
 
-  const outcome = await attemptLogin(event, body?.code);
+  const outcome = await attemptLogin(body?.code);
   if (outcome.status === 'locked') {
     return redirectResponse(`/access?locked=1&${nextParam}`);
   }

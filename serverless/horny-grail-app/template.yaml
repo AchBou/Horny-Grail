@@ -60,15 +60,10 @@ Parameters:
     Type: String
     Description: Comma-separated list of allowed CORS origins
     Default: http://localhost:5173,http://localhost:1420
-  LoginIpFreeFailures:
-    Type: Number
-    Description: Wrong access codes allowed from one IP before it is locked out (lock then doubles from 1 minute up to 24 hours)
-    Default: 5
-    MinValue: 1
   LoginGlobalFailuresPerHour:
     Type: Number
-    Description: Wrong access codes per hour across all IPs before every login pauses for an hour
-    Default: 50
+    Description: Wrong access codes per hour (from anyone) before every login pauses for an hour
+    Default: 20
     MinValue: 1
   BudgetAlertEmail:
     Type: String
@@ -215,25 +210,6 @@ Resources:
             - Access-Control-Request-Method
             - Content-Type
             - x-api-key
-        QueryStringsConfig:
-          QueryStringBehavior: all
-
-  # Like the API policy, but also forwards the viewer's real IP for the login limiter.
-  ProtectedReadAuthOriginRequestPolicy:
-    Type: AWS::CloudFront::OriginRequestPolicy
-    Properties:
-      OriginRequestPolicyConfig:
-        Name: !Sub ${AWS::StackName}-protected-read-auth
-        CookiesConfig:
-          CookieBehavior: none
-        HeadersConfig:
-          HeaderBehavior: whitelist
-          Headers:
-            - Origin
-            - Access-Control-Request-Headers
-            - Access-Control-Request-Method
-            - Content-Type
-            - CloudFront-Viewer-Address
         QueryStringsConfig:
           QueryStringBehavior: all
 
@@ -472,7 +448,7 @@ Resources:
               - OPTIONS
             CachePolicyId: !Ref ProtectedReadAuthCachePolicy
             Compress: true
-            OriginRequestPolicyId: !Ref ProtectedReadAuthOriginRequestPolicy
+            OriginRequestPolicyId: !Ref ProtectedReadApiOriginRequestPolicy
             TargetOriginId: ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
           - PathPattern: /api/*
@@ -587,9 +563,7 @@ Resources:
       Environment:
         Variables:
           APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
-          LOGIN_IP_FREE_FAILURES: !Ref LoginIpFreeFailures
           LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
           CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: !Ref CloudFrontPrivateKeySecretArn
           CLOUDFRONT_KEY_PAIR_ID: !Ref ProtectedReadPublicKey
@@ -630,9 +604,7 @@ Resources:
       Environment:
         Variables:
           APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
-          LOGIN_IP_FREE_FAILURES: !Ref LoginIpFreeFailures
           LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
           MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds

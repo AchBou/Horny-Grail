@@ -1,16 +1,10 @@
 import crypto from 'node:crypto';
 import { jest } from '@jest/globals';
 import { mockClient } from 'aws-sdk-client-mock';
-import {
-  BatchGetCommand,
-  DeleteCommand,
-  DynamoDBDocumentClient,
-  UpdateCommand
-} from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { createSessionHandler } from '../../../src/handlers/auth/create-session.mjs';
 
-const TABLE = 'test-login-attempts';
 const ddbMock = mockClient(DynamoDBDocumentClient);
 const secretsMock = mockClient(SecretsManagerClient);
 const { privateKey } = crypto.generateKeyPairSync('rsa', {
@@ -21,7 +15,7 @@ const { privateKey } = crypto.generateKeyPairSync('rsa', {
 
 function formPost(code, next = '/browse') {
   return {
-    requestContext: { http: { method: 'POST', sourceIp: '198.51.100.7' } },
+    requestContext: { http: { method: 'POST' } },
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ code, next }).toString()
   };
@@ -39,9 +33,8 @@ describe('Test createSessionHandler', () => {
     ddbMock.reset();
     secretsMock.reset();
     secretsMock.on(GetSecretValueCommand).resolves({ SecretString: privateKey });
-    ddbMock.on(BatchGetCommand).resolves({ Responses: { [TABLE]: [] } });
+    ddbMock.on(GetCommand).resolves({});
     ddbMock.on(UpdateCommand).resolves({ Attributes: { failures: 1 } });
-    ddbMock.on(DeleteCommand).resolves({});
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -66,8 +59,8 @@ describe('Test createSessionHandler', () => {
   });
 
   it('redirects back with locked=1 while locked out', async () => {
-    ddbMock.on(BatchGetCommand).resolves({
-      Responses: { [TABLE]: [{ pk: 'global#lock', lockedUntil: Math.floor(Date.now() / 1000) + 600 }] }
+    ddbMock.on(GetCommand).resolves({
+      Item: { pk: 'global#lock', lockedUntil: Math.floor(Date.now() / 1000) + 600 }
     });
 
     const result = await createSessionHandler(formPost(process.env.READ_ACCESS_CODE));
@@ -77,7 +70,7 @@ describe('Test createSessionHandler', () => {
   });
 
   it('redirects back with unavailable=1 when the limiter is unreachable', async () => {
-    ddbMock.on(BatchGetCommand).rejects(new Error('dynamo down'));
+    ddbMock.on(GetCommand).rejects(new Error('dynamo down'));
 
     const result = await createSessionHandler(formPost(process.env.READ_ACCESS_CODE));
 

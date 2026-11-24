@@ -1,10 +1,9 @@
 import { verifyAccessCode } from './access-code.mjs';
-import { getClientIp } from './client-ip.mjs';
-import { checkLoginAllowed, recordLoginFailure, recordLoginSuccess } from './login-limiter.mjs';
+import { checkLoginAllowed, recordLoginFailure } from './login-limiter.mjs';
 
 /**
  * Shared login sequence for the web and mobile session handlers:
- * limiter check -> code check -> record outcome.
+ * limiter check -> code check -> record a failure.
  *
  * Returns one of:
  *   { status: 'ok' }
@@ -12,14 +11,12 @@ import { checkLoginAllowed, recordLoginFailure, recordLoginSuccess } from './log
  *   { status: 'locked', retryAfterSeconds }
  *   { status: 'unavailable' }   limiter or secret lookup failed; never lets the attempt through
  */
-export async function attemptLogin(event, code) {
-  const ip = getClientIp(event);
-
+export async function attemptLogin(code) {
   let gate;
   try {
-    gate = await checkLoginAllowed(ip);
+    gate = await checkLoginAllowed();
   } catch (error) {
-    console.error('Login limiter check failed; refusing login', { ip, error });
+    console.error('Login limiter check failed; refusing login', { error });
     return { status: 'unavailable' };
   }
 
@@ -37,17 +34,12 @@ export async function attemptLogin(event, code) {
 
   if (!valid) {
     try {
-      await recordLoginFailure(ip);
+      await recordLoginFailure();
     } catch (error) {
-      console.error('Failed to record login failure', { ip, error });
+      console.error('Failed to record login failure', { error });
     }
     return { status: 'invalid' };
   }
 
-  try {
-    await recordLoginSuccess(ip);
-  } catch (error) {
-    console.error('Failed to clear login failures', { ip, error });
-  }
   return { status: 'ok' };
 }
