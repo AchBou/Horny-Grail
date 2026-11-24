@@ -1,4 +1,3 @@
 {
-  "apiBaseUrl": "https://your-api-id.execute-api.your-region.amazonaws.com/api",
-  "writeApiKey": "replace-with-write-api-key"
+  "apiBaseUrl": "https://your-api-id.execute-api.your-region.amazonaws.com/api"
 }

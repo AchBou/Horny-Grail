@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { buildApiUrl, buildServiceUrl, writeApiKey } from '$lib/config/privateConfig.js';
+import { buildApiUrl, buildServiceUrl } from '$lib/config/privateConfig.js';
 import { getReadAccessToken } from '$lib/mobile/readSession.js';
 
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -134,13 +134,7 @@ export async function putBinary(uploadUrl, body, headers = {}, { retries = DEFAU
   throw lastError || new Error('Upload failed');
 }
 
-function writeHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    'x-api-key': writeApiKey
-  };
-}
-
+/** Every request after unlock carries the passphrase session; there is no other key. */
 function readHeaders() {
   const token = getReadAccessToken();
   if (!token) {
@@ -202,15 +196,15 @@ export function fetchItemById(id, { signal = null } = {}) {
   }, { retries: 2 });
 }
 
-export function fetchAssetIntegrity(id, { signal = null } = {}) {
-  return requestJson(buildApiUrl(`/assets/${id}/integrity`), {
-    signal,
-    headers: writeHeaders()
-  }, { retries: 2 });
+function jsonSessionHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    ...readHeaders()
+  };
 }
 
-export function fetchMobileAssetIntegrity(id, { signal = null } = {}) {
-  return requestJson(buildApiUrl(`/mobile/assets/${id}/integrity`), {
+export function fetchAssetIntegrity(id, { signal = null } = {}) {
+  return requestJson(buildApiUrl(`/assets/${id}/integrity`), {
     signal,
     headers: readHeaders()
   }, { retries: 2 });
@@ -219,7 +213,7 @@ export function fetchMobileAssetIntegrity(id, { signal = null } = {}) {
 export function signUpload(body, { signal = null } = {}) {
   return requestJson(buildApiUrl('/uploads/sign'), {
     method: 'POST',
-    headers: writeHeaders(),
+    headers: jsonSessionHeaders(),
     body: JSON.stringify(body),
     signal
   });
@@ -228,7 +222,7 @@ export function signUpload(body, { signal = null } = {}) {
 export function registerMetadata(id, ext, { signal = null } = {}) {
   return requestJson(buildApiUrl('/'), {
     method: 'POST',
-    headers: writeHeaders(),
+    headers: jsonSessionHeaders(),
     body: JSON.stringify({ id, ext }),
     signal
   });

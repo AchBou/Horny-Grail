@@ -6,7 +6,7 @@
   import {
     createMobileReadSession,
     describeAccessError,
-    fetchMobileAssetIntegrity,
+    fetchAssetIntegrity,
     fetchItemById,
     fetchRandomBrowsePage,
     isAbortError,
@@ -112,7 +112,7 @@
         throw new Error('Media was not found');
       }
 
-      const nextIntegrity = await fetchMobileAssetIntegrity(nextId, { signal: activeController.signal });
+      const nextIntegrity = await fetchAssetIntegrity(nextId, { signal: activeController.signal });
       id = nextId;
       media = nextMedia;
       integrity = nextIntegrity;

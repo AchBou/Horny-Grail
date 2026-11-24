@@ -9,7 +9,6 @@ function requireString(name, value) {
 }
 
 export const apiBaseUrl = requireString('apiBaseUrl', mobilePrivateConfig.apiBaseUrl);
-export const writeApiKey = requireString('writeApiKey', mobilePrivateConfig.writeApiKey);
 const apiOriginBaseUrl = apiBaseUrl.replace(/\/api$/, '');
 
 export function buildApiUrl(pathname = '') {
@@ -28,12 +27,4 @@ export function buildServiceUrl(pathname = '') {
 
   const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
   return `${apiOriginBaseUrl}${normalizedPath}`;
-}
-
-export function getPrivateConfigSummary() {
-  return {
-    apiBaseUrl,
-    writeApiKeyLoaded: writeApiKey.length > 0,
-    writeApiKeyLength: writeApiKey.length
-  };
 }

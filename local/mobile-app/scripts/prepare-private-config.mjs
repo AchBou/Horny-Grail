@@ -13,17 +13,17 @@ function fail(message) {
 
 function validateConfig(config) {
   const apiBaseUrl = config?.apiBaseUrl;
-  const writeApiKey = config?.writeApiKey;
 
   if (typeof apiBaseUrl !== 'string' || !apiBaseUrl.startsWith('http') || !apiBaseUrl.endsWith('/api')) {
     fail('mobile.private.json must contain apiBaseUrl ending with /api');
   }
 
-  if (typeof writeApiKey !== 'string' || writeApiKey.length === 0) {
-    fail('mobile.private.json must contain a non-empty writeApiKey');
+  if ('writeApiKey' in (config || {})) {
+    console.warn('mobile.private.json still has writeApiKey. It is no longer used and is not copied into the app; delete it.');
   }
 
-  return { apiBaseUrl, writeApiKey };
+  // Only the API URL is built into the app. Uploads use the passphrase session.
+  return { apiBaseUrl };
 }
 
 async function main() {

@@ -388,7 +388,10 @@
     runFlow: runUploadFlow,
     resolveThumbnail: resolveUploadThumbnail,
     outcomeText,
-    isAbortError
+    isAbortError,
+    isUnauthorizedError,
+    // Uploads use the passphrase session, so they wait while the vault is locked.
+    canProcess: () => hasReadSession
   });
   const processQueue = uploadQueue.process;
 
@@ -634,6 +637,8 @@
       if (hasBrowseIntent && !hasLoadedBrowse) {
         loadBrowsePage(null);
       }
+      // Resume any uploads that paused while the vault was locked.
+      processQueue();
     } catch (error) {
       console.error('Failed to create mobile read session', error);
       accessError = describeAccessError(error, 'Could not unlock the app');

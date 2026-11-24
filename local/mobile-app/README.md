@@ -53,10 +53,11 @@ Expected shape:
 
 ```json
 {
-  "apiBaseUrl": "https://your-api-id.execute-api.your-region.amazonaws.com/api",
-  "writeApiKey": "replace-with-write-api-key"
+  "apiBaseUrl": "https://your-api-id.execute-api.your-region.amazonaws.com/api"
 }
 ```
+
+The app holds no API key. Browsing and uploading both use the session from the passphrase login, so the APK contains nothing that grants access on its own. While the vault is locked, the upload queue pauses and resumes after you unlock.
 
 `npm run dev`, `npm run build`, and `npm run cap:sync` generate `src/lib/generated/privateConfig.js` from that private file before starting.
 

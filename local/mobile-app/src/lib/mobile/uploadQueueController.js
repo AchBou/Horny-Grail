@@ -1,3 +1,5 @@
+export const PAUSED_MESSAGE = 'Paused until you unlock';
+
 export function createUploadQueueProcessor({
   getItems,
   getItem,
@@ -5,16 +7,18 @@ export function createUploadQueueProcessor({
   runFlow,
   resolveThumbnail,
   outcomeText,
-  isAbortError
+  isAbortError,
+  isUnauthorizedError = () => false,
+  canProcess = () => true
 }) {
   let processing = false;
 
   async function process() {
-    if (processing) return;
+    if (processing || !canProcess()) return;
     processing = true;
 
     try {
-      while (true) {
+      while (canProcess()) {
         const nextItem = getItems().find((item) => item.status === 'queued');
         if (!nextItem) break;
 
@@ -54,6 +58,17 @@ export function createUploadQueueProcessor({
             continue;
           }
 
+          if (isUnauthorizedError(error)) {
+            // The vault locked or the session expired. Put the file back in line; the
+            // upload flow is resumable, so it picks up where it left off after unlock.
+            updateItem(nextItem.localId, {
+              status: 'queued',
+              error: null,
+              message: PAUSED_MESSAGE
+            });
+            break;
+          }
+
           console.error('Upload flow failed', error);
           updateItem(nextItem.localId, {
             status: 'failed',
@@ -64,7 +79,7 @@ export function createUploadQueueProcessor({
       }
     } finally {
       processing = false;
-      if (getItems().some((item) => item.status === 'queued')) {
+      if (canProcess() && getItems().some((item) => item.status === 'queued')) {
         void process();
       }
     }
