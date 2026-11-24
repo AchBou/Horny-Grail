@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { allowNextBackground } from '$lib/mobile/appLock.js';
 
 const MIME_BY_EXT = Object.freeze({
   jpg: 'image/jpeg',
@@ -37,6 +38,7 @@ export async function pickNativeMedia() {
     return null;
   }
 
+  allowNextBackground();
   const result = await HornyGrailMedia.pickMedia();
   const items = Array.isArray(result?.items) ? result.items : [];
   return Promise.all(items.map(async (item) => {
@@ -60,6 +62,8 @@ export async function deleteNativeMedia(sourceUri) {
     throw new Error('This file cannot be deleted from device storage');
   }
 
+  // Android shows its own delete-confirmation screen in front of the app.
+  allowNextBackground();
   return HornyGrailMedia.deletePickedMedia({ sourceUris });
 }
 

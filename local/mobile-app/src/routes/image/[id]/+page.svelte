@@ -5,6 +5,7 @@
   import { fly } from 'svelte/transition';
   import {
     createMobileReadSession,
+    describeAccessError,
     fetchMobileAssetIntegrity,
     fetchItemById,
     fetchRandomBrowsePage,
@@ -13,6 +14,7 @@
   } from '$lib/mobile/api.js';
   import { createMediaView, normalizeMediaViews } from '$lib/mobile/items.js';
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
+  import { onAppLock, startAppLock } from '$lib/mobile/appLock.js';
 
   const NEXT_MEDIA_PAGE_SIZE = 6;
   const NEXT_MEDIA_ATTEMPTS = 3;
@@ -122,10 +124,7 @@
       }
 
       if (isUnauthorizedError(loadError)) {
-        clearReadSession();
-        hasReadSession = false;
-        accessError = 'Your access session expired. Enter the code again.';
-        error = null;
+        lockViewer('Your access session expired. Enter the code again.');
         return false;
       }
 
@@ -288,7 +287,23 @@
     mediaError = 'This media could not be loaded.';
   }
 
+  /** Drops the session and the loaded item so nothing private stays behind the gate. */
+  function lockViewer(message) {
+    clearReadSession();
+    controller?.abort();
+    randomController?.abort();
+    hasReadSession = false;
+    accessError = message;
+    error = null;
+    media = null;
+    integrity = null;
+  }
+
   onMount(() => {
+    startAppLock();
+    const stopListeningForLock = onAppLock(() => {
+      lockViewer('Locked after you left the app. Enter the code to continue.');
+    });
     hasReadSession = Boolean(getReadSession());
     const handlePopState = () => {
       loadMedia(getRouteId(), { preserveMedia: Boolean(media) });
@@ -300,6 +315,7 @@
     }
 
     return () => {
+      stopListeningForLock();
       window.removeEventListener('popstate', handlePopState);
     };
   });
@@ -316,7 +332,7 @@
       await loadMedia();
     } catch (unlockError) {
       console.error('Failed to unlock mobile detail view', unlockError);
-      accessError = unlockError?.status === 401 ? 'That code was not accepted.' : (unlockError?.message || 'Could not unlock this view');
+      accessError = describeAccessError(unlockError, 'Could not unlock this view');
     } finally {
       accessSubmitting = false;
     }

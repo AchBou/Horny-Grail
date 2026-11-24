@@ -155,6 +155,22 @@ function readHeaders() {
   };
 }
 
+export function describeAccessError(error, fallback = 'Could not unlock the app') {
+  if (error?.status === 401) {
+    return 'That code was not accepted.';
+  }
+
+  if (error?.status === 429) {
+    return 'Too many attempts. Try again later.';
+  }
+
+  if (error?.status === 503) {
+    return 'Login is temporarily unavailable. Try again in a moment.';
+  }
+
+  return error?.message || fallback;
+}
+
 export function createMobileReadSession(code, { signal = null } = {}) {
   return requestJson(buildServiceUrl('/auth/mobile/session'), {
     method: 'POST',

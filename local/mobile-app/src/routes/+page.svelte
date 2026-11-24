@@ -3,6 +3,7 @@
   import ReadAccessGate from '$lib/components/ReadAccessGate.svelte';
   import {
     createMobileReadSession,
+    describeAccessError,
     fetchRandomBrowsePage,
     isAbortError,
     isUnauthorizedError,
@@ -11,6 +12,7 @@
   import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
   import { deleteNativeMedia, pickNativeMedia } from '$lib/mobile/media.js';
+  import { allowNextBackground, onAppLock, startAppLock } from '$lib/mobile/appLock.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
   import { createUploadQueueProcessor } from '$lib/mobile/uploadQueueController.js';
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
@@ -248,17 +250,8 @@
         return;
       }
 
-       if (isUnauthorizedError(error)) {
-        clearReadSession();
-        hasReadSession = false;
-        accessError = 'Your access session expired. Enter the code again.';
-        browseError = null;
-        browseItems = [];
-        browseCursor = null;
-        browseHasMore = false;
-        browseLoading = false;
-        browseLoadingMore = false;
-        homeMode = 'home';
+      if (isUnauthorizedError(error)) {
+        lockVault('Your access session expired. Enter the code again.');
         return;
       }
 
@@ -269,6 +262,28 @@
         browseLoading = false;
         browseLoadingMore = false;
       }
+    }
+  }
+
+  /**
+   * Drops the read session and everything browse loaded, so no private media stays on
+   * screen or in memory behind the unlock gate. Uploads keep running.
+   */
+  function lockVault(message) {
+    clearReadSession();
+    browseAbortController?.abort();
+    hasReadSession = false;
+    accessError = message;
+    browseError = null;
+    browseItems = [];
+    browseCursor = null;
+    browseHasMore = false;
+    browseLoading = false;
+    browseLoadingMore = false;
+    hasLoadedBrowse = false;
+    hasBrowseIntent = false;
+    if (homeMode === 'browse') {
+      homeMode = 'home';
     }
   }
 
@@ -583,6 +598,7 @@
       console.error('Native media picker failed', error);
     }
 
+    allowNextBackground();
     fileInput?.click();
   }
 
@@ -620,13 +636,17 @@
       }
     } catch (error) {
       console.error('Failed to create mobile read session', error);
-      accessError = error?.status === 401 ? 'That code was not accepted.' : (error?.message || 'Could not unlock the app');
+      accessError = describeAccessError(error, 'Could not unlock the app');
     } finally {
       accessSubmitting = false;
     }
   }
 
   onMount(() => {
+    startAppLock();
+    const stopListeningForLock = onAppLock(() => {
+      lockVault('Locked after you left the app. Enter the code to continue.');
+    });
     hasReadSession = Boolean(getReadSession());
     browseObserver = new IntersectionObserver((entries) => {
       const [entry] = entries;
@@ -662,13 +682,15 @@
         hasRestoredUploadQueue = true;
         console.error('Failed to restore upload queue', error);
       });
+
+    return stopListeningForLock;
   });
 
   $: if (browseObserver && browseSentinel) {
     observeBrowseSentinel();
   }
 
-  $: if (hasBrowseIntent && !hasLoadedBrowse && !browseLoading && !browseLoadingMore) {
+  $: if (hasReadSession && hasBrowseIntent && !hasLoadedBrowse && !browseLoading && !browseLoadingMore) {
     loadBrowsePage(null);
   }
 
