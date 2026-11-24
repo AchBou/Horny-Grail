@@ -3,6 +3,8 @@
 
     let next = '/';
     let hasError = false;
+    let isLocked = false;
+    let isUnavailable = false;
 
     onMount(() => {
         const params = new URLSearchParams(window.location.search);
@@ -16,6 +18,8 @@
         }
 
         hasError = params.has('error');
+        isLocked = params.has('locked');
+        isUnavailable = params.has('unavailable');
     });
 </script>
 
@@ -40,7 +44,11 @@
                 required
             />
 
-            {#if hasError}
+            {#if isLocked}
+                <p class="error">Too many attempts. Try again later.</p>
+            {:else if isUnavailable}
+                <p class="error">Login is temporarily unavailable. Try again in a moment.</p>
+            {:else if hasError}
                 <p class="error">That code did not work.</p>
             {/if}
 
