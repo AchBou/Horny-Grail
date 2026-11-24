@@ -1,7 +1,9 @@
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { plaintextCodeMatches, verifyPassphrase } from './passphrase-hash.mjs';
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Short enough that a passphrase change is live almost immediately; Secrets Manager reads
+// cost $0.05 per 10,000, so this stays effectively free.
+const CACHE_TTL_MS = 60 * 1000;
 const secretsClient = new SecretsManagerClient({});
 
 let cachedConfig = null;
@@ -25,7 +27,7 @@ function loadFromEnv() {
 
 /**
  * Deployed functions read the access code from Secrets Manager at runtime (cached for
- * 5 minutes) so changing the passphrase needs no redeploy. Local runs and tests use env vars.
+ * 1 minute) so changing the passphrase needs no redeploy. Local runs and tests use env vars.
  */
 export async function getAccessCodeConfig() {
   const secretId = process.env.APP_SECRETS_SECRET_ARN;

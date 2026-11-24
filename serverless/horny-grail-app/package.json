@@ -19,6 +19,7 @@
     "scripts": {
         "cloudfront:sync": "node ./scripts/sync-cloudfront-functions.mjs",
         "set-access-code": "node ./scripts/set-access-code.mjs",
+        "check-access-code": "node ./scripts/set-access-code.mjs --check",
         "unlock-logins": "node ./scripts/unlock-logins.mjs",
         "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
         "sam:dev": "npm run cloudfront:sync && sam build && sam local start-api",

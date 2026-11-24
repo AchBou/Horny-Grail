@@ -108,7 +108,7 @@ Notes:
   - `readAccessCode` (legacy plaintext; only used while `readAccessCodeHash` is unset)
   - `readOriginSecret`
   - `mobileReadTokenSecret`
-- `readAccessCodeHash` is an scrypt hash of the passphrase users enter on the web access page and the mobile unlock screen. The auth functions read it from Secrets Manager at runtime (cached 5 minutes), so changing it needs no deploy.
+- `readAccessCodeHash` is an scrypt hash of the passphrase users enter on the web access page and the mobile unlock screen. The auth functions read it from Secrets Manager at runtime (cached 1 minute), so changing it needs no deploy.
 - `readOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname.
 - `mobileReadTokenSecret` signs the short-lived bearer tokens returned by `POST /auth/mobile/session`.
 - `MobileReadTokenTtlSeconds` defaults to `3600` seconds, which keeps a successful mobile session for 1 hour. Sessions are kept short on purpose: this is a private vault, so the limit bounds what an unattended device exposes.
@@ -199,13 +199,16 @@ Both `POST /auth/session` (web) and `POST /auth/mobile/session` (mobile) go thro
 
 The passphrase is case-insensitive and ignores extra spaces. Four or more random words are recommended.
 
-Set or change it (prompts hidden, stores only the hash, live within 5 minutes):
+Set or change it (prompts hidden, stores only the hash, live within 1 minute):
 
 ```bash
 npm run set-access-code
-npm run set-access-code -- --remove-plaintext   # also drop the legacy readAccessCode field
-npm run set-access-code -- --print-only         # just print the hash
+npm run check-access-code                       # does a typed passphrase match the stored one?
+node ./scripts/set-access-code.mjs --remove-plaintext   # also drop the legacy readAccessCode field
+node ./scripts/set-access-code.mjs --print-only         # just print the hash
 ```
+
+From PowerShell, call `node ./scripts/set-access-code.mjs` directly for flags; npm's PowerShell shim can swallow `--`.
 
 Locked yourself out? Clear every counter and lock:
 

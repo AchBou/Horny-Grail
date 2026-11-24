@@ -4,7 +4,10 @@
 //   npm run set-access-code                      prompt, hash, store in the app secret
 //   npm run set-access-code -- --print-only      prompt and print the hash, store nothing
 //   npm run set-access-code -- --remove-plaintext  also delete the legacy readAccessCode field
+//   npm run check-access-code                    type a passphrase and see if it matches what is stored
 //   Options: --secret-id <arn>  --stack <name>  --region <region>
+//
+// From PowerShell, npm may swallow "--"; run node ./scripts/set-access-code.mjs --flag directly instead.
 //
 // The passphrase never leaves this machine; only its scrypt hash is stored.
 import readline from 'node:readline';
@@ -13,7 +16,12 @@ import {
   PutSecretValueCommand,
   SecretsManagerClient
 } from '@aws-sdk/client-secrets-manager';
-import { hashPassphrase, normalizePassphrase } from '../src/lib/passphrase-hash.mjs';
+import {
+  hashPassphrase,
+  normalizePassphrase,
+  plaintextCodeMatches,
+  verifyPassphrase
+} from '../src/lib/passphrase-hash.mjs';
 import { describeStack, parseArgs, readFunctionEnv, resolveRegion } from './lib/stack-config.mjs';
 
 function promptHidden(question) {
@@ -91,8 +99,36 @@ async function resolveSecretId(args) {
   return secretId;
 }
 
+async function checkStoredPassphrase(args) {
+  const secretId = await resolveSecretId(args);
+  const client = new SecretsManagerClient({ region: resolveRegion(args) });
+  const current = await client.send(new GetSecretValueCommand({ SecretId: secretId }));
+  const secret = JSON.parse(current.SecretString || '{}');
+  const typed = await promptHidden('Passphrase to check: ');
+
+  if (secret.readAccessCodeHash) {
+    const matches = await verifyPassphrase(typed, secret.readAccessCodeHash);
+    console.log(matches
+      ? '\nMATCH: this is the stored passphrase. The login page accepts it (within 1 minute of a change).'
+      : '\nNO MATCH: this is not the stored passphrase.');
+    if (!matches && plaintextCodeMatches(typed, secret.readAccessCode)) {
+      console.log('That is the old plaintext code, which stops working once a passphrase hash is set.');
+    }
+    return;
+  }
+
+  console.log(plaintextCodeMatches(typed, secret.readAccessCode)
+    ? '\nMATCH: no passphrase hash is set yet; this is the old plaintext code.'
+    : '\nNO MATCH: no passphrase hash is set yet, and this is not the old plaintext code either.');
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.flags.has('check')) {
+    await checkStoredPassphrase(args);
+    return;
+  }
+
   const passphrase = await readPassphrase();
   const hash = await hashPassphrase(passphrase);
 
@@ -116,7 +152,7 @@ async function main() {
     SecretString: JSON.stringify(secret)
   }));
 
-  console.log('\nPassphrase updated. It takes effect within 5 minutes; no deploy needed.');
+  console.log('\nPassphrase updated. It takes effect within 1 minute; no deploy needed.');
   if (args.flags.has('remove-plaintext')) {
     console.log('The old plaintext readAccessCode field was removed.');
   } else if (typeof secret.readAccessCode === 'string') {
