@@ -71,7 +71,9 @@ sam deploy --guided
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
 - The frontend defaults to same-origin `/api` and `/` for API and media paths. `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` are optional overrides for non-standard deployments.
 - The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
-- The mobile app requires private build-time config for `apiBaseUrl`, `cloudFrontBaseUrl`, and `writeApiKey` through `mobile.private.json`.
+- The mobile app requires only `apiBaseUrl` in `mobile.private.json`. It holds no API key: browse and upload both use the bearer session from the passphrase login, and the upload queue pauses while the vault is locked.
+- Upload, metadata, and integrity routes accept either the desktop `x-api-key` or a mobile session token. Delete stays desktop-key only.
+- Presigned uploads of originals carry `x-amz-checksum-sha256` derived from the id, so S3 rejects bodies that do not hash to their id. Clients must send the headers returned by `/api/uploads/sign`.
 - The desktop uploader requires `VITE_API_BASE_URL` and `VITE_WRITE_API_KEY`.
 - On Windows, the desktop uploader fetches `src-tauri/binaries/ffmpeg.exe` on demand via `npm run ffmpeg:ensure`. `npm run tauri -- dev` and `npm run tauri -- build` run that step automatically. On non-Windows, the ensure script is a no-op and the Rust command falls back to `ffmpeg` on `PATH`.
 - The upload bucket is configured per environment through `BUCKET_NAME`/`BucketName` in `us-west-2`; browser uploads require S3 bucket CORS for `http://localhost:1420`.
