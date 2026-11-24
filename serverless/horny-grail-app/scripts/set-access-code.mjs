@@ -14,7 +14,7 @@ import {
   SecretsManagerClient
 } from '@aws-sdk/client-secrets-manager';
 import { hashPassphrase, normalizePassphrase } from '../src/lib/passphrase-hash.mjs';
-import { describeStack, parseArgs, resolveRegion } from './lib/stack-config.mjs';
+import { describeStack, parseArgs, readFunctionEnv, resolveRegion } from './lib/stack-config.mjs';
 
 function promptHidden(question) {
   return new Promise((resolve, reject) => {
@@ -23,19 +23,15 @@ function promptHidden(question) {
       return;
     }
 
+    // Print the prompt ourselves, then mute readline so typed characters are not echoed.
+    process.stdout.write(question);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    let muted = false;
-    rl._writeToOutput = (text) => {
-      if (!muted) {
-        rl.output.write(text);
-      }
-    };
-    rl.question(question, (answer) => {
-      rl.output.write('\n');
+    rl._writeToOutput = () => {};
+    rl.question('', (answer) => {
+      process.stdout.write('\n');
       rl.close();
       resolve(answer);
     });
-    muted = true;
   });
 }
 
@@ -81,9 +77,16 @@ async function resolveSecretId(args) {
   }
 
   const { stackName, parameters } = await describeStack(args);
-  const secretId = parameters.AppSecretsSecretArn;
+  const fromParameter = parameters.AppSecretsSecretArn || '';
+  // AppSecretsSecretArn is NoEcho, so DescribeStacks returns "****". Read the real ARN
+  // from the login function's environment instead.
+  if (fromParameter && !/^\*+$/.test(fromParameter)) {
+    return fromParameter;
+  }
+
+  const secretId = await readFunctionEnv(args, stackName, 'createAccessSessionFunction', 'APP_SECRETS_SECRET_ARN');
   if (!secretId) {
-    throw new Error(`Stack ${stackName} has no AppSecretsSecretArn parameter. Pass --secret-id <arn>.`);
+    throw new Error(`Could not find the app secret for stack ${stackName}. Deploy first or pass --secret-id <arn>.`);
   }
   return secretId;
 }

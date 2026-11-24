@@ -12,6 +12,7 @@
     },
     "devDependencies": {
         "@aws-sdk/client-cloudformation": "^3.1176.0",
+        "@aws-sdk/client-lambda": "^3.1177.0",
         "aws-sdk-client-mock": "^4.1.0",
         "jest": "^29.2.1"
     },

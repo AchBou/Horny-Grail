@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
+import {
+  CloudFormationClient,
+  DescribeStackResourceCommand,
+  DescribeStacksCommand
+} from '@aws-sdk/client-cloudformation';
+import { GetFunctionConfigurationCommand, LambdaClient } from '@aws-sdk/client-lambda';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -65,4 +70,25 @@ export async function describeStack(args) {
   const parameters = Object.fromEntries((stack.Parameters || []).map((p) => [p.ParameterKey, p.ParameterValue]));
   const outputs = Object.fromEntries((stack.Outputs || []).map((o) => [o.OutputKey, o.OutputValue]));
   return { stackName, parameters, outputs };
+}
+
+/**
+ * Reads one environment variable from a deployed stack function. Used for values whose
+ * stack parameter is NoEcho, which DescribeStacks masks as "****".
+ */
+export async function readFunctionEnv(args, stackName, logicalId, variableName) {
+  const region = resolveRegion(args);
+  const cfn = new CloudFormationClient({ region });
+  const resource = await cfn.send(new DescribeStackResourceCommand({
+    StackName: stackName,
+    LogicalResourceId: logicalId
+  }));
+  const functionName = resource.StackResourceDetail?.PhysicalResourceId;
+  if (!functionName) {
+    throw new Error(`Function ${logicalId} not found in stack ${stackName}`);
+  }
+
+  const lambda = new LambdaClient({ region });
+  const config = await lambda.send(new GetFunctionConfigurationCommand({ FunctionName: functionName }));
+  return config.Environment?.Variables?.[variableName] || '';
 }
