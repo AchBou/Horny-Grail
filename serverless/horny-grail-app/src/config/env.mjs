@@ -14,10 +14,6 @@ export function getWriteApiKey() {
   return requireEnv('WRITE_API_KEY', process.env.WRITE_API_KEY);
 }
 
-export function getReadAccessCode() {
-  return requireEnv('READ_ACCESS_CODE', process.env.READ_ACCESS_CODE);
-}
-
 export function getReadOriginSecret() {
   return requireEnv('READ_ORIGIN_SECRET', process.env.READ_ORIGIN_SECRET);
 }

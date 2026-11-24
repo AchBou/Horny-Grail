@@ -89,6 +89,10 @@ Matching SAM parameters:
 - `AccessCookieTtlSeconds`
 - `CloudFrontCookieResource`
 - `AllowedCorsOrigins`
+- `LoginIpFreeFailures` (default `5`)
+- `LoginGlobalFailuresPerHour` (default `50`)
+- `BudgetAlertEmail` (optional; empty skips the budget)
+- `MonthlyBudgetUsd` (default `5`)
 
 Notes:
 
@@ -100,17 +104,19 @@ Notes:
 - `BucketName` is now both the upload target and the protected media origin behind CloudFront OAC.
 - `AppSecretsSecretArn` points to a Secrets Manager JSON secret with these fields:
   - `writeApiKey`
-  - `readAccessCode`
+  - `readAccessCodeHash` (set with `npm run set-access-code`)
+  - `readAccessCode` (legacy plaintext; only used while `readAccessCodeHash` is unset)
   - `readOriginSecret`
   - `mobileReadTokenSecret`
-- `readAccessCode` is the shared code users enter on the static access page.
+- `readAccessCodeHash` is an scrypt hash of the passphrase users enter on the web access page and the mobile unlock screen. The auth functions read it from Secrets Manager at runtime (cached 5 minutes), so changing it needs no deploy.
 - `readOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname.
 - `mobileReadTokenSecret` signs the short-lived bearer tokens returned by `POST /auth/mobile/session`.
-- `MobileReadTokenTtlSeconds` defaults to `3600` seconds, which keeps a successful mobile session for 1 hour.
+- `MobileReadTokenTtlSeconds` defaults to `3600` seconds, which keeps a successful mobile session for 1 hour. Sessions are kept short on purpose: this is a private vault, so the limit bounds what an unattended device exposes.
 - `MobileSignedUrlTtlSeconds` defaults to `900` seconds, which keeps mobile media URLs valid for 15 minutes before the app refreshes them with another authenticated read request.
 - `CloudFrontPublicKeyParameterName` points to an SSM parameter containing the PEM public key CloudFront uses to verify signed cookies.
 - `CloudFrontPrivateKeySecretArn` points to a Secrets Manager secret containing the matching PEM private key.
-- `AccessCookieTtlSeconds` defaults to `3600` seconds, which keeps a successful session for 1 hour.
+- `AccessCookieTtlSeconds` defaults to `3600` seconds, which keeps a successful web session for 1 hour.
+- `BudgetAlertEmail` creates an AWS Budget that emails when actual spend passes 80% of `MonthlyBudgetUsd`, or forecast spend passes 100%.
 - `CloudFrontCookieResource` defaults to `https://*/*` to avoid deployment ordering problems. After deployment, you can restrict it to the protected distribution domain and redeploy.
 
 ## Local Development
@@ -182,6 +188,33 @@ The raw `execute-api` read routes are no longer anonymous. Browser reads only wo
 
 The protected distribution now reads both frontend assets and media directly from private S3 buckets through Origin Access Control. Once the stack-managed media bucket policy is in place, older public CloudFront media distributions that point at the same bucket will stop serving `files/*` and `thumbnails/*`.
 
+### Access passphrase and login limits
+
+Both `POST /auth/session` (web) and `POST /auth/mobile/session` (mobile) go through a login limiter backed by the stack's `LoginAttemptsTable`:
+
+- After `LoginIpFreeFailures` wrong codes from one IP (IPv6: one /64), that IP is locked for 1 minute, then 2, 4, 8… up to 24 hours. A correct code resets it.
+- After `LoginGlobalFailuresPerHour` wrong codes across all IPs in an hour, every login pauses for 1 hour and a `LOGIN_GLOBAL_LOCK` warning is logged.
+- If the limiter table cannot be reached, logins are refused (fail closed).
+- Behind CloudFront the viewer IP comes from `CloudFront-Viewer-Address`, trusted only when the request also carries `readOriginSecret`.
+
+The passphrase is case-insensitive and ignores extra spaces. Four or more random words are recommended.
+
+Set or change it (prompts hidden, stores only the hash, live within 5 minutes):
+
+```bash
+npm run set-access-code
+npm run set-access-code -- --remove-plaintext   # also drop the legacy readAccessCode field
+npm run set-access-code -- --print-only         # just print the hash
+```
+
+Locked yourself out? Clear every counter and lock:
+
+```bash
+npm run unlock-logins
+```
+
+Both scripts find the stack from `samconfig.toml` (`stack_name`, `region`) and use your AWS CLI credentials. Override with `--stack`, `--region`, `--secret-id`, or `--table`.
+
 ### Access-code cookie keys
 
 Before deploying the protected read distribution, create an RSA key pair, store the private key in Secrets Manager, and store the public key in SSM Parameter Store:
@@ -203,7 +236,7 @@ Create another Secrets Manager secret for the app auth values:
 ```json
 {
   "writeApiKey": "replace-with-write-api-key",
-  "readAccessCode": "replace-with-shared-code",
+  "readAccessCodeHash": "set-with-npm-run-set-access-code",
   "readOriginSecret": "replace-with-long-random-string",
   "mobileReadTokenSecret": "replace-with-different-long-random-string"
 }

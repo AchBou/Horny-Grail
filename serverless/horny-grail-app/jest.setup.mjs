@@ -3,6 +3,7 @@ process.env.BUCKET_NAME = 'test-upload-bucket';
 process.env.BUCKET_REGION = 'us-west-2';
 process.env.WRITE_API_KEY = 'test-write-api-key';
 process.env.READ_ACCESS_CODE = 'test-access-code';
+process.env.LOGIN_ATTEMPTS_TABLE = 'test-login-attempts';
 process.env.READ_ORIGIN_SECRET = 'test-read-origin-secret';
 process.env.MOBILE_READ_TOKEN_SECRET = 'test-mobile-read-token-secret';
 process.env.MOBILE_READ_TOKEN_TTL_SECONDS = '3600';

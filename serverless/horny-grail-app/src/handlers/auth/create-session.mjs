@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { attemptLogin } from '../../lib/login-flow.mjs';
 
 const secretsClient = new SecretsManagerClient({});
 let cachedPrivateKey = null;
@@ -132,9 +133,19 @@ export const createSessionHandler = async (event) => {
 
   const body = parseBody(event);
   const next = normalizeRedirect(body?.next);
+  const nextParam = `next=${encodeURIComponent(next)}`;
 
-  if (!body || body.code !== requireEnv('READ_ACCESS_CODE')) {
-    return redirectResponse(`/access?error=1&next=${encodeURIComponent(next)}`);
+  const outcome = await attemptLogin(event, body?.code);
+  if (outcome.status === 'locked') {
+    return redirectResponse(`/access?locked=1&${nextParam}`);
+  }
+
+  if (outcome.status === 'unavailable') {
+    return redirectResponse(`/access?unavailable=1&${nextParam}`);
+  }
+
+  if (outcome.status !== 'ok') {
+    return redirectResponse(`/access?error=1&${nextParam}`);
   }
 
   const cookies = await createSignedCookies();

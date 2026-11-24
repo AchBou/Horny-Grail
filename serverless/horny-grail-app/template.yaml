@@ -60,6 +60,28 @@ Parameters:
     Type: String
     Description: Comma-separated list of allowed CORS origins
     Default: http://localhost:5173,http://localhost:1420
+  LoginIpFreeFailures:
+    Type: Number
+    Description: Wrong access codes allowed from one IP before it is locked out (lock then doubles from 1 minute up to 24 hours)
+    Default: 5
+    MinValue: 1
+  LoginGlobalFailuresPerHour:
+    Type: Number
+    Description: Wrong access codes per hour across all IPs before every login pauses for an hour
+    Default: 50
+    MinValue: 1
+  BudgetAlertEmail:
+    Type: String
+    Description: Email address for the monthly AWS budget alert. Leave empty to skip creating the budget.
+    Default: ''
+  MonthlyBudgetUsd:
+    Type: Number
+    Description: Monthly AWS spend (USD) that triggers the budget alert email
+    Default: 5
+    MinValue: 1
+
+Conditions:
+  HasBudgetAlertEmail: !Not [!Equals [!Ref BudgetAlertEmail, '']]
 
 Resources:
   # Data store for image metadata and randomized browse.
@@ -89,6 +111,52 @@ Resources:
           KeyType: RANGE
         Projection:
           ProjectionType: ALL
+
+  # Failed-login counters and lockouts for the access-code endpoints. Rows expire via TTL.
+  LoginAttemptsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-login-attempts
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: pk
+        AttributeType: S
+      KeySchema:
+      - AttributeName: pk
+        KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  # Emails when monthly AWS spend is on track to pass MonthlyBudgetUsd.
+  MonthlyCostBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudgetAlertEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub ${AWS::StackName}-monthly-cost
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+      - Notification:
+          NotificationType: ACTUAL
+          ComparisonOperator: GREATER_THAN
+          Threshold: 80
+          ThresholdType: PERCENTAGE
+        Subscribers:
+        - SubscriptionType: EMAIL
+          Address: !Ref BudgetAlertEmail
+      - Notification:
+          NotificationType: FORECASTED
+          ComparisonOperator: GREATER_THAN
+          Threshold: 100
+          ThresholdType: PERCENTAGE
+        Subscribers:
+        - SubscriptionType: EMAIL
+          Address: !Ref BudgetAlertEmail
 
   ProtectedReadStaticCachePolicy:
     Type: AWS::CloudFront::CachePolicy
@@ -147,6 +215,25 @@ Resources:
             - Access-Control-Request-Method
             - Content-Type
             - x-api-key
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
+  # Like the API policy, but also forwards the viewer's real IP for the login limiter.
+  ProtectedReadAuthOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub ${AWS::StackName}-protected-read-auth
+        CookiesConfig:
+          CookieBehavior: none
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers:
+            - Origin
+            - Access-Control-Request-Headers
+            - Access-Control-Request-Method
+            - Content-Type
+            - CloudFront-Viewer-Address
         QueryStringsConfig:
           QueryStringBehavior: all
 
@@ -385,7 +472,7 @@ Resources:
               - OPTIONS
             CachePolicyId: !Ref ProtectedReadAuthCachePolicy
             Compress: true
-            OriginRequestPolicyId: !Ref ProtectedReadApiOriginRequestPolicy
+            OriginRequestPolicyId: !Ref ProtectedReadAuthOriginRequestPolicy
             TargetOriginId: ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
           - PathPattern: /api/*
@@ -492,10 +579,18 @@ Resources:
         - Effect: Allow
           Action:
           - secretsmanager:GetSecretValue
-          Resource: !Ref CloudFrontPrivateKeySecretArn
+          Resource:
+          - !Ref CloudFrontPrivateKeySecretArn
+          - !Sub '${AppSecretsSecretArn}*'
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LoginAttemptsTable
       Environment:
         Variables:
-          READ_ACCESS_CODE: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readAccessCode}}'
+          APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
+          LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
+          LOGIN_IP_FREE_FAILURES: !Ref LoginIpFreeFailures
+          LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
           CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: !Ref CloudFrontPrivateKeySecretArn
           CLOUDFRONT_KEY_PAIR_ID: !Ref ProtectedReadPublicKey
           CLOUDFRONT_COOKIE_RESOURCE: !Ref CloudFrontCookieResource
@@ -524,9 +619,21 @@ Resources:
       Handler: src/handlers/auth/create-mobile-session.createMobileSessionHandler
       Timeout: 10
       Description: Validates the shared access code and issues a short-lived mobile bearer token.
+      Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
+      - DynamoDBCrudPolicy:
+          TableName: !Ref LoginAttemptsTable
       Environment:
         Variables:
-          READ_ACCESS_CODE: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readAccessCode}}'
+          APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
+          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
+          LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
+          LOGIN_IP_FREE_FAILURES: !Ref LoginIpFreeFailures
+          LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
           MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -907,26 +1014,13 @@ Resources:
             Path: /api/mobile/assets/{id}/integrity
             Method: OPTIONS
 
-  # Stack-level monitoring.
-  ApplicationResourceGroup:
-    Type: AWS::ResourceGroups::Group
-    Properties:
-      Name:
-        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
-      ResourceQuery:
-        Type: CLOUDFORMATION_STACK_1_0
-
-  ApplicationInsightsMonitoring:
-    Type: AWS::ApplicationInsights::Application
-    Properties:
-      ResourceGroupName:
-        Ref: ApplicationResourceGroup
-      AutoConfigurationEnabled: 'true'
-
 Outputs:
   LookupTableName:
     Description: DynamoDB table name used for image metadata
     Value: !Ref LookupTable
+  LoginAttemptsTableName:
+    Description: DynamoDB table holding failed-login counters (used by npm run unlock-logins)
+    Value: !Ref LoginAttemptsTable
   RandomImageIndexName:
     Description: DynamoDB GSI for random active image queries
     Value: RandomImageIndex

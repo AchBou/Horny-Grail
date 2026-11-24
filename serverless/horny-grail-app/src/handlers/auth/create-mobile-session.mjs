@@ -1,11 +1,14 @@
-import { jsonResponse, unauthorized } from '../../lib/http.mjs';
-import { getReadAccessCode } from '../../config/env.mjs';
+import { jsonResponse, serviceUnavailable, tooManyRequests, unauthorized } from '../../lib/http.mjs';
 import { issueMobileReadToken } from '../../lib/auth.mjs';
+import { attemptLogin } from '../../lib/login-flow.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
 
 function parseBody(event) {
   try {
-    return JSON.parse(event?.body || '{}');
+    const raw = event?.isBase64Encoded
+      ? Buffer.from(event.body || '', 'base64').toString('utf8')
+      : event?.body || '{}';
+    return JSON.parse(raw);
   } catch {
     return null;
   }
@@ -22,9 +25,16 @@ export const createMobileSessionHandler = async (event) => {
   }
 
   const body = parseBody(event);
-  if (!body || body.code !== getReadAccessCode()) {
-    return unauthorized(event);
-  }
+  const outcome = await attemptLogin(event, body?.code);
 
-  return jsonResponse(200, issueMobileReadToken(), event);
+  switch (outcome.status) {
+    case 'ok':
+      return jsonResponse(200, issueMobileReadToken(), event);
+    case 'locked':
+      return tooManyRequests(outcome.retryAfterSeconds, event);
+    case 'unavailable':
+      return serviceUnavailable('Login is temporarily unavailable. Try again later.', event);
+    default:
+      return unauthorized(event);
+  }
 };

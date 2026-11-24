@@ -70,6 +70,21 @@ export function notFound(message = 'Not found', event) {
   return errorResponse(404, 'not_found', message, event);
 }
 
+export function tooManyRequests(retryAfterSeconds, event) {
+  const response = errorResponse(429, 'too_many_attempts', 'Too many attempts. Try again later.', event);
+  return {
+    ...response,
+    headers: {
+      ...response.headers,
+      'Retry-After': String(Math.max(1, Math.ceil(retryAfterSeconds || 0)))
+    }
+  };
+}
+
+export function serviceUnavailable(message = 'Service temporarily unavailable', event) {
+  return errorResponse(503, 'service_unavailable', message, event);
+}
+
 export function serverError(message = 'Internal server error', event) {
   return errorResponse(500, 'internal_server_error', message, event);
 }
