@@ -136,3 +136,16 @@ export function requireMobileReadToken(event) {
 
   return null;
 }
+
+/**
+ * Upload and metadata routes accept either the desktop uploader's write API key or a
+ * mobile session token from the passphrase login. The mobile app holds no permanent key.
+ */
+export function requireWriteAccess(event) {
+  const provided = getHeader(event, 'x-api-key');
+  if (provided && timingSafeEqualStrings(provided, getWriteApiKey())) {
+    return null;
+  }
+
+  return requireMobileReadToken(event);
+}

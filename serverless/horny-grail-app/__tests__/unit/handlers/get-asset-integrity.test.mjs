@@ -7,6 +7,7 @@ const s3Mock = mockClient(S3Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
 const { getAssetIntegrityHandler } = await import('../../../src/handlers/assets/get-asset-integrity.mjs');
+const { issueMobileReadToken } = await import('../../../src/lib/auth.mjs');
 
 describe('Test getAssetIntegrityHandler', () => {
   beforeEach(() => {
@@ -97,6 +98,31 @@ describe('Test getAssetIntegrityHandler', () => {
       repairRequired: false,
       missing: []
     });
+  });
+
+  it('should accept a mobile session token', async () => {
+    const id = 'c'.repeat(64);
+    ddbMock.on(GetCommand).resolves({ Item: undefined });
+
+    const result = await getAssetIntegrityHandler({
+      httpMethod: 'GET',
+      headers: {
+        authorization: `Bearer ${issueMobileReadToken().token}`
+      },
+      pathParameters: { id }
+    });
+
+    expect(result.statusCode).toEqual(200);
+  });
+
+  it('should reject requests with neither a key nor a session', async () => {
+    const result = await getAssetIntegrityHandler({
+      httpMethod: 'GET',
+      headers: {},
+      pathParameters: { id: 'c'.repeat(64) }
+    });
+
+    expect(result.statusCode).toEqual(401);
   });
 
   it('should reject invalid ids', async () => {

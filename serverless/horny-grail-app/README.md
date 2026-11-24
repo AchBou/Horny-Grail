@@ -38,7 +38,6 @@ Mobile read endpoints:
 - `POST /auth/mobile/session`
 - `GET /api/mobile/{id}`
 - `GET /api/mobile/browse/random`
-- `GET /api/mobile/assets/{id}/integrity`
 
 Access endpoint:
 
@@ -50,11 +49,16 @@ Write and repair endpoints:
 - `POST /api`
 - `POST /api/uploads/sign`
 
-Write endpoints require:
+Write endpoints accept either the desktop uploader's key or a mobile session token:
 
 ```http
 x-api-key: <write-api-key>
+Authorization: Bearer <token from POST /auth/mobile/session>
 ```
+
+`DELETE /api/assets/{id}` accepts only the write key.
+
+For originals, `POST /api/uploads/sign` returns an `x-amz-checksum-sha256` header (the id's SHA-256 in base64). Send every returned header with the S3 `PUT`; S3 rejects the upload if the body does not hash to the id.
 
 Current data contracts:
 

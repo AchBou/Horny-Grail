@@ -679,6 +679,7 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -871,6 +872,7 @@ Resources:
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
           WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -889,7 +891,7 @@ Resources:
     Properties:
       Handler: src/handlers/assets/get-asset-integrity.getAssetIntegrityHandler
       Timeout: 30
-      Description: Checks whether metadata and expected S3 assets exist.
+      Description: Checks whether metadata and expected S3 assets exist (desktop write key or mobile session).
       Policies:
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
@@ -911,6 +913,7 @@ Resources:
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
           WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
+          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -918,6 +921,11 @@ Resources:
           Properties:
             Path: /api/assets/{id}/integrity
             Method: GET
+        ApiOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/integrity
+            Method: OPTIONS
 
   deleteAssetFunction:
     Type: AWS::Serverless::Function
@@ -943,47 +951,6 @@ Resources:
           Type: HttpApi
           Properties:
             Path: /api/assets/{id}
-            Method: OPTIONS
-
-  getMobileAssetIntegrityFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/mobile/get-asset-integrity.getMobileAssetIntegrityHandler
-      Timeout: 30
-      Description: Checks asset integrity for the mobile app after validating a mobile read token.
-      Policies:
-      - DynamoDBReadPolicy:
-          TableName: !Ref LookupTable
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:GetObject
-          Resource:
-          - !Sub arn:aws:s3:::${BucketName}/files/*
-          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:ListBucket
-          Resource: !Sub arn:aws:s3:::${BucketName}
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
-          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            Path: /api/mobile/assets/{id}/integrity
-            Method: GET
-        ApiOptions:
-          Type: HttpApi
-          Properties:
-            Path: /api/mobile/assets/{id}/integrity
             Method: OPTIONS
 
 Outputs:

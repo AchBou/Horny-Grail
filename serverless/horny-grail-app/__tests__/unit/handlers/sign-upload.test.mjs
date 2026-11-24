@@ -7,6 +7,7 @@ jest.unstable_mockModule('@aws-sdk/s3-request-presigner', () => ({
 }));
 
 const { signUploadHandler } = await import('../../../src/handlers/uploads/sign-upload.mjs');
+const { issueMobileReadToken } = await import('../../../src/lib/auth.mjs');
 
 describe('Test signUploadHandler', () => {
   beforeEach(() => {
@@ -34,9 +35,52 @@ describe('Test signUploadHandler', () => {
     const body = JSON.parse(result.body);
     expect(body.uploadUrl).toEqual('https://example.com/upload');
     expect(body.key).toEqual(`files/${id}.png`);
+    const checksum = Buffer.from(id, 'hex').toString('base64');
     expect(body.headers).toEqual({
-      'Content-Type': 'image/png'
+      'Content-Type': 'image/png',
+      'x-amz-checksum-sha256': checksum
     });
+
+    const [, command, options] = mockedGetSignedUrl.mock.calls[0];
+    expect(command.input.ChecksumSHA256).toEqual(checksum);
+    expect(options.unhoistableHeaders.has('x-amz-checksum-sha256')).toBe(true);
+  });
+
+  it('should accept a mobile session token instead of the write key', async () => {
+    const id = 'c'.repeat(64);
+    const result = await signUploadHandler({
+      httpMethod: 'POST',
+      headers: {
+        authorization: `Bearer ${issueMobileReadToken().token}`
+      },
+      body: JSON.stringify({
+        path: 'files',
+        id,
+        ext: 'png',
+        contentType: 'image/png',
+        sizeBytes: 12345
+      })
+    });
+
+    expect(result.statusCode).toEqual(200);
+  });
+
+  it('should reject a forged session token', async () => {
+    const result = await signUploadHandler({
+      httpMethod: 'POST',
+      headers: {
+        authorization: 'Bearer eyJhdWQiOiJtb2JpbGUtcmVhZCIsImV4cCI6OTk5OTk5OTk5OX0.forged'
+      },
+      body: JSON.stringify({
+        path: 'files',
+        id: 'c'.repeat(64),
+        ext: 'png',
+        contentType: 'image/png',
+        sizeBytes: 12345
+      })
+    });
+
+    expect(result.statusCode).toEqual(401);
   });
 
   it('should issue a signed URL for webm uploads', async () => {

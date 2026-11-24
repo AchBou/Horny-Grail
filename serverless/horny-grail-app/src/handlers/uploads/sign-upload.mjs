@@ -1,7 +1,7 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getBucketName, getBucketRegion } from '../../config/env.mjs';
-import { requireWriteApiKey } from '../../lib/auth.mjs';
+import { requireWriteAccess } from '../../lib/auth.mjs';
 import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
 import {
@@ -24,7 +24,17 @@ const ALLOWED_PATHS = new Set(['files', 'thumbnails']);
  */
 async function createSignedUrl(input) {
   const command = new PutObjectCommand(input);
-  return getSignedUrl(s3Client, command, { expiresIn: 900 });
+  return getSignedUrl(s3Client, command, {
+    expiresIn: 900,
+    // Keep the checksum as a signed header (not a query param) so the client must send it
+    // and S3 verifies the body against it.
+    unhoistableHeaders: new Set(['x-amz-checksum-sha256'])
+  });
+}
+
+/** The id is the file's SHA-256 in hex; S3 wants the same digest in base64. */
+export function sha256HexToBase64(hex) {
+  return Buffer.from(hex, 'hex').toString('base64');
 }
 
 export const signUploadHandler = async (event) => {
@@ -33,7 +43,7 @@ export const signUploadHandler = async (event) => {
     handlerName: 'signUpload',
     method: 'POST',
     allowOptions: true,
-    authorize: requireWriteApiKey
+    authorize: requireWriteAccess
   });
   if (guardError) {
     return guardError;
@@ -90,10 +100,18 @@ export const signUploadHandler = async (event) => {
     ContentType: expectedContentType
   };
 
-  /** @type {Record<string, string> | undefined} */
+  /** @type {Record<string, string>} */
   const headers = {
     'Content-Type': expectedContentType
   };
+
+  // Originals are named after their SHA-256, so S3 can refuse any body that does not
+  // hash to the id. Thumbnails are derived images, so they cannot be checked this way.
+  if (!isThumbnail) {
+    const checksum = sha256HexToBase64(id);
+    commandInput.ChecksumSHA256 = checksum;
+    headers['x-amz-checksum-sha256'] = checksum;
+  }
 
   try {
     const uploadUrl = await createSignedUrl(commandInput);

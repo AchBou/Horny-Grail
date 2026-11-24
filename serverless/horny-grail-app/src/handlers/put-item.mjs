@@ -4,7 +4,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
-import { requireWriteApiKey } from '../lib/auth.mjs';
+import { requireWriteAccess } from '../lib/auth.mjs';
 import { badRequest, jsonResponse, serverError } from '../lib/http.mjs';
 import { guardRequest } from '../lib/request-guards.mjs';
 import { isValidImageExt, isValidImageId, parseJsonBody } from '../lib/validation.mjs';
@@ -20,7 +20,7 @@ export const putItemHandler = async (event) => {
         handlerName: 'putItem',
         method: 'POST',
         allowOptions: true,
-        authorize: requireWriteApiKey
+        authorize: requireWriteAccess
     });
     if (guardError) {
         return guardError;

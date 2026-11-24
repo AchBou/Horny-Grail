@@ -1,6 +1,6 @@
 import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getBucketName, getBucketRegion } from '../../config/env.mjs';
-import { requireWriteApiKey } from '../../lib/auth.mjs';
+import { requireWriteAccess } from '../../lib/auth.mjs';
 import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
 import { getItemById } from '../../lib/items-repository.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
@@ -36,7 +36,7 @@ async function objectExists(key, context = {}) {
   }
 }
 
-export async function buildAssetIntegrityResponse(id, event) {
+async function buildAssetIntegrityResponse(id, event) {
   if (!isValidImageId(id)) {
     return badRequest('Invalid image id', event);
   }
@@ -87,7 +87,8 @@ export const getAssetIntegrityHandler = async (event) => {
   const guardError = guardRequest(event, {
     handlerName: 'getAssetIntegrity',
     method: 'GET',
-    authorize: requireWriteApiKey
+    allowOptions: true,
+    authorize: requireWriteAccess
   });
   if (guardError) {
     return guardError;
