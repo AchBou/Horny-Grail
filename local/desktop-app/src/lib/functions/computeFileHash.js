@@ -1,26 +1,15 @@
-import { readFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
-import CryptoJS from 'crypto-js';
 
-// Compute SHA-256 hex hash of a file at filePath using a streaming Tauri command when available,
-// falling back to JS hashing if invoking fails for any reason.
 /**
+ * SHA-256 hex of a file, streamed in Rust (`compute_sha256_streaming`) off the main thread,
+ * so even very large files never pass through JavaScript memory.
  * @param {string} filePath
  * @returns {Promise<string>}
  */
 export async function computeFileHash(filePath) {
-  try {
-    const hex = await invoke('compute_sha256_streaming', { path: filePath });
-    if (typeof hex === 'string' && hex.length === 64) {
-      return hex;
-    }
-  } catch (e) {
-    // Fallback to JS hashing below
+  const hex = await invoke('compute_sha256_streaming', { path: filePath });
+  if (typeof hex !== 'string' || !/^[a-f0-9]{64}$/.test(hex)) {
+    throw new Error(`Unexpected hash result for ${filePath}`);
   }
-
-  // Fallback: Read entire file (may be memory heavy on very large files)
-  const fileData = await readFile(filePath);
-  const wordArray = CryptoJS.lib.WordArray.create(fileData);
-  const hash = CryptoJS.SHA256(wordArray);
-  return hash.toString(CryptoJS.enc.Hex);
+  return hex;
 }

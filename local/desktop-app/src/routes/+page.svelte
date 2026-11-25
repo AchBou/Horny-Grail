@@ -43,7 +43,6 @@
   let pendingUpdates = $state(0);
   let isUploading = $state(false);
   let uploadStatus = $state<{[key: string]: string}>({});
-  let uploadedFiles = $state<string[]>([]);
   let fileHashes = $state<{[key: string]: string}>({});
   let fileExists = $state<{[key: string]: boolean}>({});
   let fileCheckStatus = $state<{[key: string]: FileCheckStatus}>({});
@@ -472,25 +471,6 @@
     }
   }
 
-  async function navigateToDirectory(file: FileEntry): Promise<void> {
-    if (file.isDirectory) {
-      // Unwatch previous folder
-      if (unwatchFn) {
-        unwatchFn();
-        unwatchFn = null;
-      }
-      
-      // Reset watching state
-      isWatching = false;
-      lastChangeDetected = null;
-      
-      await loadFiles(file.path);
-      
-      // Set up new watcher for the navigated directory
-      setupFileWatcher(file.path);
-    }
-  }
-  
   // Function to upload a file
   async function handleFileUpload(file: FileEntry): Promise<void> {
     if (file.isDirectory) {
@@ -531,8 +511,7 @@
 
       // Update status
       uploadStatus[file.path] = "completed";
-      uploadedFiles = [...uploadedFiles, file.path];
-      
+
     } catch (error) {
       console.error("Error uploading file:", error);
       uploadStatus[file.path] = "failed";
@@ -547,11 +526,6 @@
   }
 
   async function copyFileName(file: FileEntry): Promise<void> {
-    if (file.isDirectory) {
-      await navigateToDirectory(file);
-      return;
-    }
-
     try {
       await navigator.clipboard.writeText(file.name);
       copiedFilePath = file.path;
@@ -878,7 +852,7 @@
               <button
                 onclick={() => copyFileName(file)}
                 class="file-button"
-                title={file.isDirectory ? `Open ${file.name}` : `Copy ${file.name}`}
+                title={`Copy ${file.name}`}
               >
                 {#if canPreview(file)}
                   <img

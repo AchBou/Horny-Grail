@@ -1,6 +1,6 @@
 import { readFile } from '@tauri-apps/plugin-fs';
-import CryptoJS from 'crypto-js';
 import { API_BASE_URL, WRITE_API_KEY, buildApiUrl } from "../config/apiEnv.js";
+import { computeFileHash } from "./computeFileHash.js";
 import { httpFetch } from "../config/httpClient.js";
 
 /** @type {Record<string, string>} */
@@ -82,15 +82,12 @@ export async function registerUploadedFile(id, ext) {
  * @returns {Promise<string>}
  */
 export async function uploadFile(filePath, knownHash, { registerMetadata = true } = {}) {
-    // Read the file as binary data
+    // Hash in Rust unless the caller already has it.
+    const suppliedHash = typeof knownHash === 'string' ? knownHash.toLowerCase() : '';
+    const hex = /^[a-f0-9]{64}$/.test(suppliedHash) ? suppliedHash : await computeFileHash(filePath);
+
     const fileData = await readFile(filePath);
-    
-    // Hash locally only when the caller does not already have the streaming hash.
-    const suppliedHash = typeof knownHash === 'string' ? knownHash : '';
-    const hex = /^[a-f0-9]{64}$/i.test(suppliedHash)
-        ? suppliedHash.toLowerCase()
-        : CryptoJS.SHA256(CryptoJS.lib.WordArray.create(fileData)).toString(CryptoJS.enc.Hex);
-    
+
     // Get file extension
     const fileExtension = filePath.split('.').pop()?.toLowerCase() || 'bin';
     const contentType = MIME_BY_EXT[fileExtension];
