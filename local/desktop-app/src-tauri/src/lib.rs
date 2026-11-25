@@ -8,9 +8,26 @@ use image::{DynamicImage, ImageOutputFormat, imageops::FilterType, GenericImageV
 use tauri::{Manager, path::BaseDirectory};
 use wait_timeout::ChildExt;
 
+// Commands that are not async run on the main thread in Tauri 2, which freezes the window
+// while they work. These do heavy file I/O or decoding, so each one is async and hands its
+// work to a blocking-task thread.
+async fn run_blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("background task failed: {}", e))?
+}
+
 #[tauri::command]
-fn compute_sha256_streaming(path: String) -> Result<String, String> {
-    let file = File::open(&path).map_err(|e| format!("failed to open file: {}", e))?;
+async fn compute_sha256_streaming(path: String) -> Result<String, String> {
+    run_blocking(move || sha256_file(&path)).await
+}
+
+fn sha256_file(path: &str) -> Result<String, String> {
+    let file = File::open(path).map_err(|e| format!("failed to open file: {}", e))?;
     let mut reader = BufReader::new(file);
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; 1024 * 1024 * 4]; // 4 MiB buffer
@@ -65,12 +82,16 @@ fn fit_on_square_canvas(img: &DynamicImage, size: u32) -> RgbImage {
 }
 
 #[tauri::command]
-fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
+async fn generate_thumbnail(path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
+    run_blocking(move || image_thumbnail(&path, max_dimension, quality_hint)).await
+}
+
+fn image_thumbnail(path: &str, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
     let max_dim = max_dimension.unwrap_or(150);
     let quality = quality_hint.unwrap_or(88);
 
     // Decode image
-    let img = image::open(&path).map_err(|e| format!("failed to decode image: {}", e))?;
+    let img = image::open(path).map_err(|e| format!("failed to decode image: {}", e))?;
 
     let rgb = fit_on_square_canvas(&img, max_dim);
 
@@ -97,7 +118,12 @@ fn resolve_ffmpeg_path(app: &tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
-fn generate_video_thumbnail(app: tauri::AppHandle, path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
+async fn generate_video_thumbnail(app: tauri::AppHandle, path: String, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
+    let ffmpeg_path = resolve_ffmpeg_path(&app);
+    run_blocking(move || video_thumbnail(&ffmpeg_path, &path, max_dimension, quality_hint)).await
+}
+
+fn video_thumbnail(ffmpeg_path: &str, path: &str, max_dimension: Option<u32>, quality_hint: Option<u8>) -> Result<Vec<u8>, String> {
     let max_dim = max_dimension.unwrap_or(320).clamp(1, 4096);
     let quality = quality_hint.unwrap_or(90).clamp(1, 100);
     // ffmpeg's q:v is inverse quality; keep high quality but bounded file size.
@@ -120,7 +146,6 @@ fn generate_video_thumbnail(app: tauri::AppHandle, path: String, max_dimension: 
         max_dim
     );
 
-    let ffmpeg_path = resolve_ffmpeg_path(&app);
     let mut child = Command::new(ffmpeg_path)
         .args([
             "-hide_banner",
@@ -130,7 +155,7 @@ fn generate_video_thumbnail(app: tauri::AppHandle, path: String, max_dimension: 
             "-ss",
             "0.15",
             "-i",
-            &path,
+            path,
             "-frames:v",
             "1",
             "-vf",

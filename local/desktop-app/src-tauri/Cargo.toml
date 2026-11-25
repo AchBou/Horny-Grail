@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.3", features = [] }
+tauri = { version = "2.11.3", features = ["protocol-asset"] }
 tauri-plugin-opener = "2.5.0"
 tauri-plugin-dialog = "2.4.0"
 tauri-plugin-fs = { version = "2.5.1", features = ["watch"] }
@@ -30,3 +30,8 @@ hex = "0.4"
 image = { version = "0.24", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 wait-timeout = "0.2"
 tauri-plugin-http = "2.5.9"
+
+# Optimize dependencies (sha2, image, tauri) in dev builds: unoptimized hashing and
+# image decoding run 10-50x slower. Our own crate stays in debug for fast rebuilds.
+[profile.dev.package."*"]
+opt-level = 3

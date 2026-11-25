@@ -12,6 +12,10 @@
       "identifier": "fs:allow-read-file",
       "allow": [{ "path": "**" }]
     },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [{ "path": "**" }]
+    },
     "fs:allow-write",
     "fs:allow-watch",
     {
