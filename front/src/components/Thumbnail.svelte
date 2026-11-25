@@ -1,18 +1,13 @@
 <script>
-    export let src;
-    export let alt = 'thumbnail';
-    export let kind = 'image';
+    /** @type {{ src: string, alt?: string, kind?: 'image' | 'video' }} */
+    let { src, alt = 'thumbnail', kind = 'image' } = $props();
 
-    let hasError = false;
-    let previousSrc = null;
-
-    $: if (src !== previousSrc) {
-        previousSrc = src;
-        hasError = false;
-    }
+    // The src that failed to load; a new src clears the error on its own.
+    let failedSrc = $state(null);
+    const hasError = $derived(failedSrc === src);
 
     function handleError() {
-        hasError = true;
+        failedSrc = src;
     }
 </script>
 
@@ -23,7 +18,7 @@
                 <span>{kind === 'video' ? 'VIDEO' : 'IMAGE'}</span>
             </div>
         {:else}
-            <img {src} {alt} on:error={handleError} />
+            <img {src} {alt} onerror={handleError} />
         {/if}
 
         <span class="kind-badge">{kind === 'video' ? 'Video' : 'Image'}</span>

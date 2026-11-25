@@ -1,3 +1,7 @@
+<script>
+	let { children } = $props();
+</script>
+
 <header>
 	<div class="logo">
 		<a href="/" class="title-link" aria-label="The Horny Grail home">
@@ -8,7 +12,7 @@
 </header>
 
 <div class="main">
-	<slot></slot>
+	{@render children()}
 </div>
 
 <footer>

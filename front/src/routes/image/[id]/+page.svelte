@@ -4,15 +4,15 @@
     import { getMockItemById } from '$lib/mocks/gallery.js';
     import { getMediaKindFromExt } from '$lib/models/image.js';
 
-    let imageUrl = '';
-    let mediaKind = 'image';
-    let mediaExt = '';
-    let isLoading = true;
-    let error = null;
-    let errorTitle = 'Unable to load item';
-    let id = '';
-    let videoElement;
-    let videoControlsEnabled = false;
+    let imageUrl = $state('');
+    let mediaKind = $state('image');
+    let mediaExt = $state('');
+    let isLoading = $state(true);
+    let error = $state(null);
+    let errorTitle = $state('Unable to load item');
+    let id = $state('');
+    let videoElement = $state();
+    let videoControlsEnabled = $state(false);
 
     function getCurrentIdFromPath() {
         const segments = (typeof window !== 'undefined' ? window.location.pathname : '').split('/');
@@ -149,7 +149,7 @@
                 <h3>{errorTitle}</h3>
                 <p>{error}</p>
                 <div class="error-actions">
-                    <button class="btn" type="button" on:click={retryCurrentItem}>Try Again</button>
+                    <button class="btn" type="button" onclick={retryCurrentItem}>Try Again</button>
                     <a class="btn secondary-btn" href="/browse">Back to Browse</a>
                     <a class="btn secondary-btn" href="/random">Open Random</a>
                 </div>
@@ -168,10 +168,10 @@
                         muted={mediaKind === 'video' && !hasInteractiveVideoControls()}
                         playsinline
                         preload="auto"
-                        on:error={handleMediaError}
+                        onerror={handleMediaError}
                     ></video>
                 {:else}
-                    <img class="media" src={imageUrl} alt="Selected file" on:error={handleMediaError} />
+                    <img class="media" src={imageUrl} alt="Selected file" onerror={handleMediaError} />
                 {/if}
             </div>
         {/if}
@@ -184,7 +184,7 @@
                 type="button"
                 aria-label={videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
                 title={videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
-                on:click={toggleVideoPlaybackMode}
+                onclick={toggleVideoPlaybackMode}
             >
                 {#if videoControlsEnabled}
                     <span class="icon-pair" aria-hidden="true">

@@ -14,15 +14,15 @@
 	const PRELOAD_MARGIN_PX = 240;
 
 	/** @type {import('$lib/models/image.js').ImageItem[]} */
-	let images = [];
-	let isLoading = true;
-	let isLoadingMore = false;
-	let error = null;
-	let loadMoreError = null;
-	let hasMore = false;
-	let nextCursor = null;
-	let sentinel;
-	let observer;
+	let images = $state([]);
+	let isLoading = $state(true);
+	let isLoadingMore = $state(false);
+	let error = $state(null);
+	let loadMoreError = $state(null);
+	let hasMore = $state(false);
+	let nextCursor = $state(null);
+	let sentinel = $state();
+	let observer = $state();
 
 	const seenIds = new Set();
 
@@ -164,9 +164,14 @@
 		};
 	});
 
-	$: if (observer && sentinel) {
-		observer.observe(sentinel);
-	}
+	// The sentinel only exists once the gallery renders, so observe it whenever it appears.
+	$effect(() => {
+		const target = sentinel;
+		const currentObserver = observer;
+		if (!currentObserver || !target) return;
+		currentObserver.observe(target);
+		return () => currentObserver.unobserve(target);
+	});
 </script>
 
 <div class="browse-shell">
@@ -182,7 +187,7 @@
 			<h3>Gallery unavailable</h3>
 			<p>{error}</p>
 			<div class="actions">
-				<button type="button" class="primary-action" on:click={retryInitialLoad}>Try Again</button>
+				<button type="button" class="primary-action" onclick={retryInitialLoad}>Try Again</button>
 				<a class="secondary-action" href="/random">Open Random</a>
 			</div>
 		</div>
@@ -225,15 +230,15 @@
 					<h3>Could not load more</h3>
 					<p>{loadMoreError}</p>
 					<div class="actions">
-						<button type="button" class="primary-action" on:click={() => fetchPage({ cursor: nextCursor })}>Try Again</button>
-						<button type="button" class="secondary-action" on:click={retryInitialLoad}>Refresh Gallery</button>
+						<button type="button" class="primary-action" onclick={() => fetchPage({ cursor: nextCursor })}>Try Again</button>
+						<button type="button" class="secondary-action" onclick={retryInitialLoad}>Refresh Gallery</button>
 					</div>
 				</div>
 			{:else if !hasMore}
 				<div class="end-state">
 					<h3>End of gallery</h3>
 					<div class="actions">
-						<button type="button" class="primary-action" on:click={retryInitialLoad}>Shuffle Again</button>
+						<button type="button" class="primary-action" onclick={retryInitialLoad}>Shuffle Again</button>
 						<a class="secondary-action" href="/random">Open Random</a>
 					</div>
 				</div>

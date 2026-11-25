@@ -1,12 +1,8 @@
 <script>
-    import { createEventDispatcher } from 'svelte';
     import { fly } from 'svelte/transition';
 
-    const dispatch = createEventDispatcher();
-    export let to = '';
-    export let text;
-    export let primary = true;
-    export let size = 'medium'; // small, medium, large
+    /** @type {{ to?: string, text: string, primary?: boolean, size?: 'small' | 'medium' | 'large', onclick?: (event: MouseEvent) => void }} */
+    let { to = '', text, primary = true, size = 'medium', onclick } = $props();
 </script>
 
 {#if to}
@@ -21,9 +17,7 @@
     <button
         class="btn-container {primary ? 'primary' : 'secondary'} {size}"
         type="button"
-        on:click={(event) => {
-            dispatch('click', event);
-        }}
+        {onclick}
         in:fly={{ y: 20, duration: 300 }}
     >
         <span class="btn-text">{text}</span>

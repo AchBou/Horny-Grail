@@ -6,15 +6,15 @@
     import { getMockRandomItem } from "$lib/mocks/gallery.js";
     import { getMediaKindFromExt } from "$lib/models/image.js";
 
-    let randomSrc = "";
-    let mediaKind = "image";
-    let mediaExt = "";
-    let isLoading = true;
-    let error = null;
-    let errorTitle = "Random image unavailable";
-    let mediaLoadFailed = false;
-    let randomVideoElement;
-    let videoControlsEnabled = false;
+    let randomSrc = $state("");
+    let mediaKind = $state("image");
+    let mediaExt = $state("");
+    let isLoading = $state(true);
+    let error = $state(null);
+    let errorTitle = $state("Random image unavailable");
+    let mediaLoadFailed = $state(false);
+    let randomVideoElement = $state();
+    let videoControlsEnabled = $state(false);
 
     function describeRandomFailure(status, fallbackMessage) {
         if (status === 404) {
@@ -147,7 +147,7 @@
                 <h3>{errorTitle}</h3>
                 <p>{error}</p>
                 <div class="actions">
-                    <button on:click={generateRandomPic}>Try Again</button>
+                    <button onclick={generateRandomPic}>Try Again</button>
                     <a href="/browse">Open Browse</a>
                 </div>
             </div>
@@ -165,10 +165,10 @@
                         muted={mediaKind === 'video' && !hasInteractiveVideoControls()}
                         playsinline
                         preload="auto"
-                        on:error={handleMediaError}
+                        onerror={handleMediaError}
                     ></video>
                 {:else}
-                    <img class="random-media" src={randomSrc} alt="Random selection" on:error={handleMediaError} />
+                    <img class="random-media" src={randomSrc} alt="Random selection" onerror={handleMediaError} />
                 {/if}
             </div>
         {/if}
@@ -181,7 +181,7 @@
                 type="button"
                 aria-label={videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
                 title={videoControlsEnabled ? 'Hide playback controls and mute video' : 'Enable playback controls and sound'}
-                on:click={toggleVideoPlaybackMode}
+                onclick={toggleVideoPlaybackMode}
             >
                 {#if videoControlsEnabled}
                     <span class="icon-pair" aria-hidden="true">
@@ -211,7 +211,7 @@
                 </span>
             </button>
         {/if}
-        <Button on:click={generateRandomPic} text="Get Another" primary={true} size="medium"/>
+        <Button onclick={generateRandomPic} text="Get Another" primary={true} size="medium"/>
     </div>
 </div>
 

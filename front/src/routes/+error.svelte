@@ -1,12 +1,13 @@
 <script>
-    export let error;
-    export let status;
+    // SvelteKit passes the error through page state, not props.
+    import { page } from '$app/state';
 
-    const isMissingRoute = status === 404;
-    const title = isMissingRoute ? 'Page not found' : 'Something went wrong';
-    const message = isMissingRoute
+    const status = $derived(page.status);
+    const isMissingRoute = $derived(status === 404);
+    const title = $derived(isMissingRoute ? 'Page not found' : 'Something went wrong');
+    const message = $derived(isMissingRoute
         ? 'This route does not exist, or the link is outdated.'
-        : (error?.message || 'The app hit an unexpected error while loading this page.');
+        : (page.error?.message || 'The app hit an unexpected error while loading this page.'));
 </script>
 
 <svelte:head>

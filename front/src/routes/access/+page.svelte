@@ -1,10 +1,10 @@
 <script>
     import { onMount } from 'svelte';
 
-    let next = '/';
-    let hasError = false;
-    let isLocked = false;
-    let isUnavailable = false;
+    let next = $state('/');
+    let hasError = $state(false);
+    let isLocked = $state(false);
+    let isUnavailable = $state(false);
 
     onMount(() => {
         const params = new URLSearchParams(window.location.search);
