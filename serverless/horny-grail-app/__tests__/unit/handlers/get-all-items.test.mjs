@@ -72,4 +72,31 @@ describe('Test getAllThumbnailsHandler', () => {
         expect(result.statusCode).toBe(400);
         expect(JSON.parse(result.body).message).toBe('Invalid cursor');
     });
+
+    it.each([
+        ['an extra key', { id: 'id3', status: 'active' }],
+        ['a non-string id', { id: { S: 'id3' } }],
+        ['an empty object', {}]
+    ])('should return 400 instead of 500 for a cursor with %s', async (_label, key) => {
+        const result = await getAllThumbnailsHandler({
+            httpMethod: 'GET',
+            headers: { 'x-read-origin-secret': process.env.READ_ORIGIN_SECRET },
+            queryStringParameters: { cursor: Buffer.from(JSON.stringify(key)).toString('base64url') }
+        });
+
+        expect(result.statusCode).toBe(400);
+        expect(ddbMock.commandCalls(ScanCommand)).toHaveLength(0);
+    });
+
+    it('should pass a valid cursor through as the scan start key', async () => {
+        ddbMock.on(ScanCommand).resolves({ Items: [] });
+
+        await getAllThumbnailsHandler({
+            httpMethod: 'GET',
+            headers: { 'x-read-origin-secret': process.env.READ_ORIGIN_SECRET },
+            queryStringParameters: { cursor: Buffer.from(JSON.stringify({ id: 'id3' })).toString('base64url') }
+        });
+
+        expect(ddbMock.commandCalls(ScanCommand)[0].args[0].input.ExclusiveStartKey).toEqual({ id: 'id3' });
+    });
 });

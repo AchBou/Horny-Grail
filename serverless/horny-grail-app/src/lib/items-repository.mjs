@@ -29,7 +29,11 @@ export function decodeScanCursor(rawCursor) {
   if (typeof rawCursor !== 'string' || rawCursor.length > 2048) return undefined;
   try {
     const parsed = JSON.parse(Buffer.from(rawCursor, 'base64url').toString('utf8'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+    // The table's only key is `id`, so a real LastEvaluatedKey is exactly { id: <string> }.
+    const keys = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.keys(parsed) : [];
+    const isTableKey = keys.length === 1 && keys[0] === 'id'
+      && typeof parsed.id === 'string' && parsed.id.length > 0 && parsed.id.length <= 256;
+    return isTableKey ? { id: parsed.id } : undefined;
   } catch {
     return undefined;
   }

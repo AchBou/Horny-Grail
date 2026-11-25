@@ -296,9 +296,16 @@ The shared upload contract lives in `../../docs/upload-contract.md`.
 `GET /api/get-random-image` and `GET /api/browse/random` both depend on items having:
 
 - `status: "active"`
-- a numeric `randomKey`
+- a numeric `randomKey` (items without one are missing from the index)
 
 `POST /api` currently sets both fields on new metadata writes. If existing data is imported into the table later, it must be backfilled with those fields before relying on random discovery.
+
+Both endpoints read every active item from `RandomImageIndex` per request (the collection is small: a few hundred items is a few read units):
+
+- `get-random-image` picks one item uniformly. `randomKey` is only the index sort key now, so gaps between keys no longer bias the pick.
+- `browse/random` orders items by `sha256(seed:id)`, with a new random seed per session. The cursor holds `{ seed, after }`, where `after` is the last position shown. An item added or removed mid-session does not reshuffle the rest, so nothing repeats or gets skipped. Cursors from the old `{ seed, segment, startKey }` format start a fresh shuffle; malformed cursors return 400.
+
+If the collection grows into the tens of thousands, cache the item list per container or move to a stored shuffle.
 
 ## Verification
 
