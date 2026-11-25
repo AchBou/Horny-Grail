@@ -24,7 +24,9 @@ cd front
 npm install
 npm run dev
 npm run build
-npm run test
+npm run check
+npm run test        # unit tests (node --test)
+npm run test:e2e    # Playwright smoke test
 npm run lint
 ```
 
@@ -48,6 +50,7 @@ npm install
 npm run dev
 npm run build
 npm run check
+npm run test
 npm run cap:sync
 npm run cap:open:android
 ```
@@ -97,6 +100,7 @@ Do not commit real AWS credentials, local `.env` files, generated SAM build fold
 - Prefer existing SvelteKit and Svelte 5 patterns in each app. The desktop uploader uses Svelte runes such as `$state`.
 - Keep frontend API response parsing compatible with both current object payloads and older string payloads where the code already does so.
 - The frontend browse page now uses `GET /api/browse/random` with cursor-based infinite scroll. Preserve the cursor contract when iterating on browse.
+- The mobile home page (`src/routes/+page.svelte`) owns state and handlers; each view lives in `src/lib/components/` (`HomeView`, `UploadView`, `BrowseView`, `DeleteAllDialog`). Styles used by several views stay in the page, scoped to `.vault-view` wrappers.
 - The mobile app home screen is chooser-first. Do not make browse or upload the implicit default on entry unless there is an explicit product decision to change that.
 - The mobile app should load randomized browse content only after the user explicitly opens browse mode.
 - The mobile app upload queue should stay explicit and understandable. Prefer clear per-file status and recovery actions over dense instructional copy.
@@ -113,10 +117,10 @@ Do not commit real AWS credentials, local `.env` files, generated SAM build fold
 
 Choose checks based on the area changed:
 
-- Frontend UI or routing: run `npm run build` in `front/`; run `npm run test` when behavior changes are testable.
-- Mobile app UI or routing: run `npm run check` in `local/mobile-app/`; run `npm run cap:sync` when changing Capacitor-facing behavior or native plugin wiring.
+- Frontend UI or routing: run `npm run check` and `npm run build` in `front/`; run `npm run test` when behavior changes are testable.
+- Mobile app UI or routing: run `npm run check` (svelte-check) and `npm run test` in `local/mobile-app/`; run `npm run cap:sync` when changing Capacitor-facing behavior or native plugin wiring.
 - Desktop Svelte code: run `npm run check` in `local/desktop-app/`; run `npm run build` for frontend bundle changes and `npm run tauri -- build` when Tauri packaging or bundled resources change.
-- Tauri Rust code: run `cargo check` in `local/desktop-app/src-tauri/`.
+- Tauri Rust code: run `cargo check` and `cargo test --lib` in `local/desktop-app/src-tauri/`.
 - Serverless handlers: run `npm run test` in `serverless/horny-grail-app/`; run `sam build` after template or dependency changes.
 
 If dependencies are missing and installing them is outside the current task, report that verification was not run.
