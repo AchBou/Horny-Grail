@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import ReadAccessGate from '$lib/components/ReadAccessGate.svelte';
   import {
     createMobileReadSession,
@@ -18,6 +18,7 @@
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
   const BROWSE_PAGE_SIZE = 24;
+  const BROWSE_PRELOAD_MARGIN_PX = 260;
   const ACCEPTED_TYPES = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.webm,.mp4,image/*,video/webm,video/mp4';
   const STATUS_LABELS = {
     preparing: 'Preparing',
@@ -262,6 +263,23 @@
         browseLoading = false;
         browseLoadingMore = false;
       }
+    }
+
+    if (browseAbortController === controller && !browseError) {
+      await loadMoreBrowseIfSentinelVisible();
+    }
+  }
+
+  // IntersectionObserver only fires when visibility changes. If the sentinel is still on
+  // screen after a page renders, load the next page instead of waiting for a scroll.
+  async function loadMoreBrowseIfSentinelVisible() {
+    await tick();
+    if (!browseSentinel || !hasReadSession || browseLoading || browseLoadingMore || !browseHasMore || !browseCursor) {
+      return;
+    }
+
+    if (browseSentinel.getBoundingClientRect().top <= window.innerHeight + BROWSE_PRELOAD_MARGIN_PX) {
+      await loadBrowsePage(browseCursor);
     }
   }
 
@@ -660,7 +678,7 @@
       }
 
       loadBrowsePage(browseCursor);
-    }, { rootMargin: '260px 0px' });
+    }, { rootMargin: `${BROWSE_PRELOAD_MARGIN_PX}px 0px` });
 
     observeBrowseSentinel();
 
