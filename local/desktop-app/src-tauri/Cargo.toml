@@ -15,21 +15,20 @@ name = "the_horny_grail_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = { version = "2.7.6", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.3", features = ["protocol-asset"] }
-tauri-plugin-opener = "2.5.0"
-tauri-plugin-dialog = "2.4.0"
-tauri-plugin-fs = { version = "2.5.1", features = ["watch"] }
+tauri = { version = "2.12.7", features = ["protocol-asset"] }
+tauri-plugin-opener = "2.7.3"
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-fs = { version = "2.7.1", features = ["watch"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dotenv = "0.15.0"
 sha2 = "0.10"
 hex = "0.4"
 image = { version = "0.24", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 wait-timeout = "0.2"
-tauri-plugin-http = "2.5.9"
+tauri-plugin-http = "2.9.0"
 
 # Optimize dependencies (sha2, image, tauri) in dev builds: unoptimized hashing and
 # image decoding run 10-50x slower. Our own crate stays in debug for fast rebuilds.
