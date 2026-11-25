@@ -278,8 +278,10 @@ The backend does not accept raw media bytes directly. Desktop and mobile clients
 
 1. Compute SHA-256 and use it as `id`
 2. Call `POST /api/uploads/sign`
-3. Upload bytes to the returned S3 presigned URL
+3. Upload bytes to the returned S3 presigned URL (original and thumbnail)
 4. Register metadata through `POST /api`
+
+`POST /api` checks that both `files/<id>.<ext>` and `thumbnails/thumbnail-<id>.jpeg` exist before creating a new item, and returns `409` with `missing: ["original" | "thumbnail"]` otherwise, so browse never lists an item without its files. Re-registering an existing item returns it unchanged without the S3 check, which keeps retries and repair flows working.
 
 Validation for `POST /api/uploads/sign` includes:
 

@@ -42,8 +42,12 @@ export function jsonResponse(statusCode, body, event) {
   };
 }
 
-function errorResponse(statusCode, code, message, event) {
-  return jsonResponse(statusCode, { code, message }, event);
+function errorResponse(statusCode, code, message, event, details = {}) {
+  return jsonResponse(statusCode, { code, message, ...details }, event);
+}
+
+export function conflict(message, event, details = {}) {
+  return errorResponse(409, 'conflict', message, event, details);
 }
 
 export function corsPreflight(event) {

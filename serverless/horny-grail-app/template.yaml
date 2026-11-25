@@ -670,14 +670,29 @@ Resources:
     Properties:
       Handler: src/handlers/put-item.putItemHandler
       Timeout: 100
-      Description: Writes image metadata after upload validation succeeds.
+      Description: Writes image metadata once the original and thumbnail are in S3.
       Policies:
       - DynamoDBWritePolicy:
           TableName: !Ref LookupTable
+      - DynamoDBReadPolicy:
+          TableName: !Ref LookupTable
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          Resource: !Sub arn:aws:s3:::${BucketName}
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
           WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
           MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
