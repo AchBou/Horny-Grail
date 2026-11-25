@@ -9,6 +9,7 @@
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
   import { purgeAssetMetadata } from "$lib/functions/purgeAssetMetadata.js";
+  import { moveUploadedToRecycleBin } from "$lib/functions/recycleUploaded.js";
   import { join } from "@tauri-apps/api/path";
 
 
@@ -59,6 +60,21 @@
   let activeTab = $state<ListTab>('new');
   let previewFailed = $state<{[key: string]: boolean}>({});
   let currentUpload = $state<{ path: string; name: string; index: number; total: number } | null>(null);
+
+  // What happens to a file once it is safely uploaded. Remembered between launches.
+  type AfterUpload = 'keep' | 'recycle';
+  const AFTER_UPLOAD_KEY = 'hornygrail-after-upload';
+  let afterUpload = $state<AfterUpload>(
+    typeof localStorage !== 'undefined' && localStorage.getItem(AFTER_UPLOAD_KEY) === 'recycle' ? 'recycle' : 'keep'
+  );
+  $effect(() => {
+    localStorage.setItem(AFTER_UPLOAD_KEY, afterUpload);
+  });
+  let isRemoving = $state(false);
+  let noticeMessage = $state("");
+
+  // Files that are uploaded and complete in the Grail, so they can leave this PC.
+  const removableFiles = $derived(files.filter((file) => getFileCategory(file) === 'uploaded' && fileHashes[file.path]));
 
   // Which list tab a file belongs to. A file stays in "New" while it uploads, then moves on.
   function getFileCategory(file: FileEntry): FileCategory {
@@ -694,6 +710,7 @@
       for (const [index, f] of eligible.entries()) {
         currentUpload = { path: f.path, name: f.name, index: index + 1, total: eligible.length };
         await handleFileUpload(f);
+        await recycleAfterUpload(f);
       }
     } catch (e) {
       console.error("Error in Upload All:", e);
@@ -708,8 +725,70 @@
     currentUpload = { path: file.path, name: file.name, index: 1, total: 1 };
     try {
       await handleFileUpload(file);
+      await recycleAfterUpload(file);
     } finally {
       if (currentUpload?.path === file.path) currentUpload = null;
+    }
+  }
+
+  // With "Move to Recycle Bin" on, a file leaves the PC as soon as its upload completes.
+  async function recycleAfterUpload(file: FileEntry): Promise<void> {
+    if (afterUpload === 'recycle' && uploadStatus[file.path] === 'completed') {
+      await removeFromPc([file], { quiet: true });
+    }
+  }
+
+  /**
+   * Moves files to the Recycle Bin once the Grail confirms it holds them. Each file is
+   * checked with the server and re-hashed first; anything not confirmed stays on the PC.
+   */
+  async function removeFromPc(targets: FileEntry[], { quiet = false } = {}): Promise<void> {
+    if (!selectedPath || targets.length === 0) return;
+
+    const removable = targets.filter((file) => fileHashes[file.path]);
+    if (removable.length === 0) return;
+
+    for (const file of removable) uploadStatus[file.path] = 'removing';
+    isRemoving = true;
+    try {
+      const { moved, errors } = await moveUploadedToRecycleBin(
+        selectedPath,
+        removable.map((file) => ({ path: file.path, name: file.name, hash: fileHashes[file.path] }))
+      );
+
+      const movedSet = new Set(moved.map((path) => path.replace(/\//g, '\\')));
+      files = files.filter((file) => !movedSet.has(file.path));
+      resetFileMetadata([...movedSet]);
+      for (const file of removable) {
+        if (movedSet.has(file.path)) delete uploadStatus[file.path];
+        else uploadStatus[file.path] = 'completed';
+      }
+
+      if (errors.length > 0) {
+        errorMessage = `Kept ${errors.length} file${errors.length === 1 ? '' : 's'} on this PC: ${errors.join('; ')}`;
+      }
+      if (moved.length > 0 && !quiet) {
+        noticeMessage = `Moved ${moved.length} file${moved.length === 1 ? '' : 's'} to the Recycle Bin.`;
+      }
+    } catch (error) {
+      console.error("Error removing files from PC:", error);
+      for (const file of removable) uploadStatus[file.path] = 'completed';
+      errorMessage = `Could not remove files from this PC: ${getErrorDetail(error)}`;
+    } finally {
+      isRemoving = false;
+    }
+  }
+
+  async function handleRemoveAllUploaded(): Promise<void> {
+    const targets = [...removableFiles];
+    const confirmed = window.confirm(
+      `Move ${targets.length} uploaded file${targets.length === 1 ? '' : 's'} to the Recycle Bin?\n\n` +
+      `They are saved in the Grail. Each file is checked with the Grail again before it is moved, ` +
+      `and you can restore them from the Recycle Bin.`
+    );
+    if (confirmed) {
+      noticeMessage = "";
+      await removeFromPc(targets);
     }
   }
 
@@ -760,6 +839,13 @@
             Recheck Existing Files
           </button>
         {/if}
+        <label class="after-upload" title="What happens to a file on this PC once it is safely in the Grail">
+          After upload
+          <select bind:value={afterUpload}>
+            <option value="keep">Keep on PC</option>
+            <option value="recycle">Move to Recycle Bin</option>
+          </select>
+        </label>
       </div>
       {#if selectedPath}
         <p class="selected-path">Sync folder: {selectedPath}</p>
@@ -785,6 +871,13 @@
       <div class="error-message">
         <p>⚠️ {errorMessage}</p>
         <button class="close-error" onclick={() => errorMessage = ""}>×</button>
+      </div>
+    {/if}
+
+    {#if noticeMessage}
+      <div class="notice-message" role="status">
+        <p>{noticeMessage}</p>
+        <button class="close-notice" onclick={() => noticeMessage = ""} aria-label="Dismiss">×</button>
       </div>
     {/if}
 
@@ -926,6 +1019,18 @@
                   <div class="repair-actions">
                     <span class="exists-badge" title="This file's hash already exists in the database and its stored assets look complete">Already exists</span>
                     <button
+                      onclick={() => removeFromPc([file])}
+                      class="remove-pc-button"
+                      title="Move this file to the Recycle Bin. It stays saved in the Grail."
+                      disabled={isRemoving || isUploading}
+                    >
+                      {#if uploadStatus[file.path] === "removing"}
+                        Removing...
+                      {:else}
+                        Remove from PC
+                      {/if}
+                    </button>
+                    <button
                       onclick={() => handleAssetPurge(file)}
                       class="purge-button"
                       title="Delete metadata entry from DynamoDB"
@@ -975,11 +1080,23 @@
       {/if}
     </div>
 
-    {#if selectedPath && getEligibleFiles().length > 0}
+    {#if selectedPath && (getEligibleFiles().length > 0 || removableFiles.length > 0)}
       <div class="bottom-actions">
-        <button onclick={handleUploadAll} class="upload-all-button" disabled={isUploading} title="Upload all new images in this folder">
-          ⬆️ Upload All ({getEligibleFiles().length})
-        </button>
+        {#if removableFiles.length > 0}
+          <button
+            onclick={handleRemoveAllUploaded}
+            class="remove-all-button"
+            disabled={isUploading || isRemoving}
+            title="Move every uploaded file in this folder to the Recycle Bin. They stay saved in the Grail."
+          >
+            🗑️ {isRemoving ? 'Removing...' : `Remove uploaded from PC (${removableFiles.length})`}
+          </button>
+        {/if}
+        {#if getEligibleFiles().length > 0}
+          <button onclick={handleUploadAll} class="upload-all-button" disabled={isUploading || isRemoving} title="Upload all new images in this folder">
+            ⬆️ Upload All ({getEligibleFiles().length})
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -1563,6 +1680,96 @@
 
   .upload-all-button {
     font-weight: 600;
+  }
+
+  .after-upload {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: #555;
+  }
+
+  .after-upload select {
+    padding: 0.3rem 0.4rem;
+    font-size: 0.85rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+
+  .notice-message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    margin-bottom: 0.75rem;
+    color: #047857;
+  }
+
+  .notice-message p {
+    margin: 0;
+    flex: 1;
+  }
+
+  .close-notice {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.3rem;
+    padding: 0;
+    margin-left: 0.5rem;
+  }
+
+  .close-notice:hover {
+    background: none;
+  }
+
+  .remove-pc-button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 80px;
+    text-align: center;
+    background-color: #475569;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .remove-pc-button:hover:not(:disabled),
+  .remove-all-button:hover:not(:disabled) {
+    background-color: #334155;
+  }
+
+  .remove-all-button {
+    background-color: #475569;
+  }
+
+  .remove-pc-button:disabled,
+  .remove-all-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .after-upload {
+      color: #ccc;
+    }
+
+    .after-upload select {
+      background-color: #2a2a2a;
+      color: #eee;
+      border-color: #555;
+    }
+
+    .notice-message {
+      background-color: #12302a;
+      border-color: #1f5d4c;
+      color: #6ee7b7;
+    }
   }
 
   @media (prefers-color-scheme: dark) {

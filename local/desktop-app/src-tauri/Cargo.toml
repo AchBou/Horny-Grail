@@ -29,6 +29,7 @@ hex = "0.4"
 image = { version = "0.24", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 wait-timeout = "0.2"
 tauri-plugin-http = "2.9.0"
+trash = "5.4.0"
 
 # Optimize dependencies (sha2, image, tauri) in dev builds: unoptimized hashing and
 # image decoding run 10-50x slower. Our own crate stays in debug for fast rebuilds.

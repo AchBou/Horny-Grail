@@ -6,7 +6,7 @@ This repository contains the HornyGrail image app. Use this file as the first st
 
 - `front/` is the public SvelteKit frontend for browsing images, viewing a single image, and loading a random image.
 - `local/mobile-app/` is the private Capacitor + SvelteKit mobile client. It starts on a chooser-first home screen, then lets the user explicitly enter browse mode or upload mode.
-- `local/desktop-app/` is the Tauri 2 desktop uploader app. It watches a local folder, hashes image files, checks backend metadata for duplicates, uploads originals and thumbnails through server-issued presigned URLs, and never talks to AWS directly.
+- `local/desktop-app/` is the Tauri 2 desktop uploader app. It watches a local folder, hashes image files, checks backend metadata for duplicates, uploads originals and thumbnails through server-issued presigned URLs, and never talks to AWS directly. Once the server confirms an item is complete, it can move the local file to the Recycle Bin (`move_uploaded_to_recycle_bin` re-hashes the file and only touches files directly in the synced folder), so files do not stay duplicated on the PC.
 - `serverless/horny-grail-app/` is the AWS SAM backend. It defines Lambda handlers, API Gateway HTTP routes, DynamoDB access, sample events, and Jest tests.
 - `docs/` contains project planning notes and improvement tasks.
 - `.junie/` contains IDE/assistant-facing development guidelines.

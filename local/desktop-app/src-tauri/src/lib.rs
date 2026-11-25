@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Cursor};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -209,6 +210,63 @@ fn video_thumbnail(ffmpeg_path: &str, path: &str, max_dimension: Option<u32>, qu
     Ok(bytes)
 }
 
+/// A file the uploader may remove from the PC: where it is, and the hash the server confirmed.
+#[derive(serde::Deserialize)]
+struct UploadedFile {
+    path: String,
+    hash: String,
+}
+
+/// Checks that `path` is a file directly inside `folder` and still hashes to `expected_hash`,
+/// so only the bytes the server confirmed can be removed, and nothing outside the synced folder.
+fn verify_removable(folder: &Path, path: &str, expected_hash: &str) -> Result<PathBuf, String> {
+    let file = fs::canonicalize(path).map_err(|e| format!("{}: {}", path, e))?;
+    if !file.is_file() {
+        return Err(format!("{}: not a file", path));
+    }
+    if file.parent() != Some(folder) {
+        return Err(format!("{}: not inside the synced folder", path));
+    }
+    let actual = sha256_file(path)?;
+    if !actual.eq_ignore_ascii_case(expected_hash) {
+        return Err(format!("{}: changed since it was uploaded", path));
+    }
+    Ok(file)
+}
+
+/// Moves uploaded files from the synced folder to the Recycle Bin. Each file is checked first
+/// (see `verify_removable`); files that fail the check stay where they are. Returns the paths
+/// that were moved and an error per file that was kept.
+#[tauri::command]
+async fn move_uploaded_to_recycle_bin(folder: String, files: Vec<UploadedFile>) -> Result<RecycleResult, String> {
+    run_blocking(move || {
+        let folder = fs::canonicalize(&folder).map_err(|e| format!("synced folder: {}", e))?;
+        let mut result = RecycleResult::default();
+        let mut verified = Vec::new();
+        for file in files {
+            match verify_removable(&folder, &file.path, &file.hash) {
+                Ok(resolved) => verified.push((file.path, resolved)),
+                Err(error) => result.errors.push(error),
+            }
+        }
+        // One call per file, so one locked file does not keep the rest from moving.
+        for (original, resolved) in verified {
+            match trash::delete(&resolved) {
+                Ok(()) => result.moved.push(original),
+                Err(error) => result.errors.push(format!("{}: {}", original, error)),
+            }
+        }
+        Ok(result)
+    })
+    .await
+}
+
+#[derive(serde::Serialize, Default)]
+struct RecycleResult {
+    moved: Vec<String>,
+    errors: Vec<String>,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -216,7 +274,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![compute_sha256_streaming, generate_thumbnail, generate_video_thumbnail])
+        .invoke_handler(tauri::generate_handler![
+            compute_sha256_streaming,
+            generate_thumbnail,
+            generate_video_thumbnail,
+            move_uploaded_to_recycle_bin
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -288,5 +351,56 @@ mod tests {
 
         let err = image_thumbnail(path.to_str().unwrap(), None, None).unwrap_err();
         assert!(err.contains("failed to decode image"), "{err}");
+    }
+
+    // "abc" hashes to this value (see the SHA-256 test vector above).
+    const ABC_HASH: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    fn synced_folder(name: &str) -> PathBuf {
+        let dir = temp_file(name);
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("photo.jpg"), b"abc").unwrap();
+        fs::write(dir.join("sub").join("nested.jpg"), b"abc").unwrap();
+        fs::canonicalize(dir).unwrap()
+    }
+
+    #[test]
+    fn removable_when_inside_the_folder_and_unchanged() {
+        let folder = synced_folder("removable-ok");
+        let path = folder.join("photo.jpg");
+
+        let resolved = verify_removable(&folder, path.to_str().unwrap(), &ABC_HASH.to_uppercase()).unwrap();
+        assert_eq!(resolved, path);
+    }
+
+    #[test]
+    fn keeps_a_file_whose_contents_changed_after_upload() {
+        let folder = synced_folder("removable-changed");
+        let path = folder.join("photo.jpg");
+        fs::write(&path, b"edited").unwrap();
+
+        let err = verify_removable(&folder, path.to_str().unwrap(), ABC_HASH).unwrap_err();
+        assert!(err.contains("changed since it was uploaded"), "{err}");
+    }
+
+    #[test]
+    fn keeps_files_outside_the_synced_folder() {
+        let folder = synced_folder("removable-outside");
+        let nested = folder.join("sub").join("nested.jpg");
+        let escaped = folder.join("sub").join("..").join("..").join("elsewhere.jpg");
+        fs::write(folder.parent().unwrap().join("elsewhere.jpg"), b"abc").unwrap();
+
+        for path in [nested, escaped] {
+            let err = verify_removable(&folder, path.to_str().unwrap(), ABC_HASH).unwrap_err();
+            assert!(err.contains("not inside the synced folder"), "{err}");
+        }
+    }
+
+    #[test]
+    fn keeps_folders_and_missing_files() {
+        let folder = synced_folder("removable-kinds");
+
+        assert!(verify_removable(&folder, folder.join("sub").to_str().unwrap(), ABC_HASH).unwrap_err().contains("not a file"));
+        assert!(verify_removable(&folder, folder.join("gone.jpg").to_str().unwrap(), ABC_HASH).is_err());
     }
 }
