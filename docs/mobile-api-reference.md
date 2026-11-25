@@ -61,9 +61,8 @@ Successful response:
       "randomKey": 0.8
     }
   ],
-  "seed": 0.75,
+  "seed": "3f9c1a07b2e4d815",
   "cursor": "opaque-cursor",
-  "wrapped": false,
   "hasMore": true
 }
 ```
@@ -71,7 +70,7 @@ Successful response:
 Notes:
 
 - `cursor` must be treated as opaque and passed back unchanged
-- `wrapped: true` means the query wrapped from the higher random segment back to the lower one
+- each session (no `cursor`) gets a new shuffle; paging through it shows every item exactly once
 - `items` currently include backend fields such as `status` and `randomKey`; the mobile client should only depend on `id` and `ext`
 
 Common failures:
