@@ -70,7 +70,7 @@ sam deploy --guided
 - Original files are expected at CloudFront path `files/<hash>.<ext>`.
 - Thumbnails are expected at CloudFront path `thumbnails/thumbnail-<hash>.jpeg`.
 - The frontend defaults to same-origin `/api` and `/` for API and media paths. `PUBLIC_API_BASE_URL` and `PUBLIC_CLOUDFRONT_BASE_URL` are optional overrides for non-standard deployments.
-- The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, `WRITE_API_KEY`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters.
+- The serverless app requires `LOOKUP_TABLE`, `CLOUDFRONT_BASE_URL`, `BUCKET_NAME`, `BUCKET_REGION`, and `CORS_ALLOWED_ORIGINS` from runtime env or SAM parameters. Secrets (write key, origin secret, mobile token secret, passphrase hash) are read at runtime from the Secrets Manager secret in `APP_SECRETS_SECRET_ARN` via `src/lib/app-secrets.mjs`; do not reintroduce `{{resolve:secretsmanager}}` env vars on Lambdas.
 - The mobile app requires only `apiBaseUrl` in `mobile.private.json`. It holds no API key: browse and upload both use the bearer session from the passphrase login, and the upload queue pauses while the vault is locked.
 - Upload, metadata, and integrity routes accept either the desktop `x-api-key` or a mobile session token. Delete stays desktop-key only.
 - Presigned uploads of originals carry `x-amz-checksum-sha256` derived from the id, so S3 rejects bodies that do not hash to their id. Clients must send the headers returned by `/api/uploads/sign`.
