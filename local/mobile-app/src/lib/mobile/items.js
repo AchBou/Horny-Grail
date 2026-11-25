@@ -67,6 +67,7 @@ export function createMediaView(item) {
 
   return {
     ...normalized,
+    tags: Array.isArray(item?.tags) ? item.tags.filter((tag) => typeof tag === 'string') : [],
     thumbnailUrl,
     fileUrl,
     detailUrl: `/image/${normalized.id}`

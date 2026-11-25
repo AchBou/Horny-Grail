@@ -8,11 +8,21 @@
    *   loadingMore: boolean,
    *   hasMore: boolean,
    *   sentinel?: HTMLElement,
+   *   tagSummary?: { tags: { tag: string, count: number }[], total: number, untagged: number } | null,
+   *   filter: { tags: string[], untagged: boolean },
+   *   onToggleTag: (tag: string) => void,
+   *   onShowAll: () => void,
+   *   onShowUntagged: () => void,
    *   onRefresh: () => void,
    *   onAdd: () => void
    * }}
    */
-  let { summary, loading, error, items, loadingMore, hasMore, sentinel = $bindable(), onRefresh, onAdd } = $props();
+  let {
+    summary, loading, error, items, loadingMore, hasMore, sentinel = $bindable(),
+    tagSummary = null, filter, onToggleTag, onShowAll, onShowUntagged, onRefresh, onAdd
+  } = $props();
+
+  const isFiltered = $derived(filter.untagged || filter.tags.length > 0);
 </script>
 
 <section class="browse-top">
@@ -32,6 +42,25 @@
   </div>
 </section>
 
+{#if tagSummary && (tagSummary.tags.length > 0 || isFiltered)}
+  <nav class="tag-bar" aria-label="Filter by tag">
+    <button class="tag-chip" class:selected={!isFiltered} type="button" aria-pressed={!isFiltered} onclick={onShowAll}>
+      All <span class="tag-count">{tagSummary.total}</span>
+    </button>
+    {#if tagSummary.untagged > 0 || filter.untagged}
+      <button class="tag-chip dashed" class:selected={filter.untagged} type="button" aria-pressed={filter.untagged} onclick={onShowUntagged}>
+        Untagged <span class="tag-count">{tagSummary.untagged}</span>
+      </button>
+    {/if}
+    {#each tagSummary.tags as entry (entry.tag)}
+      {@const selected = filter.tags.includes(entry.tag)}
+      <button class="tag-chip" class:selected type="button" aria-pressed={selected} onclick={() => onToggleTag(entry.tag)}>
+        {entry.tag} <span class="tag-count">{entry.count}</span>
+      </button>
+    {/each}
+  </nav>
+{/if}
+
 {#if loading}
   <section class="gallery-grid skeleton-grid" aria-label="Loading gallery">
     {#each Array(8) as _}
@@ -43,6 +72,11 @@
     <h2>Could not load the gallery.</h2>
     <p>{error}</p>
     <button class="primary-button" type="button" onclick={onRefresh}>Try Again</button>
+  </section>
+{:else if items.length === 0 && isFiltered}
+  <section class="empty-state">
+    <h2>{filter.untagged ? 'Everything is tagged.' : 'Nothing has all of these tags.'}</h2>
+    <button class="primary-button" type="button" onclick={onShowAll}>Show everything</button>
   </section>
 {:else if items.length === 0}
   <section class="empty-state">
@@ -185,6 +219,45 @@
 
   .footer-note {
     text-align: center;
+  }
+
+  .tag-bar {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding: 0.1rem 0.05rem 0.5rem;
+    margin-bottom: 0.2rem;
+    scrollbar-width: none;
+  }
+
+  .tag-chip {
+    flex: 0 0 auto;
+    padding: 0.42rem 0.75rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: inherit;
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid var(--stroke-soft);
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .tag-chip.dashed:not(.selected) {
+    border-style: dashed;
+  }
+
+  .tag-chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .tag-count {
+    margin-left: 0.15rem;
+    font-weight: 500;
+    opacity: 0.7;
   }
 
   .scroll-sentinel {

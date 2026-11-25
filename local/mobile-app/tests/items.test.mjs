@@ -15,6 +15,15 @@ test('turns browse items into views with signed URLs and a detail link', () => {
   assert.equal(view.fileUrl, 'https://s3/file');
   assert.equal(view.thumbnailUrl, 'https://s3/thumb');
   assert.equal(view.detailUrl, `/image/${id}`);
+  assert.deepEqual(view.tags, []);
+});
+
+test('keeps an item\'s tags and drops anything that is not text', () => {
+  const [view] = normalizeMediaViews([
+    { id, ext: 'jpg', fileUrl: 'f', thumbnailUrl: 't', tags: ['beach', 3, null, 'sun'] }
+  ]);
+
+  assert.deepEqual(view.tags, ['beach', 'sun']);
 });
 
 test('drops items the app cannot display', () => {

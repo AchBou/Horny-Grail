@@ -15,6 +15,14 @@
   import { createMediaView, normalizeMediaViews } from '$lib/mobile/items.js';
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
   import { onAppLock, startAppLock } from '$lib/mobile/appLock.js';
+  import { getBrowseFilter, setBrowseFilter } from '$lib/mobile/browseFilter.js';
+  import { goto } from '$app/navigation';
+
+  // Tapping a tag opens browse filtered to that tag.
+  function browseTag(tag) {
+    setBrowseFilter({ tags: [tag] });
+    goto('/?browse=1');
+  }
 
   const NEXT_MEDIA_PAGE_SIZE = 6;
   const NEXT_MEDIA_ATTEMPTS = 3;
@@ -145,7 +153,8 @@
 
   async function findRandomNextMedia(excludeId, signal) {
     for (let attempt = 0; attempt < NEXT_MEDIA_ATTEMPTS; attempt += 1) {
-      const payload = await fetchRandomBrowsePage(null, NEXT_MEDIA_PAGE_SIZE, { signal });
+      // Stay inside the tag filter chosen in browse, if any.
+      const payload = await fetchRandomBrowsePage(null, NEXT_MEDIA_PAGE_SIZE, { signal, filter: getBrowseFilter() });
       const candidate = normalizeMediaViews(payload).find((item) => item.id && item.id !== excludeId);
 
       if (candidate) {
@@ -468,6 +477,16 @@
           <div>
             <dt>Date</dt>
             <dd>{media.dateAdded || 'Unknown'}</dd>
+          </div>
+          <div>
+            <dt>Tags</dt>
+            <dd class="detail-tags">
+              {#each media.tags || [] as tag (tag)}
+                <button class="detail-tag" type="button" on:click={() => browseTag(tag)}>{tag}</button>
+              {:else}
+                None yet
+              {/each}
+            </dd>
           </div>
         </dl>
 
@@ -794,6 +813,24 @@
     overflow-wrap: anywhere;
     font-size: 0.8rem;
     line-height: 1.28;
+  }
+
+  .detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .detail-tag {
+    padding: 0.28rem 0.65rem;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #fff9f3;
+    background: rgba(255, 199, 159, 0.16);
+    border: 1px solid rgba(255, 199, 159, 0.4);
+    border-radius: 999px;
+    cursor: pointer;
   }
 
   .repair {

@@ -176,14 +176,27 @@ export function createMobileReadSession(code, { signal = null } = {}) {
   }, { retries: 1 });
 }
 
-export function fetchRandomBrowsePage(cursor = null, limit = 18, { signal = null } = {}) {
+export function fetchRandomBrowsePage(cursor = null, limit = 18, { signal = null, filter = null } = {}) {
   const url = new URL(buildApiUrl('/mobile/browse/random'));
   url.searchParams.set('limit', String(limit));
   if (cursor) {
     url.searchParams.set('cursor', cursor);
   }
+  if (filter?.untagged) {
+    url.searchParams.set('untagged', '1');
+  } else if (filter?.tags?.length) {
+    url.searchParams.set('tags', filter.tags.join(','));
+  }
 
   return requestJson(url.toString(), {
+    signal,
+    headers: readHeaders()
+  }, { retries: 2 });
+}
+
+/** Every tag with its item count, plus how many items have none. Read-only on the phone. */
+export function fetchTagSummary({ signal = null } = {}) {
+  return requestJson(buildApiUrl('/mobile/tags'), {
     signal,
     headers: readHeaders()
   }, { retries: 2 });

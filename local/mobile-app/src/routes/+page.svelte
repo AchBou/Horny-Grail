@@ -9,10 +9,12 @@
     createMobileReadSession,
     describeAccessError,
     fetchRandomBrowsePage,
+    fetchTagSummary,
     isAbortError,
     isUnauthorizedError,
     fetchItemById
   } from '$lib/mobile/api.js';
+  import { getBrowseFilter, setBrowseFilter, toggleBrowseTag } from '$lib/mobile/browseFilter.js';
   import { normalizeMediaViews } from '$lib/mobile/items.js';
   import { clearReadSession, getReadSession, saveReadSession } from '$lib/mobile/readSession.js';
   import { deleteNativeMedia, pickNativeMedia } from '$lib/mobile/media.js';
@@ -36,6 +38,8 @@
   let browseObserver;
   let observedBrowseSentinel = null;
   let browseAbortController = null;
+  let browseFilter = getBrowseFilter();
+  let tagSummary = null;
   let hasReadSession = false;
   let accessCode = '';
   let accessSubmitting = false;
@@ -197,12 +201,16 @@
       browseItems = [];
       browseCursor = null;
       browseHasMore = false;
+      void loadTagSummary();
     } else {
       browseLoadingMore = true;
     }
 
     try {
-      const payload = await fetchRandomBrowsePage(cursor, BROWSE_PAGE_SIZE, { signal: controller.signal });
+      const payload = await fetchRandomBrowsePage(cursor, BROWSE_PAGE_SIZE, {
+        signal: controller.signal,
+        filter: browseFilter
+      });
       appendBrowseItems(payload?.items || []);
       browseCursor = payload?.cursor || null;
       browseHasMore = Boolean(payload?.hasMore);
@@ -231,6 +239,22 @@
     }
   }
 
+  async function loadTagSummary() {
+    try {
+      tagSummary = await fetchTagSummary();
+    } catch (error) {
+      if (!isAbortError(error)) {
+        console.warn('Failed to load tags', error);
+      }
+    }
+  }
+
+  // Changing the tag filter starts a new shuffle limited to the matching items.
+  function applyBrowseFilter(next) {
+    browseFilter = next;
+    loadBrowsePage(null);
+  }
+
   // IntersectionObserver only fires when visibility changes. If the sentinel is still on
   // screen after a page renders, load the next page instead of waiting for a scroll.
   async function loadMoreBrowseIfSentinelVisible() {
@@ -255,6 +279,7 @@
     accessError = message;
     browseError = null;
     browseItems = [];
+    tagSummary = null;
     browseCursor = null;
     browseHasMore = false;
     browseLoading = false;
@@ -590,6 +615,11 @@
       lockVault('Locked after you left the app. Enter the code to continue.');
     });
     hasReadSession = Boolean(getReadSession());
+    // A tag tapped on the detail page comes back here as /?browse=1 with the filter set.
+    if (new URLSearchParams(window.location.search).get('browse') === '1') {
+      homeMode = 'browse';
+      hasBrowseIntent = true;
+    }
     browseObserver = new IntersectionObserver((entries) => {
       const [entry] = entries;
       if (!entry?.isIntersecting || browseLoading || browseLoadingMore || !browseHasMore || !browseCursor) {
@@ -748,6 +778,11 @@
           loadingMore={browseLoadingMore}
           hasMore={browseHasMore}
           bind:sentinel={browseSentinel}
+          {tagSummary}
+          filter={browseFilter}
+          onToggleTag={(tag) => applyBrowseFilter(toggleBrowseTag(tag))}
+          onShowAll={() => applyBrowseFilter(setBrowseFilter({}))}
+          onShowUntagged={() => applyBrowseFilter(setBrowseFilter({ untagged: true }))}
           onRefresh={retryBrowse}
           onAdd={() => { openUpload(); openPicker(); }}
         />
