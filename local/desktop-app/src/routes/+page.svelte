@@ -14,6 +14,7 @@
   import TagEditor from "$lib/components/TagEditor.svelte";
   import WatchView from "$lib/components/WatchView.svelte";
   import { openPath } from "@tauri-apps/plugin-opener";
+  import { requestVideoPreview } from "$lib/functions/videoPreview.js";
   import { join } from "@tauri-apps/api/path";
 
 
@@ -169,6 +170,29 @@
   function canPreview(file: { name: string; path: string }): boolean {
     const ext = getFileExt(file.name);
     return !isVideoExt(ext) && ext !== 'tif' && ext !== 'tiff' && !previewFailed[file.path];
+  }
+
+  // Video rows show a frame from the file once the row scrolls into view.
+  let videoPreviews = $state<{[path: string]: string}>({});
+  let videoPreviewFailed = $state<{[path: string]: boolean}>({});
+
+  function isVideoFile(name: string): boolean {
+    return isVideoExt(getFileExt(name));
+  }
+
+  function lazyVideoPreview(node: HTMLElement, file: { path: string; modifiedAt?: number }) {
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      requestVideoPreview(file.path, file.modifiedAt || 0)
+        .then((url) => { videoPreviews[file.path] = url; })
+        .catch((error) => {
+          console.warn("No preview frame for", file.path, error);
+          videoPreviewFailed[file.path] = true;
+        });
+    }, { rootMargin: "300px" });
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
   }
 
   function formatFileDetails(file: FileEntry): string {
@@ -999,6 +1023,8 @@
       <div class="now-uploading" aria-live="polite">
         {#if canPreview(currentUpload)}
           <img class="now-uploading-preview" src={convertFileSrc(currentUpload.path)} alt="" decoding="async" />
+        {:else if videoPreviews[currentUpload.path]}
+          <img class="now-uploading-preview" src={videoPreviews[currentUpload.path]} alt="" decoding="async" />
         {:else}
           <span class="now-uploading-preview file-preview-icon">{getIconForFile(currentUpload.name)}</span>
         {/if}
@@ -1049,6 +1075,13 @@
                     decoding="async"
                     onerror={() => previewFailed[file.path] = true}
                   />
+                {:else if isVideoFile(file.name) && videoPreviews[file.path]}
+                  <span class="video-preview">
+                    <img class="file-preview" src={videoPreviews[file.path]} alt="" decoding="async" />
+                    <span class="video-badge">▶</span>
+                  </span>
+                {:else if isVideoFile(file.name) && !videoPreviewFailed[file.path]}
+                  <span class="file-preview file-preview-icon" use:lazyVideoPreview={file} title="Loading a frame…">{getIconForFile(file.name)}</span>
                 {:else}
                   <span class="file-preview file-preview-icon" title={getFileExt(file.name).toUpperCase()}>{getIconForFile(file.name)}</span>
                 {/if}
@@ -1479,6 +1512,24 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+  }
+
+  .video-preview {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .video-badge {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    padding: 0 0.25rem;
+    font-size: 0.6rem;
+    line-height: 1.3;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.65);
+    border-radius: 3px;
   }
 
   .row-tags {
