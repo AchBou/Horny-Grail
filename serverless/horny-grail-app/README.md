@@ -103,8 +103,6 @@ Matching SAM parameters:
 - `CloudFrontCookieResource`
 - `AllowedCorsOrigins`
 - `LoginGlobalFailuresPerHour` (default `20`)
-- `BudgetAlertEmail` (optional; empty skips the budget)
-- `MonthlyBudgetUsd` (default `5`)
 
 Notes:
 
@@ -130,7 +128,6 @@ Notes:
 - `CloudFrontPublicKeyParameterName` points to an SSM parameter containing the PEM public key CloudFront uses to verify signed cookies.
 - `CloudFrontPrivateKeySecretArn` points to a Secrets Manager secret containing the matching PEM private key.
 - `AccessCookieTtlSeconds` defaults to `3600` seconds, which keeps a successful web session for 1 hour.
-- `BudgetAlertEmail` creates an AWS Budget that emails when actual spend passes 80% of `MonthlyBudgetUsd`, or forecast spend passes 100%.
 - `CloudFrontCookieResource` defaults to `https://*/*` to avoid deployment ordering problems. After deployment, you can restrict it to the protected distribution domain and redeploy.
 
 ## Local Development

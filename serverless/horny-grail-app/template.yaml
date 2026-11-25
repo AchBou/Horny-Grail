@@ -65,18 +65,6 @@ Parameters:
     Description: Wrong access codes per hour (from anyone) before every login pauses for an hour
     Default: 20
     MinValue: 1
-  BudgetAlertEmail:
-    Type: String
-    Description: Email address for the monthly AWS budget alert. Leave empty to skip creating the budget.
-    Default: ''
-  MonthlyBudgetUsd:
-    Type: Number
-    Description: Monthly AWS spend (USD) that triggers the budget alert email
-    Default: 5
-    MinValue: 1
-
-Conditions:
-  HasBudgetAlertEmail: !Not [!Equals [!Ref BudgetAlertEmail, '']]
 
 Resources:
   # Data store for image metadata and randomized browse.
@@ -122,36 +110,6 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: expiresAt
         Enabled: true
-
-  # Emails when monthly AWS spend is on track to pass MonthlyBudgetUsd.
-  MonthlyCostBudget:
-    Type: AWS::Budgets::Budget
-    Condition: HasBudgetAlertEmail
-    Properties:
-      Budget:
-        BudgetName: !Sub ${AWS::StackName}-monthly-cost
-        BudgetType: COST
-        TimeUnit: MONTHLY
-        BudgetLimit:
-          Amount: !Ref MonthlyBudgetUsd
-          Unit: USD
-      NotificationsWithSubscribers:
-      - Notification:
-          NotificationType: ACTUAL
-          ComparisonOperator: GREATER_THAN
-          Threshold: 80
-          ThresholdType: PERCENTAGE
-        Subscribers:
-        - SubscriptionType: EMAIL
-          Address: !Ref BudgetAlertEmail
-      - Notification:
-          NotificationType: FORECASTED
-          ComparisonOperator: GREATER_THAN
-          Threshold: 100
-          ThresholdType: PERCENTAGE
-        Subscribers:
-        - SubscriptionType: EMAIL
-          Address: !Ref BudgetAlertEmail
 
   ProtectedReadStaticCachePolicy:
     Type: AWS::CloudFront::CachePolicy
