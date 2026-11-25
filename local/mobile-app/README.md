@@ -19,8 +19,7 @@ Private Capacitor + SvelteKit mobile client for browsing and uploading HornyGrai
 - Single media detail route at `/image/[id]`.
 - Native Android media selection preserves eligible MediaStore URIs for optional system-confirmed deletion after upload; web builds use the standard file picker.
 - SHA-256 duplicate detection over original bytes.
-- Browse/detail integrity checks through authenticated `GET /api/mobile/assets/{id}/integrity`.
-- Upload integrity checks through `GET /api/assets/{id}/integrity` with the write API key.
+- Integrity checks (duplicates and repair) through `GET /api/assets/{id}/integrity` with the passphrase session.
 - Presigned original and thumbnail uploads through `POST /api/uploads/sign`.
 - Metadata registration through `POST /api/`.
 - Per-file upload states with retry, repair, cancellation, and duplicate outcomes.
