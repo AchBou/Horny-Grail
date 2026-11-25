@@ -220,3 +220,73 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{ImageFormat, Rgba, RgbaImage};
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    fn temp_file(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("horny-grail-tests-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
+    }
+
+    #[test]
+    fn sha256_matches_the_standard_test_vector() {
+        let path = temp_file("abc.txt");
+        File::create(&path).unwrap().write_all(b"abc").unwrap();
+
+        let hex = sha256_file(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(hex, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn sha256_streams_files_larger_than_its_buffer() {
+        // 9 MiB of a repeating pattern spans several 4 MiB reads.
+        let path = temp_file("large.bin");
+        let data: Vec<u8> = (0..9 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+        fs::write(&path, &data).unwrap();
+
+        let expected = hex::encode(Sha256::digest(&data));
+
+        let actual = sha256_file(path.to_str().unwrap()).unwrap();
+        let _ = fs::remove_file(&path);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn sha256_reports_a_missing_file() {
+        let err = sha256_file(temp_file("does-not-exist").to_str().unwrap()).unwrap_err();
+        assert!(err.contains("failed to open file"), "{err}");
+    }
+
+    #[test]
+    fn thumbnail_is_a_square_jpeg_with_transparency_flattened_to_white() {
+        // A wide, fully transparent PNG: the thumbnail must be square and white, not black.
+        let path = temp_file("wide.png");
+        RgbaImage::from_pixel(400, 100, Rgba([0, 0, 0, 0]))
+            .save_with_format(&path, ImageFormat::Png)
+            .unwrap();
+
+        let bytes = image_thumbnail(path.to_str().unwrap(), Some(64), Some(90)).unwrap();
+        let thumb = image::load_from_memory_with_format(&bytes, ImageFormat::Jpeg).unwrap().to_rgb8();
+
+        assert_eq!(&bytes[..2], &[0xFF, 0xD8], "JPEG magic");
+        assert_eq!(thumb.dimensions(), (64, 64));
+        let centre = thumb.get_pixel(32, 32);
+        assert!(centre.0.iter().all(|c| *c > 240), "expected white, got {:?}", centre.0);
+    }
+
+    #[test]
+    fn thumbnail_rejects_files_that_are_not_images() {
+        let path = temp_file("not-an-image.png");
+        fs::write(&path, b"plain text").unwrap();
+
+        let err = image_thumbnail(path.to_str().unwrap(), None, None).unwrap_err();
+        assert!(err.contains("failed to decode image"), "{err}");
+    }
+}
