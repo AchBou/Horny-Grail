@@ -106,6 +106,7 @@ Do not commit real AWS credentials, local `.env` files, generated SAM build fold
 - Keep WebM thumbnail generation native when possible. `generate_video_thumbnail` uses the locally ensured ffmpeg binary and should remain the primary video path; browser/canvas generation is only a fallback.
 - Be careful changing S3 object key formats. Frontend, desktop uploader, and serverless handlers all assume the current `files/` and `thumbnails/` layout.
 - Keep SAM handlers compatible with HTTP API v2 events. Existing handlers read the method from either `event.httpMethod` or `event.requestContext.http.method`.
+- The backend runs three Lambdas (`AuthFunction`, `ReadFunction`, `WriteFunction`) that route by `event.routeKey`. A new route needs an `HttpApi` event in `template.yaml` and an entry in the matching `src/functions/*.mjs` route table; a unit test checks they match. Do not add per-route Lambdas back.
 - Do not reintroduce deleted legacy backend scripts unless there is a specific migration reason.
 
 ## Verification Expectations

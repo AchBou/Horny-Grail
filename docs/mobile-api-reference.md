@@ -1,8 +1,8 @@
 # Mobile API Reference
 
-This document describes the backend endpoints the private mobile client should use today. It is intentionally concise and matches the current handlers in `serverless/horny-grail-app/`.
+The endpoints the private mobile app (`local/mobile-app/`) calls. Handlers live in `serverless/horny-grail-app/`; the route tables are in `src/functions/*.mjs`.
 
-Base URL:
+Base URL (the `apiBaseUrl` in `mobile.private.json`):
 
 ```text
 https://<api-id>.execute-api.<region>.amazonaws.com/api
@@ -10,46 +10,44 @@ https://<api-id>.execute-api.<region>.amazonaws.com/api
 
 ## Conventions
 
-- Canonical image/video identifier: `id`
-- `id` must be a 64-character hex SHA-256 string
-- Public reads do not require authentication
-- Write endpoints require:
+- `id` is the file's SHA-256 as 64 hex characters.
+- Every call except login sends the session from `POST /auth/mobile/session`:
 
 ```http
-x-api-key: <write-api-key>
+Authorization: Bearer <token>
 ```
 
-- Media is served from CloudFront, not from these API endpoints directly
-- All non-2xx JSON error responses now use:
+- The app holds no permanent key. A `401` means the session expired or the vault was locked: show the unlock screen; the upload queue pauses until the next login.
+- Errors are JSON with a stable `code` and a display `message`. Branch on the HTTP status, then on `code`:
 
 ```json
-{
-  "code": "bad_request",
-  "message": "Human-readable explanation"
-}
+{ "code": "bad_request", "message": "Invalid image id" }
 ```
 
-- The mobile client should branch on HTTP status first, then use `code` for stable logic and `message` for UI text
+## POST `/auth/mobile/session`
 
-## GET `/browse/random`
-
-Returns one randomized browse page.
-
-Query parameters:
-
-- `limit`
-  Allowed range: `1` to `48`
-  Default: `24`
-- `cursor`
-  Opaque cursor returned by the previous page
-
-Example request:
+Exchanges the passphrase for a 1-hour session. The passphrase is case-insensitive and ignores extra spaces.
 
 ```http
-GET /api/browse/random?limit=24
+POST /auth/mobile/session
+Content-Type: application/json
+
+{ "code": "four random words here" }
 ```
 
-Successful response:
+```json
+{ "token": "<payload>.<signature>", "expiresAt": 1795598353 }
+```
+
+Failures:
+
+- `401` wrong passphrase
+- `429` logins paused after too many wrong attempts (from anyone); `Retry-After` gives the seconds left
+- `503` the login limiter is unavailable, so logins fail closed
+
+## GET `/mobile/browse/random`
+
+One page of a per-session shuffle. Query: `limit` (1 to 48, default 24) and `cursor` from the previous page.
 
 ```json
 {
@@ -57,8 +55,8 @@ Successful response:
     {
       "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "ext": "jpg",
-      "status": "active",
-      "randomKey": 0.8
+      "fileUrl": "https://<bucket>.s3.<region>.amazonaws.com/files/...?X-Amz-...",
+      "thumbnailUrl": "https://<bucket>.s3.<region>.amazonaws.com/thumbnails/...?X-Amz-..."
     }
   ],
   "seed": "3f9c1a07b2e4d815",
@@ -67,125 +65,17 @@ Successful response:
 }
 ```
 
-Notes:
+- Treat `cursor` as opaque. A request without one starts a new shuffle; paging through it shows every item exactly once, even if uploads happen meanwhile.
+- `fileUrl` and `thumbnailUrl` are presigned and expire after `MobileSignedUrlTtlSeconds` (15 minutes by default). Fetch the page again for fresh URLs.
+- Failures: `400` invalid `limit` or `cursor`, `401`.
 
-- `cursor` must be treated as opaque and passed back unchanged
-- each session (no `cursor`) gets a new shuffle; paging through it shows every item exactly once
-- `items` currently include backend fields such as `status` and `randomKey`; the mobile client should only depend on `id` and `ext`
+## GET `/mobile/{id}`
 
-Common failures:
-
-- `400` invalid `limit`
-- `400` invalid `cursor`
-- `405` non-`GET` request
-- `500` browse failure
-
-## GET `/get-random-image`
-
-Returns one random active item and its public CloudFront file URL.
-
-Example request:
-
-```http
-GET /api/get-random-image
-```
-
-Successful response:
-
-```json
-{
-  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "ext": "jpg",
-  "url": "https://example.cloudfront.net/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
-}
-```
-
-Common failures:
-
-- `404` no active items
-- `405` non-`GET` request
-- `500` lookup failure
-
-## GET `/{id}`
-
-Returns metadata for one item by canonical hash.
-
-Example request:
-
-```http
-GET /api/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-```
-
-Successful response:
-
-```json
-{
-  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "ext": "jpg",
-  "date": "2026-06-24T18:00:00.000Z",
-  "status": "active",
-  "randomKey": 0.42
-}
-```
-
-If the item does not exist, the current handler returns:
-
-```json
-null
-```
-
-Common failures:
-
-- `400` invalid `id`
-- `405` non-`GET` request
-- `500` lookup failure
-
-Client note:
-
-- Build the public original URL as `files/<id>.<ext>` under the configured CloudFront base URL
-- Build the public thumbnail URL as `thumbnails/thumbnail-<id>.jpeg` under the configured CloudFront base URL
+One item with presigned `fileUrl` and `thumbnailUrl`, in the same shape as a browse item. Failures: `400` invalid `id`, `401`, `404` no such item.
 
 ## GET `/assets/{id}/integrity`
 
-Checks whether metadata, original, and thumbnail all exist.
-
-Example request:
-
-```http
-GET /api/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/integrity
-```
-
-Response when everything exists:
-
-```json
-{
-  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "metadataExists": true,
-  "originalExists": true,
-  "thumbnailExists": true,
-  "repairRequired": false,
-  "missing": [],
-  "item": {
-    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "ext": "jpg"
-  }
-}
-```
-
-Response when metadata does not exist:
-
-```json
-{
-  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "metadataExists": false,
-  "originalExists": false,
-  "thumbnailExists": false,
-  "repairRequired": false,
-  "missing": []
-}
-```
-
-Response when repair is needed:
+Whether the metadata, the original and the thumbnail exist. Used before uploading (duplicates) and to repair partial uploads.
 
 ```json
 {
@@ -195,31 +85,15 @@ Response when repair is needed:
   "thumbnailExists": false,
   "repairRequired": true,
   "missing": ["thumbnail"],
-  "item": {
-    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "ext": "png"
-  }
+  "item": { "id": "aaaa...", "ext": "png" }
 }
 ```
 
-Common failures:
-
-- `400` invalid `id`
-- `405` non-`GET` request
-- `500` integrity check failure
+When nothing is registered, `metadataExists` is `false`, `missing` is empty and there is no `item`.
 
 ## POST `/uploads/sign`
 
-Issues a presigned S3 upload URL for either an original file or a JPEG thumbnail.
-
-Required headers:
-
-```http
-Content-Type: application/json
-x-api-key: <write-api-key>
-```
-
-Required JSON body:
+A presigned S3 `PUT` URL for an original or a thumbnail.
 
 ```json
 {
@@ -231,123 +105,42 @@ Required JSON body:
 }
 ```
 
-Successful response:
-
 ```json
 {
-  "uploadUrl": "https://example.com/upload",
-  "key": "files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webm",
+  "uploadUrl": "https://<bucket>.s3.<region>.amazonaws.com/files/aaaa....webm?X-Amz-...",
+  "key": "files/aaaa....webm",
   "headers": {
-    "Content-Type": "video/webm"
+    "Content-Type": "video/webm",
+    "x-amz-checksum-sha256": "<the id as base64>"
   }
 }
 ```
 
-Client rules:
-
-- Use `path: "files"` for originals
-- Use `path: "thumbnails"` for thumbnails
-- Thumbnails must use `ext: "jpeg"` and `contentType: "image/jpeg"`
-- Include every returned header exactly in the following S3 `PUT`
-
-For the full supported extension list, MIME rules, and size limits, use `docs/upload-contract.md`.
-
-Common failures:
-
-- `400` invalid body, `id`, extension, MIME type, or size
-- `401` missing or incorrect API key
-- `405` non-`POST` request
-- `500` signing failure
+- `path` is `files` for originals and `thumbnails` for thumbnails; thumbnails use `ext: "jpeg"` and `contentType: "image/jpeg"`.
+- Send every returned header unchanged with the `PUT`. For originals, S3 rejects a body whose SHA-256 is not the `id`.
+- Extensions, MIME types and size limits: `docs/upload-contract.md`.
+- Failures: `400` invalid body, `401`.
 
 ## POST `/`
 
-Registers or updates metadata after original and thumbnail uploads succeed.
-
-Required headers:
-
-```http
-Content-Type: application/json
-x-api-key: <write-api-key>
-```
-
-Required JSON body:
+Registers an item once its original and thumbnail are both in S3.
 
 ```json
-{
-  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "ext": "webm"
-}
+{ "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "ext": "webm" }
 ```
 
-Successful response:
+Returns the stored item (`id`, `ext`, `date`, `status`, `randomKey`). Registering an existing id returns it unchanged.
 
-```json
-{
-  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "ext": "webm",
-  "date": "2026-06-24T18:00:00.000Z",
-  "status": "active",
-  "randomKey": 0.42
-}
-```
+Failures:
 
-Notes:
+- `400` invalid `id` or `ext`, or the id is already registered with another extension
+- `401`
+- `409` a file is missing, with `"missing": ["original"]`, `["thumbnail"]` or both; upload it, then register again
 
-- The backend sets `status: "active"`
-- The backend generates `randomKey`
-- The client should treat the returned `date` and `randomKey` as informational
+## Upload sequence
 
-Common failures:
-
-- `400` invalid JSON, `id`, or extension
-- `401` missing or incorrect API key
-- `405` non-`POST` request
-- `500` metadata write failure
-
-## Standard Error Examples
-
-Bad request:
-
-```json
-{
-  "code": "bad_request",
-  "message": "Invalid image id"
-}
-```
-
-Unauthorized:
-
-```json
-{
-  "code": "unauthorized",
-  "message": "Unauthorized"
-}
-```
-
-Not found:
-
-```json
-{
-  "code": "not_found",
-  "message": "No active images found"
-}
-```
-
-Server error:
-
-```json
-{
-  "code": "internal_server_error",
-  "message": "Failed to create upload URL"
-}
-```
-
-## Recommended Mobile Upload Sequence
-
-1. Compute SHA-256 and use it as `id`
-2. Call `GET /assets/{id}/integrity`
-3. If metadata and both assets already exist, skip as duplicate
-4. If the original is missing, call `POST /uploads/sign` and upload the original to S3
-5. If the thumbnail is missing, generate a JPEG thumbnail, call `POST /uploads/sign`, and upload the thumbnail to S3
-6. Call `POST /` with `{ "id": "<hash>", "ext": "<original-ext>" }`
-7. On failures after any upload, call the integrity endpoint again before retrying so partial successes can be repaired cleanly
+1. Hash the file; the SHA-256 is the `id`.
+2. `GET /assets/{id}/integrity`. If the metadata and both files exist, it is a duplicate.
+3. Upload whatever is missing: `POST /uploads/sign`, then `PUT` to S3 with the returned headers. Do the original, then the thumbnail.
+4. `POST /` with `{ id, ext }`.
+5. After a failure, check integrity again before retrying, so a half-finished upload is completed rather than restarted.

@@ -47,12 +47,17 @@ Maximum thumbnail size: `2097152` bytes.
 
 `POST /api/uploads/sign`
 
-Required headers:
+Required headers (desktop sends the write key, mobile its passphrase session):
 
 ```http
 Content-Type: application/json
 x-api-key: <write-api-key>
+Authorization: Bearer <token from POST /auth/mobile/session>
 ```
+
+Send every header the response returns with the S3 `PUT`. For originals that includes `x-amz-checksum-sha256` (the id as base64), so S3 rejects a body whose SHA-256 is not the id.
+
+After both uploads, `POST /api` with `{ id, ext }` registers the item. It returns `409` with `missing` if the original or thumbnail is not in S3 yet.
 
 Required JSON body:
 

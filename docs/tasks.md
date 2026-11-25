@@ -46,8 +46,9 @@ Backend:
 
 - [x] SAM-managed DynamoDB metadata table
 - [x] `RandomImageIndex` on `status` and `randomKey`
-- [x] Public read endpoints for list, single item, random item, and randomized browse
-- [x] Write endpoints protected by `x-api-key`
+- [x] Passphrase-protected read endpoints for single item, random item, and randomized browse (web cookies, mobile session)
+- [x] Write endpoints accept the desktop `x-api-key` or a mobile session; uploads are checksum-verified by S3
+- [x] Three routed Lambdas (auth, read, write) with secrets read at runtime
 - [x] Presigned S3 upload signing for originals and thumbnails
 - [x] Asset integrity endpoint for repair-aware clients
 - [x] Input validation for ids, extensions, MIME types, and upload size limits
