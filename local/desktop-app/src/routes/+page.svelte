@@ -1,8 +1,9 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import {readDir, watch} from "@tauri-apps/plugin-fs";
+  import { readDir, stat, watch } from "@tauri-apps/plugin-fs";
   import type { UnwatchFn } from "@tauri-apps/plugin-fs";
-  import { onDestroy } from "svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { onDestroy, tick } from "svelte";
   import { registerUploadedFile, uploadFile } from "$lib/functions/uploadFile.js";
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
@@ -15,9 +16,21 @@
     name: string;
     path: string;
     isDirectory: boolean;
+    modifiedAt: number;
+    size: number | null;
   }
 
   type FileCheckStatus = 'pending' | 'done' | 'failed';
+  type FileCategory = 'checking' | 'new' | 'uploaded' | 'repair' | 'failed';
+  type ListTab = 'new' | 'uploaded' | 'repair' | 'failed' | 'all';
+
+  const LIST_TABS: { id: ListTab; label: string; empty: string }[] = [
+    { id: 'new', label: 'New', empty: 'No new files to upload.' },
+    { id: 'uploaded', label: 'Uploaded', empty: 'Nothing from this folder is uploaded yet.' },
+    { id: 'repair', label: 'Needs repair', empty: 'No uploaded files are missing parts.' },
+    { id: 'failed', label: 'Failed', empty: 'No failed checks or uploads.' },
+    { id: 'all', label: 'All', empty: 'No media files in this folder.' }
+  ];
 
   let selectedPath = $state("");
   let files = $state<FileEntry[]>([]);
@@ -42,6 +55,62 @@
   let copiedFilePath = $state("");
   let copiedFileTimeout: number | null = $state(null);
   let scanGeneration = 0;
+  // Date and size per path, so watcher refreshes only stat files that changed.
+  const fileDetailsCache = new Map<string, { modifiedAt: number; size: number | null }>();
+  let activeTab = $state<ListTab>('new');
+  let previewFailed = $state<{[key: string]: boolean}>({});
+  let currentUpload = $state<{ path: string; name: string; index: number; total: number } | null>(null);
+
+  // Which list tab a file belongs to. A file stays in "New" while it uploads, then moves on.
+  function getFileCategory(file: FileEntry): FileCategory {
+    if (uploadStatus[file.path] === 'failed' || fileCheckStatus[file.path] === 'failed') return 'failed';
+    if (fileCheckStatus[file.path] !== 'done') return 'checking';
+    if (fileExists[file.path]) return fileRepairNeeded[file.path] ? 'repair' : 'uploaded';
+    return 'new';
+  }
+
+  const tabCounts = $derived.by(() => {
+    const counts: Record<ListTab, number> = { new: 0, uploaded: 0, repair: 0, failed: 0, all: files.length };
+    for (const file of files) {
+      const category = getFileCategory(file);
+      if (category !== 'checking') counts[category] += 1;
+    }
+    return counts;
+  });
+
+  // Newest first, so files just added to the folder are at the top.
+  const visibleFiles = $derived(
+    files
+      .filter((file) => activeTab === 'all' || getFileCategory(file) === activeTab)
+      .sort((a, b) => b.modifiedAt - a.modifiedAt || a.name.localeCompare(b.name))
+  );
+
+  function canPreview(file: { name: string; path: string }): boolean {
+    const ext = getFileExt(file.name);
+    return !isVideoExt(ext) && ext !== 'tif' && ext !== 'tiff' && !previewFailed[file.path];
+  }
+
+  function formatFileDetails(file: FileEntry): string {
+    const parts: string[] = [];
+    if (file.modifiedAt) {
+      parts.push(new Date(file.modifiedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+    }
+    if (typeof file.size === 'number') {
+      parts.push(file.size >= 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(file.size / 1024))} KB`);
+    }
+    return parts.join(' · ');
+  }
+
+  // Keep the file being uploaded in view.
+  $effect(() => {
+    const path = currentUpload?.path;
+    if (!path) return;
+    tick().then(() => {
+      document.querySelector(`[data-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  });
 
   // Only process and show supported media files.
   const mediaExtensions = ['jpg','jpeg','png','gif','webp','bmp','tiff','tif','webm','mp4'];
@@ -59,7 +128,9 @@
     webp: '🧩',
     bmp: '🧱',
     tiff: '📐',
-    tif: '📐'
+    tif: '📐',
+    webm: '🎬',
+    mp4: '🎬'
   };
 
   function getFileExt(name: string): string {
@@ -108,6 +179,7 @@
     const nextMissingParts = { ...fileMissingParts };
     for (const rawPath of paths) {
       const normalized = rawPath.replace(/\//g, '\\');
+      fileDetailsCache.delete(normalized);
       delete nextHashes[normalized];
       delete nextExists[normalized];
       delete nextStatus[normalized];
@@ -289,8 +361,8 @@
           // Set a new timeout to update files after a delay
           updateTimeout = setTimeout(async () => {
             try {
-              // Reload files when changes are detected
-              await loadFiles(normalizedPath);
+              // Refresh in place: keep the list on screen and only re-check changed files.
+              await loadFiles(normalizedPath, { quiet: true });
               console.log(`Processed ${pendingUpdates} file system events`);
             } catch (timeoutError) {
               console.error("Error in delayed file update:", timeoutError);
@@ -306,8 +378,9 @@
           errorMessage = `Error handling file system event: ${eventErrorMsg}`;
           // Don't stop watching on event errors
         }
-      }, { 
-        recursive: true, // Watch subdirectories
+      }, {
+        recursive: false, // The list only shows this folder's own files
+
         delayMs: 300 // Increased debounce delay for better performance
       });
       
@@ -322,10 +395,12 @@
     }
   }
 
-  async function loadFiles(path: string): Promise<void> {
+  async function loadFiles(path: string, { quiet = false }: { quiet?: boolean } = {}): Promise<void> {
     try {
-      errorMessage = "";
-      isLoading = true;
+      if (!quiet) {
+        errorMessage = "";
+        isLoading = true;
+      }
       scanGeneration += 1;
       const currentGeneration = scanGeneration;
       isScanningMetadata = false;
@@ -350,10 +425,24 @@
         // Normalize to backslashes for Windows
         entryPath = entryPath.replace(/\//g, '\\');
 
+        let details = fileDetailsCache.get(entryPath) || { modifiedAt: 0, size: null as number | null };
+        if (!entry.isDirectory && isMediaFile(entry.name || '') && !fileDetailsCache.has(entryPath)) {
+          try {
+            const info = await stat(entryPath);
+            details = { modifiedAt: info.mtime ? new Date(info.mtime).getTime() : 0, size: info.size };
+            fileDetailsCache.set(entryPath, details);
+          } catch (statError) {
+            console.warn("Could not read file details for", entryPath, statError);
+          }
+        }
+        const { modifiedAt, size } = details;
+
         return {
           name: entry.name || '',
           path: entryPath,
-          isDirectory: entry.isDirectory
+          isDirectory: entry.isDirectory,
+          modifiedAt,
+          size
         };
       }));
       
@@ -377,9 +466,9 @@
       console.error("Error loading files:", error);
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       errorMessage = `Error loading files: ${errorMsg}`;
-      files = [];
+      if (!quiet) files = [];
     } finally {
-      isLoading = false;
+      if (!quiet) isLoading = false;
     }
   }
 
@@ -626,14 +715,27 @@
   async function handleUploadAll(): Promise<void> {
     try {
       errorMessage = "";
-      const eligible = getEligibleFiles();
-      for (const f of eligible) {
+      if (activeTab !== 'all') activeTab = 'new';
+      const eligible = [...getEligibleFiles()].sort((a, b) => b.modifiedAt - a.modifiedAt || a.name.localeCompare(b.name));
+      for (const [index, f] of eligible.entries()) {
+        currentUpload = { path: f.path, name: f.name, index: index + 1, total: eligible.length };
         await handleFileUpload(f);
       }
     } catch (e) {
       console.error("Error in Upload All:", e);
       const msg = e instanceof Error ? e.message : "Unknown error";
       errorMessage = `Upload All failed: ${msg}`;
+    } finally {
+      currentUpload = null;
+    }
+  }
+
+  async function handleSingleUpload(file: FileEntry): Promise<void> {
+    currentUpload = { path: file.path, name: file.name, index: 1, total: 1 };
+    try {
+      await handleFileUpload(file);
+    } finally {
+      if (currentUpload?.path === file.path) currentUpload = null;
     }
   }
 
@@ -716,22 +818,84 @@
       <p class="scan-status">Checking existing files... {scannedMetadataCount}/{totalMetadataCount}</p>
     {/if}
 
+    {#if files.length > 0}
+      <div class="list-tabs" role="tablist" aria-label="Filter files">
+        {#each LIST_TABS as tab (tab.id)}
+          <button
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            class="list-tab"
+            class:selected={activeTab === tab.id}
+            class:alert={tab.id === 'failed' && tabCounts.failed > 0}
+            onclick={() => activeTab = tab.id}
+          >
+            {tab.label} <span class="tab-count">{tabCounts[tab.id]}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    {#if currentUpload}
+      <div class="now-uploading" aria-live="polite">
+        {#if canPreview(currentUpload)}
+          <img class="now-uploading-preview" src={convertFileSrc(currentUpload.path)} alt="" decoding="async" />
+        {:else}
+          <span class="now-uploading-preview file-preview-icon">{getIconForFile(currentUpload.name)}</span>
+        {/if}
+        <div class="now-uploading-text">
+          <span class="now-uploading-label">
+            Uploading {currentUpload.total > 1 ? `${currentUpload.index} of ${currentUpload.total}` : ''}
+          </span>
+          <span class="now-uploading-name" title={currentUpload.name}>{currentUpload.name}</span>
+          {#if currentUpload.total > 1}
+            <div class="now-uploading-progress">
+              <div style={`width: ${((currentUpload.index - 1) / currentUpload.total) * 100}%`}></div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <div class="file-list">
       {#if isLoading}
         <p>Loading files...</p>
       {:else if files.length === 0}
         <p>No files found. Select a folder to view its contents.</p>
+      {:else if visibleFiles.length === 0}
+        <p class="empty-tab">
+          {LIST_TABS.find((tab) => tab.id === activeTab)?.empty}
+          {#if activeTab === 'new' && isScanningMetadata}Still checking the rest of the folder...{/if}
+        </p>
       {:else}
         <ul>
-          {#each files as file}
-            <li class="file-item">
-              <button 
+          {#each visibleFiles as file (file.path)}
+            <li
+              class="file-item"
+              class:active={currentUpload?.path === file.path}
+              class:failed={getFileCategory(file) === 'failed'}
+              data-path={file.path}
+            >
+              <button
                 onclick={() => copyFileName(file)}
                 class="file-button"
                 title={file.isDirectory ? `Open ${file.name}` : `Copy ${file.name}`}
               >
-                <span class="file-icon" title={file.name.split('.').pop()?.toUpperCase()}>{getIconForFile(file.name)}</span>
-                <span class="file-name" title={file.name}>{file.name}</span>
+                {#if canPreview(file)}
+                  <img
+                    class="file-preview"
+                    src={convertFileSrc(file.path)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    onerror={() => previewFailed[file.path] = true}
+                  />
+                {:else}
+                  <span class="file-preview file-preview-icon" title={getFileExt(file.name).toUpperCase()}>{getIconForFile(file.name)}</span>
+                {/if}
+                <span class="file-text">
+                  <span class="file-name" title={file.name}>{file.name}</span>
+                  <span class="file-details">{formatFileDetails(file)}</span>
+                </span>
                 {#if copiedFilePath === file.path}
                   <span class="copied-badge">Copied</span>
                 {/if}
@@ -814,8 +978,8 @@
                     </button>
                   </div>
                 {:else}
-                  <button 
-                    onclick={() => handleFileUpload(file)}
+                  <button
+                    onclick={() => handleSingleUpload(file)}
                     class="upload-button"
                     disabled={isUploading && uploadStatus[file.path] === "uploading"}
                   >
@@ -856,7 +1020,7 @@
 
   .container {
     margin: 0 auto;
-    padding: 2rem;
+    padding: 0.9rem 1.25rem 1rem;
     max-width: 1200px;
     height: 100vh;
     display: flex;
@@ -873,31 +1037,29 @@
   .brand-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+    flex: 0 0 auto;
   }
 
   .brand-logo {
-    width: 4.75rem;
-    height: 4.75rem;
+    width: 2.25rem;
+    height: 2.25rem;
     flex: 0 0 auto;
-    filter: drop-shadow(0 8px 14px rgba(59, 130, 246, 0.18));
+    filter: drop-shadow(0 3px 6px rgba(59, 130, 246, 0.18));
   }
   
   .app-title {
-    font-size: 2.5rem;
+    font-size: 1.35rem;
     font-weight: bold;
     color: #3b82f6;
-    text-align: center;
-    margin-bottom: 0;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-    letter-spacing: 1px;
+    margin: 0;
+    letter-spacing: 0.5px;
     position: relative;
-    padding-bottom: 0.5rem;
   }
   
   .app-title::after {
+    display: none;
     content: "";
     position: absolute;
     bottom: 0;
@@ -909,26 +1071,15 @@
   }
 
   @media (max-width: 720px) {
-    .brand-header {
-      flex-direction: column;
-      gap: 0.55rem;
-      margin-bottom: 1rem;
-    }
-
-    .brand-logo {
-      width: 3.75rem;
-      height: 3.75rem;
-    }
-
     .app-title {
-      font-size: 2rem;
+      font-size: 1.15rem;
     }
   }
 
   .file-explorer {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.6rem;
     border: 1px solid #ddd;
     border-radius: 8px;
     padding: 1rem;
@@ -940,25 +1091,29 @@
 
   .controls {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    gap: 0.5rem 0.75rem;
   }
 
   .control-buttons {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .sync-button,
+  .recheck-button {
+    padding: 0.4em 0.9em;
+    font-size: 0.9rem;
   }
 
   .sync-button {
-    min-width: 150px;
+    min-width: 0;
   }
 
   .recheck-button {
-    min-width: 190px;
+    min-width: 0;
     background-color: #0f766e;
   }
 
@@ -967,29 +1122,29 @@
   }
 
   .selected-path {
+    flex: 1 1 12rem;
+    min-width: 0;
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     color: #666;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     background-color: #f5f5f5;
-    padding: 0.5rem 1rem;
+    padding: 0.35rem 0.7rem;
     border-radius: 6px;
     border: 1px solid #e0e0e0;
-    max-width: 100%;
-    text-align: center;
+    text-align: left;
   }
   
   .watch-status {
-    margin: 0.5rem 0 0;
-    font-size: 0.85rem;
+    margin: 0;
+    font-size: 0.8rem;
     color: #666;
-    text-align: center;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
+    white-space: nowrap;
   }
   
   .watch-status.watching {
@@ -1125,8 +1280,139 @@
     box-shadow: none;
   }
 
-  .file-icon {
+  .file-preview {
     flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    object-fit: cover;
+    background-color: #e5e7eb;
+  }
+
+  .file-preview-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+  }
+
+  .file-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .file-details {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+
+  .file-item.active {
+    background-color: #dbeafe;
+    box-shadow: inset 3px 0 0 #3b82f6;
+    border-radius: 6px;
+  }
+
+  .file-item.failed {
+    background-color: #fee2e2;
+    box-shadow: inset 3px 0 0 #dc2626;
+    border-radius: 6px;
+  }
+
+  .list-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .list-tab {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+    border-radius: 9999px;
+    border: 1px solid #d1d5db;
+    background-color: transparent;
+    color: inherit;
+    box-shadow: none;
+    cursor: pointer;
+  }
+
+  .list-tab.selected {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .list-tab.alert:not(.selected) {
+    border-color: #dc2626;
+    color: #dc2626;
+  }
+
+  .tab-count {
+    margin-left: 0.25rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+  }
+
+  .empty-tab {
+    color: #6b7280;
+  }
+
+  .now-uploading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.6rem;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    background-color: #eff6ff;
+  }
+
+  .now-uploading-preview {
+    flex: 0 0 auto;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
+    object-fit: cover;
+    background-color: #e5e7eb;
+  }
+
+  .now-uploading-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .now-uploading-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #2563eb;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .now-uploading-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .now-uploading-progress {
+    height: 4px;
+    border-radius: 9999px;
+    background-color: #bfdbfe;
+    overflow: hidden;
+  }
+
+  .now-uploading-progress > div {
+    height: 100%;
+    background-color: #2563eb;
+    transition: width 0.3s;
   }
 
   .file-name {
@@ -1382,6 +1668,47 @@
     .bottom-actions {
       border-top-color: #444;
       background-color: #333;
+    }
+
+    .file-preview,
+    .now-uploading-preview {
+      background-color: #3f3f46;
+    }
+
+    .file-details,
+    .empty-tab {
+      color: #9ca3af;
+    }
+
+    .file-item.active {
+      background-color: #1e3a5f;
+    }
+
+    .file-item.failed {
+      background-color: #3a2222;
+    }
+
+    .list-tab {
+      background-color: transparent;
+      border-color: #555;
+    }
+
+    .list-tab.selected {
+      background-color: #3b82f6;
+      border-color: #3b82f6;
+    }
+
+    .now-uploading {
+      background-color: #1e293b;
+      border-color: #1d4ed8;
+    }
+
+    .now-uploading-label {
+      color: #60a5fa;
+    }
+
+    .now-uploading-progress {
+      background-color: #1e3a5f;
     }
   }
 </style>
