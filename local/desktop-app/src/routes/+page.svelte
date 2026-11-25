@@ -10,6 +10,10 @@
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
   import { purgeAssetMetadata } from "$lib/functions/purgeAssetMetadata.js";
   import { moveUploadedToRecycleBin } from "$lib/functions/recycleUploaded.js";
+  import { fetchTagSummary, updateItemTags } from "$lib/functions/tags.js";
+  import TagEditor from "$lib/components/TagEditor.svelte";
+  import WatchView from "$lib/components/WatchView.svelte";
+  import { openPath } from "@tauri-apps/plugin-opener";
   import { join } from "@tauri-apps/api/path";
 
 
@@ -72,6 +76,68 @@
   });
   let isRemoving = $state(false);
   let noticeMessage = $state("");
+
+  // Tags. New files carry the tags typed on their row plus the batch tags until they upload;
+  // files already in the Grail show and edit their saved tags directly.
+  type AppView = 'upload' | 'watch';
+  let appView = $state<AppView>('upload');
+  let batchTags = $state<string[]>([]);
+  let pendingTags = $state<{[path: string]: string[]}>({});
+  let savedTags = $state<{[path: string]: string[]}>({});
+  let tagSuggestions = $state<string[]>([]);
+
+  async function refreshTagSuggestions(): Promise<void> {
+    try {
+      tagSuggestions = (await fetchTagSummary()).tags.map((entry) => entry.tag);
+    } catch (error) {
+      console.warn("Could not load tag suggestions", error);
+    }
+  }
+  void refreshTagSuggestions();
+
+  function rememberTags(tags: string[]): void {
+    const missing = tags.filter((tag) => !tagSuggestions.includes(tag));
+    if (missing.length) tagSuggestions = [...tagSuggestions, ...missing];
+  }
+
+  function tagsForUpload(file: FileEntry): string[] {
+    return [...new Set([...batchTags, ...(pendingTags[file.path] || [])])];
+  }
+
+  function addPendingTags(file: FileEntry, tags: string[]): void {
+    pendingTags[file.path] = [...new Set([...(pendingTags[file.path] || []), ...tags])];
+  }
+
+  function removePendingTag(file: FileEntry, tag: string): void {
+    pendingTags[file.path] = (pendingTags[file.path] || []).filter((value) => value !== tag);
+  }
+
+  async function changeSavedTags(file: FileEntry, change: { add?: string[]; remove?: string[] }): Promise<void> {
+    const hash = fileHashes[file.path];
+    if (!hash) return;
+    // Show the change at once and keep the box usable; saves run in order per item.
+    const before = savedTags[file.path] || [];
+    const removed = new Set(change.remove || []);
+    savedTags[file.path] = [
+      ...before.filter((tag) => !removed.has(tag)),
+      ...(change.add || []).filter((tag) => !before.includes(tag))
+    ];
+    rememberTags(change.add || []);
+    try {
+      savedTags[file.path] = await updateItemTags(hash, change);
+    } catch (error) {
+      savedTags[file.path] = before;
+      errorMessage = `Could not save tags for ${file.name}: ${getErrorDetail(error)}`;
+    }
+  }
+
+  async function openLocalFile(file: FileEntry): Promise<void> {
+    try {
+      await openPath(file.path);
+    } catch (error) {
+      errorMessage = `Could not open ${file.name}: ${getErrorDetail(error)}`;
+    }
+  }
 
   // Files that are uploaded and complete in the Grail, so they can leave this PC.
   const removableFiles = $derived(files.filter((file) => getFileCategory(file) === 'uploaded' && fileHashes[file.path]));
@@ -251,6 +317,7 @@
           fileCheckStatus[f.path] = 'done';
           fileRepairNeeded[f.path] = Boolean(exists && integrity?.repairRequired);
           fileMissingParts[f.path] = Array.isArray(integrity?.missing) ? integrity.missing : [];
+          savedTags[f.path] = Array.isArray(integrity?.item?.tags) ? integrity.item.tags : [];
         } catch (e) {
           console.error('Existence check failed for', f.path, e);
           if (generation !== scanGeneration) return;
@@ -520,7 +587,11 @@
           throw thumbnailError;
         }
       }
-      await registerUploadedFile(fileHash, fileExt);
+      const tags = tagsForUpload(file);
+      await registerUploadedFile(fileHash, fileExt, tags);
+      savedTags[file.path] = tags;
+      delete pendingTags[file.path];
+      rememberTags(tags);
       fileExists[file.path] = true;
       fileRepairNeeded[file.path] = false;
       fileMissingParts[file.path] = [];
@@ -823,9 +894,17 @@
       height="76"
     />
     <h1 class="app-title">The Horny Grail Uploader</h1>
+    <div class="view-switch" role="tablist" aria-label="Choose a view">
+      <button role="tab" aria-selected={appView === 'upload'} class:selected={appView === 'upload'} onclick={() => appView = 'upload'}>⬆️ Upload</button>
+      <button role="tab" aria-selected={appView === 'watch'} class:selected={appView === 'watch'} onclick={() => appView = 'watch'}>▶️ Watch</button>
+    </div>
   </div>
 
-  <div class="file-explorer">
+  {#if appView === 'watch'}
+    <WatchView {tagSuggestions} onTagsSaved={rememberTags} />
+  {/if}
+
+  <div class="file-explorer" class:hidden-view={appView !== 'upload'}>
     <div class="controls">
       <div class="control-buttons">
         <button onclick={selectFolder} class="sync-button" title="Choose a folder to watch and upload">🔄 Sync Folder</button>
@@ -899,6 +978,20 @@
             {tab.label} <span class="tab-count">{tabCounts[tab.id]}</span>
           </button>
         {/each}
+      </div>
+    {/if}
+
+    {#if selectedPath && (activeTab === 'new' || activeTab === 'all') && tabCounts.new > 0}
+      <div class="batch-tags">
+        <span class="batch-tags-label" title="Every file you upload from this folder gets these tags, plus the tags on its own row">Tags for this upload</span>
+        <TagEditor
+          tags={batchTags}
+          suggestions={tagSuggestions}
+          placeholder="Tags for every file in this upload…"
+          onAdd={(tags) => batchTags = [...new Set([...batchTags, ...tags])]}
+          onRemove={(tag) => batchTags = batchTags.filter((value) => value !== tag)}
+          disabled={isUploading}
+        />
       </div>
     {/if}
 
@@ -1073,6 +1166,40 @@
                     {/if}
                   </button>
                 {/if}
+              {/if}
+              {#if fileCheckStatus[file.path] === "done" && getFileCategory(file) !== 'repair'}
+                <div class="row-tags">
+                  <button
+                    class="open-button"
+                    type="button"
+                    onclick={() => openLocalFile(file)}
+                    title="Open in your usual viewer or player"
+                    aria-label={`Open ${file.name}`}
+                  >▶ Open</button>
+                  {#if fileExists[file.path]}
+                    <TagEditor
+                      compact
+                      tags={savedTags[file.path] || []}
+                      suggestions={tagSuggestions}
+                      placeholder="Add tags (saved right away)…"
+                      onAdd={(tags) => changeSavedTags(file, { add: tags })}
+                      onRemove={(tag) => changeSavedTags(file, { remove: [tag] })}
+                      quickCount={8}
+                      disabled={uploadStatus[file.path] === 'removing'}
+                    />
+                  {:else}
+                    <TagEditor
+                      compact
+                      tags={pendingTags[file.path] || []}
+                      suggestions={tagSuggestions}
+                      placeholder={batchTags.length ? `Extra tags (plus: ${batchTags.join(', ')})…` : "Tags for this file…"}
+                      onAdd={(tags) => addPendingTags(file, tags)}
+                      onRemove={(tag) => removePendingTag(file, tag)}
+                      quickCount={8}
+                      disabled={uploadStatus[file.path] === 'uploading'}
+                    />
+                  {/if}
+                </div>
               {/if}
             </li>
           {/each}
@@ -1348,9 +1475,79 @@
   
   .file-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+  }
+
+  .row-tags {
+    flex-basis: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0 0.5rem 0.4rem 3.4rem;
+    min-width: 0;
+  }
+
+  .row-tags :global(.tag-editor) {
+    flex: 1;
+  }
+
+  .open-button {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.78rem;
+    border-radius: 6px;
+    background-color: #64748b;
+  }
+
+  .open-button:hover {
+    background-color: #475569;
+  }
+
+  .batch-tags {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed #93c5fd;
+    border-radius: 8px;
+  }
+
+  .batch-tags :global(.tag-editor) {
+    flex: 1;
+  }
+
+  .batch-tags-label {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .view-switch {
+    display: flex;
+    gap: 0.25rem;
+    margin-left: auto;
+  }
+
+  .view-switch button {
+    padding: 0.35em 0.9em;
+    font-size: 0.9rem;
+    background-color: transparent;
+    color: inherit;
+    border: 1px solid #cbd5e1;
+  }
+
+  .view-switch button.selected {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .hidden-view {
+    display: none !important;
   }
 
   .file-button {

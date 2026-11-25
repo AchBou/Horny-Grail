@@ -6,6 +6,19 @@
   "permissions": [
     "core:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "**/*.jpg" }, { "path": "**/*.jpeg" }, { "path": "**/*.png" },
+        { "path": "**/*.gif" }, { "path": "**/*.webp" }, { "path": "**/*.bmp" },
+        { "path": "**/*.tif" }, { "path": "**/*.tiff" }, { "path": "**/*.webm" },
+        { "path": "**/*.mp4" },
+        { "path": "**/*.JPG" }, { "path": "**/*.JPEG" }, { "path": "**/*.PNG" },
+        { "path": "**/*.GIF" }, { "path": "**/*.WEBP" }, { "path": "**/*.BMP" },
+        { "path": "**/*.TIF" }, { "path": "**/*.TIFF" }, { "path": "**/*.WEBM" },
+        { "path": "**/*.MP4" }
+      ]
+    },
     "fs:default",
     "fs:allow-read",
     {

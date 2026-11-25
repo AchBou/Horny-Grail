@@ -8,7 +8,8 @@ import { httpFetch } from "../config/httpClient.js";
  *   originalExists: boolean,
  *   thumbnailExists: boolean,
  *   repairRequired: boolean,
- *   missing: string[]
+ *   missing: string[],
+ *   item?: { id: string, ext: string, tags?: string[] }
  * }} AssetIntegrity
  */
 

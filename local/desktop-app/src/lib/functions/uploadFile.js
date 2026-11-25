@@ -53,11 +53,13 @@ async function requestUploadTarget(path, id, ext, sizeBytes, contentType) {
 }
 
 /**
+ * Registers an uploaded file. Tags go on a new item, or are added to one already saved.
  * @param {string} id
  * @param {string} ext
+ * @param {string[]} [tags]
  * @returns {Promise<void>}
  */
-export async function registerUploadedFile(id, ext) {
+export async function registerUploadedFile(id, ext, tags = []) {
     const response = await httpFetch(API_BASE_URL, {
         method: "POST",
         headers: {
@@ -66,7 +68,8 @@ export async function registerUploadedFile(id, ext) {
         },
         body: JSON.stringify({
             id,
-            ext
+            ext,
+            ...(tags.length > 0 ? { tags } : {})
         })
     });
 
