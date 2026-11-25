@@ -375,6 +375,20 @@ Resources:
             Compress: true
             TargetOriginId: FrontendOrigin
             ViewerProtocolPolicy: redirect-to-https
+          # The site logo, shown on the access page before sign-in.
+          - PathPattern: /brand/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachePolicyId: !Ref ProtectedReadStaticCachePolicy
+            Compress: true
+            TargetOriginId: FrontendOrigin
+            ViewerProtocolPolicy: redirect-to-https
           - PathPattern: /access*
             AllowedMethods:
               - GET
