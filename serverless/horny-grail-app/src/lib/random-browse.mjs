@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
+import { matchesTagFilter } from './tags.mjs';
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 48;
@@ -116,8 +117,9 @@ export function shufflePosition(seed, id) {
  * Pages through the active items in an order shuffled by the session seed. Each item's
  * place depends only on the seed and its own id, so items added or removed mid-session
  * do not reshuffle the rest: nothing already shown repeats and nothing is skipped.
+ * An optional tag filter (see parseTagFilter) narrows the items without changing their order.
  */
-export async function fetchRandomBrowsePage(rawCursor, limit) {
+export async function fetchRandomBrowsePage(rawCursor, limit, filter = null) {
   let state = { seed: null, after: '' };
 
   if (rawCursor) {
@@ -129,7 +131,7 @@ export async function fetchRandomBrowsePage(rawCursor, limit) {
 
   const seed = state.seed || randomBytes(8).toString('hex');
   const ordered = (await loadActiveItems())
-    .filter((item) => typeof item?.id === 'string' && item.id)
+    .filter((item) => typeof item?.id === 'string' && item.id && matchesTagFilter(item, filter))
     .map((item) => ({ item, position: shufflePosition(seed, item.id) }))
     .filter(({ position }) => position > state.after)
     .sort((a, b) => (a.position < b.position ? -1 : 1));

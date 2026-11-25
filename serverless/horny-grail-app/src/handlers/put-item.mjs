@@ -1,7 +1,9 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
-import { requireWriteAccess } from '../lib/auth.mjs';
+import { hasWriteApiKey, requireWriteAccess } from '../lib/auth.mjs';
+import { setItemTags } from '../lib/items-repository.mjs';
+import { applyTagChange, itemTags, MAX_TAGS_PER_ITEM, parseTagList } from '../lib/tags.mjs';
 import { badRequest, conflict, jsonResponse, serverError } from '../lib/http.mjs';
 import { guardRequest } from '../lib/request-guards.mjs';
 import { findMissingAssets } from '../lib/s3-objects.mjs';
@@ -17,11 +19,21 @@ async function getExistingItem(id) {
   return existing.Item || null;
 }
 
-function respondWithExisting(existing, ext, event) {
+/** Returns an existing item, first adding any requested tags it does not have yet. */
+async function respondWithExisting(existing, ext, tags, event) {
   if (existing.ext !== ext) {
     return badRequest('Image id is already registered with a different extension', event);
   }
-  return jsonResponse(200, existing, event);
+  const current = itemTags(existing);
+  const merged = applyTagChange(current, { add: tags });
+  if (merged.length === current.length) {
+    return jsonResponse(200, existing, event);
+  }
+  if (merged.length > MAX_TAGS_PER_ITEM) {
+    return badRequest(`An item can have at most ${MAX_TAGS_PER_ITEM} tags`, event);
+  }
+  await setItemTags(existing.id, merged);
+  return jsonResponse(200, { ...existing, tags: merged }, event);
 }
 
 /**
@@ -56,10 +68,19 @@ export const putItemHandler = async (event) => {
     return badRequest('Invalid image extension', event);
   }
 
+  // Tags come from the desktop uploader only; the phone does not tag.
+  const tags = parseTagList(body.tags, MAX_TAGS_PER_ITEM);
+  if (!tags) {
+    return badRequest('Invalid tags: use letters, digits, spaces, "-" or "_", up to 32 characters each', event);
+  }
+  if (tags.length > 0 && !(await hasWriteApiKey(event))) {
+    return badRequest('Tags can only be set from the desktop app', event);
+  }
+
   try {
     const existing = await getExistingItem(id);
     if (existing) {
-      return respondWithExisting(existing, ext, event);
+      return await respondWithExisting(existing, ext, tags, event);
     }
 
     const missing = await findMissingAssets(id, ext);
@@ -73,12 +94,14 @@ export const putItemHandler = async (event) => {
   }
 
   // Metadata is immutable after creation so retries cannot change browse order or extension.
+  // Tags are the exception: they only grow here and change through the tags route.
   const item = {
     id,
     ext,
     date: body.date || new Date().toISOString(),
     status: 'active',
-    randomKey: Math.random()
+    randomKey: Math.random(),
+    ...(tags.length > 0 ? { tags: applyTagChange([], { add: tags }) } : {})
   };
 
   try {
@@ -99,7 +122,7 @@ export const putItemHandler = async (event) => {
     try {
       const existing = await getExistingItem(id);
       return existing
-        ? respondWithExisting(existing, ext, event)
+        ? await respondWithExisting(existing, ext, tags, event)
         : serverError('Failed to resolve existing item', event);
     } catch (lookupError) {
       console.error('Failed to resolve existing item', { path: requestPath, id, error: lookupError });

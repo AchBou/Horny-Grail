@@ -621,6 +621,36 @@ Resources:
           Properties:
             Path: /api/mobile/browse/random
             Method: OPTIONS
+        MobileTags:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/tags
+            Method: GET
+        MobileTagsOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/mobile/tags
+            Method: OPTIONS
+        DesktopRandomBrowse:
+          Type: HttpApi
+          Properties:
+            Path: /api/desktop/browse/random
+            Method: GET
+        DesktopRandomBrowseOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/desktop/browse/random
+            Method: OPTIONS
+        DesktopTags:
+          Type: HttpApi
+          Properties:
+            Path: /api/desktop/tags
+            Method: GET
+        DesktopTagsOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/desktop/tags
+            Method: OPTIONS
 
   WriteFunction:
     Type: AWS::Serverless::Function
@@ -686,6 +716,16 @@ Resources:
           Type: HttpApi
           Properties:
             Path: /api/assets/{id}/integrity
+            Method: OPTIONS
+        UpdateTags:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/tags
+            Method: PATCH
+        UpdateTagsOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/tags
             Method: OPTIONS
         DeleteAsset:
           Type: HttpApi

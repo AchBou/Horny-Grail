@@ -1,8 +1,9 @@
 import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { jest } from '@jest/globals';
 import { putItemHandler } from '../../../src/handlers/put-item.mjs';
+import { issueMobileReadToken } from '../../../src/lib/auth.mjs';
 
 const notFoundError = () => Object.assign(new Error('NotFound'), {
   name: 'NotFound',
@@ -139,6 +140,48 @@ describe('Test putItemHandler', () => {
 
     expect(result.statusCode).toEqual(400);
     expect(JSON.parse(result.body)).toEqual({ code: 'bad_request', message: 'Invalid image id' });
+  });
+
+  it('should store tags on a new item from the desktop app', async () => {
+    const id = 'b'.repeat(64);
+
+    const result = await register({ id, ext: 'jpg', tags: ['Sun', 'beach', 'sun'] });
+
+    expect(result.statusCode).toBe(200);
+    expect(ddbMock.commandCalls(PutCommand)[0].args[0].input.Item.tags).toEqual(['beach', 'sun']);
+  });
+
+  it('should add tags to an item that is already saved', async () => {
+    const id = 'a'.repeat(64);
+    ddbMock.on(GetCommand).resolves({ Item: { id, ext: 'jpg', tags: ['beach'] } });
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const result = await register({ id, ext: 'jpg', tags: ['sun'] });
+
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body).tags).toEqual(['beach', 'sun']);
+    expect(ddbMock.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues)
+      .toEqual({ ':tags': ['beach', 'sun'] });
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should refuse tags from a phone session and invalid tags', async () => {
+    const { token } = await issueMobileReadToken();
+    const fromPhone = await register({ id: 'b'.repeat(64), ext: 'jpg', tags: ['x'] }, { authorization: `Bearer ${token}` });
+    const invalid = await register({ id: 'b'.repeat(64), ext: 'jpg', tags: ['no;way'] });
+
+    expect(fromPhone.statusCode).toBe(400);
+    expect(invalid.statusCode).toBe(400);
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should still let a phone session register without tags', async () => {
+    const { token } = await issueMobileReadToken();
+
+    const result = await register({ id: 'b'.repeat(64), ext: 'jpg' }, { authorization: `Bearer ${token}` });
+
+    expect(result.statusCode).toBe(200);
+    expect(ddbMock.commandCalls(PutCommand)[0].args[0].input.Item.tags).toBeUndefined();
   });
 
   it.each(['webm', 'mp4'])('should accept %s items', async (ext) => {

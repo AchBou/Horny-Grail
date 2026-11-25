@@ -61,9 +61,14 @@ function getBearerToken(event) {
   return token;
 }
 
-export async function requireWriteApiKey(event) {
+/** True when the request carries the desktop uploader's write key. */
+export async function hasWriteApiKey(event) {
   const provided = getHeader(event, 'x-api-key');
-  if (!timingSafeEqualStrings(provided, await getAppSecret('writeApiKey'))) {
+  return Boolean(provided) && timingSafeEqualStrings(provided, await getAppSecret('writeApiKey'));
+}
+
+export async function requireWriteApiKey(event) {
+  if (!(await hasWriteApiKey(event))) {
     return unauthorized(event);
   }
 
@@ -138,8 +143,7 @@ export async function requireMobileReadToken(event) {
  * mobile session token from the passphrase login. The mobile app holds no permanent key.
  */
 export async function requireWriteAccess(event) {
-  const provided = getHeader(event, 'x-api-key');
-  if (provided && timingSafeEqualStrings(provided, await getAppSecret('writeApiKey'))) {
+  if (await hasWriteApiKey(event)) {
     return null;
   }
 

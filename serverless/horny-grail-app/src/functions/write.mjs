@@ -1,6 +1,7 @@
 import { deleteAssetHandler } from '../handlers/assets/delete-asset.mjs';
 import { getAssetIntegrityHandler } from '../handlers/assets/get-asset-integrity.mjs';
 import { putItemHandler } from '../handlers/put-item.mjs';
+import { updateTagsHandler } from '../handlers/tags/update-tags.mjs';
 import { signUploadHandler } from '../handlers/uploads/sign-upload.mjs';
 import { createRouter } from '../lib/router.mjs';
 
@@ -12,6 +13,8 @@ export const routes = {
   'OPTIONS /api/uploads/sign': signUploadHandler,
   'GET /api/assets/{id}/integrity': getAssetIntegrityHandler,
   'OPTIONS /api/assets/{id}/integrity': getAssetIntegrityHandler,
+  'PATCH /api/assets/{id}/tags': updateTagsHandler,
+  'OPTIONS /api/assets/{id}/tags': updateTagsHandler,
   'DELETE /api/assets/{id}': deleteAssetHandler,
   'OPTIONS /api/assets/{id}': deleteAssetHandler
 };

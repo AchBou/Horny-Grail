@@ -1,8 +1,9 @@
-import { requireMobileReadToken, requireReadOriginSecret } from '../../lib/auth.mjs';
+import { requireMobileReadToken, requireReadOriginSecret, requireWriteApiKey } from '../../lib/auth.mjs';
 import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
 import { createSignedMediaView } from '../../lib/mobile-media.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
 import { fetchRandomBrowsePage, parseRandomBrowseLimit } from '../../lib/random-browse.mjs';
+import { parseTagFilter } from '../../lib/tags.mjs';
 
 function getQueryParam(event, key) {
   return event?.queryStringParameters?.[key] ?? null;
@@ -26,8 +27,13 @@ function createRandomBrowseHandler({ handlerName, authorize, allowOptions = fals
       return badRequest('Invalid limit. Expected an integer between 1 and 48.', event);
     }
 
+    const filter = parseTagFilter(event?.queryStringParameters);
+    if (!filter) {
+      return badRequest('Invalid tag filter', event);
+    }
+
     try {
-      const page = await fetchRandomBrowsePage(getQueryParam(event, 'cursor'), limit);
+      const page = await fetchRandomBrowsePage(getQueryParam(event, 'cursor'), limit, filter);
       if (!page) {
         return badRequest('Invalid cursor', event);
       }
@@ -50,6 +56,14 @@ export const getRandomBrowseHandler = createRandomBrowseHandler({
 export const getMobileRandomBrowseHandler = createRandomBrowseHandler({
   handlerName: 'getMobileRandomBrowse',
   authorize: requireMobileReadToken,
+  allowOptions: true,
+  presentItem: createSignedMediaView
+});
+
+// The desktop app's Watch tab: the same feed with presigned URLs, authorized by the write key.
+export const getDesktopRandomBrowseHandler = createRandomBrowseHandler({
+  handlerName: 'getDesktopRandomBrowse',
+  authorize: requireWriteApiKey,
   allowOptions: true,
   presentItem: createSignedMediaView
 });
