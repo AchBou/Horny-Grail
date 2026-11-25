@@ -32,8 +32,7 @@ export function getMockBrowsePage(cursor, limit) {
 		items,
 		cursor: nextOffset < mockGalleryItems.length ? String(nextOffset) : null,
 		hasMore: nextOffset < mockGalleryItems.length,
-		seed: 0.5,
-		wrapped: false
+		seed: '0000000000000000'
 	};
 }
 

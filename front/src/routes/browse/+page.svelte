@@ -1,5 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import Thumbnail from '../../components/Thumbnail.svelte';
 	import {
 		USE_MOCK_GALLERY,
@@ -11,6 +11,7 @@
 	import { normalizeImages } from '$lib/models/image.js';
 
 	const PAGE_SIZE = 24;
+	const PRELOAD_MARGIN_PX = 240;
 
 	/** @type {import('$lib/models/image.js').ImageItem[]} */
 	let images = [];
@@ -113,6 +114,21 @@
 				isLoadingMore = false;
 			}
 		}
+
+		await loadMoreIfSentinelVisible();
+	}
+
+	// IntersectionObserver only fires when visibility changes. On a tall screen the sentinel can
+	// still be in view after a page renders, so check again instead of waiting for a scroll.
+	async function loadMoreIfSentinelVisible() {
+		await tick();
+		if (!sentinel || isLoading || isLoadingMore || loadMoreError || !hasMore || !nextCursor) {
+			return;
+		}
+
+		if (sentinel.getBoundingClientRect().top <= window.innerHeight + PRELOAD_MARGIN_PX) {
+			await fetchPage({ cursor: nextCursor });
+		}
 	}
 
 	function retryInitialLoad() {
@@ -135,7 +151,7 @@
 				fetchPage({ cursor: nextCursor });
 			},
 			{
-				rootMargin: '240px 0px'
+				rootMargin: `${PRELOAD_MARGIN_PX}px 0px`
 			}
 		);
 

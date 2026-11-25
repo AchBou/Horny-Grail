@@ -42,9 +42,8 @@ The browse page expects the backend randomized browse response shape:
 ```json
 {
 	"items": [],
-	"seed": 0.4721,
+	"seed": "3f9c1a07b2e4d815",
 	"cursor": "opaque-cursor",
-	"wrapped": false,
 	"hasMore": true
 }
 ```
