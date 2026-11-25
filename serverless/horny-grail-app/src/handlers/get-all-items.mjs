@@ -7,7 +7,7 @@ import { guardRequest } from '../lib/request-guards.mjs';
  * A simple example includes a HTTP get method to get all items from a DynamoDB table.
  */
 export const getAllItemsHandler = async (event) => {
-    const guardError = guardRequest(event, {
+    const guardError = await guardRequest(event, {
         handlerName: 'getAllItems',
         method: 'GET',
         authorize: requireReadOriginSecret

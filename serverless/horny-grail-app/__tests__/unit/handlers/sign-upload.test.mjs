@@ -51,7 +51,7 @@ describe('Test signUploadHandler', () => {
     const result = await signUploadHandler({
       httpMethod: 'POST',
       headers: {
-        authorization: `Bearer ${issueMobileReadToken().token}`
+        authorization: `Bearer ${(await issueMobileReadToken()).token}`
       },
       body: JSON.stringify({
         path: 'files',

@@ -45,7 +45,7 @@ async function buildAssetIntegrityResponse(id, event) {
 }
 
 export const getAssetIntegrityHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getAssetIntegrity',
     method: 'GET',
     allowOptions: true,

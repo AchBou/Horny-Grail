@@ -6,7 +6,7 @@ import { guardRequest } from '../../lib/request-guards.mjs';
 import { isValidImageId } from '../../lib/validation.mjs';
 
 export const getMobileByIdHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getMobileById',
     method: 'GET',
     allowOptions: true,

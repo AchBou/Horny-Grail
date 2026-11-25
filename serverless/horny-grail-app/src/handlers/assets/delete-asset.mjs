@@ -5,7 +5,7 @@ import { guardRequest } from '../../lib/request-guards.mjs';
 import { isValidImageId } from '../../lib/validation.mjs';
 
 export const deleteAssetHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'deleteAsset',
     method: 'DELETE',
     allowOptions: true,

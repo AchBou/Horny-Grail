@@ -1,10 +1,10 @@
-import { corsPreflight, methodNotAllowed } from './http.mjs';
+import { corsPreflight, methodNotAllowed, serverError } from './http.mjs';
 
 export function getRequestMethod(event) {
   return event?.httpMethod || event?.requestContext?.http?.method || '';
 }
 
-export function guardRequest(event, {
+export async function guardRequest(event, {
   handlerName,
   method,
   allowOptions = false,
@@ -28,7 +28,12 @@ export function guardRequest(event, {
   }
 
   if (typeof authorize === 'function') {
-    return authorize(event);
+    try {
+      return await authorize(event);
+    } catch (error) {
+      console.error(`${handlerName} authorization failed`, { error: error?.message || String(error) });
+      return serverError('Authorization is temporarily unavailable', event);
+    }
   }
 
   return null;

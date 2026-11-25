@@ -107,7 +107,7 @@ describe('Test getAssetIntegrityHandler', () => {
     const result = await getAssetIntegrityHandler({
       httpMethod: 'GET',
       headers: {
-        authorization: `Bearer ${issueMobileReadToken().token}`
+        authorization: `Bearer ${(await issueMobileReadToken()).token}`
       },
       pathParameters: { id }
     });

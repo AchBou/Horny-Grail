@@ -4,7 +4,7 @@ import { pickRandomItem } from '../../lib/random-browse.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
 
 export const getRandomImageHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getRandomImage',
     method: 'GET',
     allowMissingMethod: true,

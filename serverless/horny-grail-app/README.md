@@ -76,8 +76,8 @@ Required runtime env:
 - `LOOKUP_TABLE`
 - `BUCKET_NAME`
 - `BUCKET_REGION`
-- `WRITE_API_KEY`
 - `CORS_ALLOWED_ORIGINS`
+- `APP_SECRETS_SECRET_ARN` (deployed). Without it, local runs and tests read `WRITE_API_KEY`, `READ_ORIGIN_SECRET`, `MOBILE_READ_TOKEN_SECRET` and `READ_ACCESS_CODE(_HASH)` from env instead.
 
 Matching SAM parameters:
 
@@ -111,8 +111,10 @@ Notes:
   - `readAccessCode` (legacy plaintext; only used while `readAccessCodeHash` is unset)
   - `readOriginSecret`
   - `mobileReadTokenSecret`
-- `readAccessCodeHash` is an scrypt hash of the passphrase users enter on the web access page and the mobile unlock screen. The auth functions read it from Secrets Manager at runtime (cached 1 minute), so changing it needs no deploy.
-- `readOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname.
+- Lambdas read every field of this secret at runtime (cached 1 minute), so values never appear in the Lambda console and changing one needs no deploy: it is live within a minute.
+- `readAccessCodeHash` is an scrypt hash of the passphrase users enter on the web access page and the mobile unlock screen.
+- `writeApiKey` rotation: put a new value in the secret and update the desktop uploader's `VITE_WRITE_API_KEY`. Nothing else to change.
+- `readOriginSecret` is injected by CloudFront into the raw API origin so the web read routes cannot be called directly on the `execute-api` hostname. CloudFront's copy is resolved at deploy time, so rotating this one field also needs a deploy that changes the distribution; until then web reads fail.
 - `mobileReadTokenSecret` signs the short-lived bearer tokens returned by `POST /auth/mobile/session`.
 - `MobileReadTokenTtlSeconds` defaults to `3600` seconds, which keeps a successful mobile session for 1 hour. Sessions are kept short on purpose: this is a private vault, so the limit bounds what an unattended device exposes.
 - `MobileSignedUrlTtlSeconds` defaults to `900` seconds, which keeps mobile media URLs valid for 15 minutes before the app refreshes them with another authenticated read request.

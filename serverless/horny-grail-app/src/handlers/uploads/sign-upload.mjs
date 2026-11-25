@@ -39,7 +39,7 @@ export function sha256HexToBase64(hex) {
 
 export const signUploadHandler = async (event) => {
   const requestPath = event?.requestContext?.http?.path || event?.path || '/api/uploads/sign';
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'signUpload',
     method: 'POST',
     allowOptions: true,

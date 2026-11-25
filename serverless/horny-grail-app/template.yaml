@@ -606,7 +606,6 @@ Resources:
           APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
           LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
           LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
@@ -629,12 +628,16 @@ Resources:
       Timeout: 100
       Description: Returns thumbnail metadata for the gallery.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -650,12 +653,16 @@ Resources:
       Timeout: 100
       Description: Returns image metadata by canonical content hash.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -672,6 +679,11 @@ Resources:
       Timeout: 100
       Description: Writes image metadata once the original and thumbnail are in S3.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBWritePolicy:
           TableName: !Ref LookupTable
       - DynamoDBReadPolicy:
@@ -693,8 +705,6 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -715,12 +725,16 @@ Resources:
       Timeout: 100
       Description: Lists image metadata records.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -742,6 +756,11 @@ Resources:
       Timeout: 60
       Description: Returns one random active image.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
         - DynamoDBReadPolicy:
             TableName: !Ref LookupTable
         - Statement:
@@ -754,7 +773,6 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -770,6 +788,11 @@ Resources:
       Timeout: 60
       Description: Returns randomized browse pages with cursor pagination.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
         - DynamoDBReadPolicy:
             TableName: !Ref LookupTable
         - Statement:
@@ -780,7 +803,6 @@ Resources:
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          READ_ORIGIN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:readOriginSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -795,6 +817,11 @@ Resources:
       Timeout: 100
       Description: Returns one mobile media item with signed original and thumbnail URLs.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
       - Statement:
@@ -809,7 +836,6 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -832,6 +858,11 @@ Resources:
       Timeout: 60
       Description: Returns randomized mobile browse pages with signed media URLs.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
         - DynamoDBReadPolicy:
             TableName: !Ref LookupTable
         - Statement:
@@ -851,7 +882,6 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
@@ -878,6 +908,11 @@ Resources:
       - Statement:
         - Effect: Allow
           Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
+      - Statement:
+        - Effect: Allow
+          Action:
           - s3:PutObject
           Resource:
           - !Sub arn:aws:s3:::${BucketName}/files/*
@@ -886,8 +921,6 @@ Resources:
         Variables:
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -908,6 +941,11 @@ Resources:
       Timeout: 30
       Description: Checks whether metadata and expected S3 assets exist (desktop write key or mobile session).
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
       - Statement:
@@ -927,8 +965,6 @@ Resources:
           LOOKUP_TABLE: !Ref LookupTable
           BUCKET_NAME: !Ref BucketName
           BUCKET_REGION: !Ref BucketRegion
-          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
-          MOBILE_READ_TOKEN_SECRET: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:mobileReadTokenSecret}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -949,12 +985,16 @@ Resources:
       Timeout: 30
       Description: Deletes a metadata entry from DynamoDB without removing S3 objects.
       Policies:
+      - Statement:
+        - Effect: Allow
+          Action:
+          - secretsmanager:GetSecretValue
+          Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBCrudPolicy:
           TableName: !Ref LookupTable
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
-          WRITE_API_KEY: !Sub '{{resolve:secretsmanager:${AppSecretsSecretArn}:SecretString:writeApiKey}}'
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
         Api:
@@ -1000,5 +1040,8 @@ Globals:
     Architectures:
       - x86_64
     MemorySize: 128
+    Environment:
+      Variables:
+        APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
     LoggingConfig:
       LogFormat: JSON

@@ -1,10 +1,6 @@
 import crypto from 'node:crypto';
-import {
-  getMobileReadTokenSecret,
-  getMobileReadTokenTtlSeconds,
-  getReadOriginSecret,
-  getWriteApiKey
-} from '../config/env.mjs';
+import { getMobileReadTokenTtlSeconds } from '../config/env.mjs';
+import { getAppSecret } from './app-secrets.mjs';
 import { unauthorized } from './http.mjs';
 
 function getHeader(event, name) {
@@ -65,31 +61,31 @@ function getBearerToken(event) {
   return token;
 }
 
-export function requireWriteApiKey(event) {
+export async function requireWriteApiKey(event) {
   const provided = getHeader(event, 'x-api-key');
-  if (!timingSafeEqualStrings(provided, getWriteApiKey())) {
+  if (!timingSafeEqualStrings(provided, await getAppSecret('writeApiKey'))) {
     return unauthorized(event);
   }
 
   return null;
 }
 
-export function requireReadOriginSecret(event) {
+export async function requireReadOriginSecret(event) {
   const provided = getHeader(event, 'x-read-origin-secret');
-  if (!timingSafeEqualStrings(provided, getReadOriginSecret())) {
+  if (!timingSafeEqualStrings(provided, await getAppSecret('readOriginSecret'))) {
     return unauthorized(event);
   }
 
   return null;
 }
 
-export function issueMobileReadToken() {
+export async function issueMobileReadToken() {
   const expiresAt = Math.floor(Date.now() / 1000) + getMobileReadTokenTtlSeconds();
   const payload = encodeBase64Url(JSON.stringify({
     aud: 'mobile-read',
     exp: expiresAt
   }));
-  const signature = createHmacSignature(payload, getMobileReadTokenSecret());
+  const signature = createHmacSignature(payload, await getAppSecret('mobileReadTokenSecret'));
 
   return {
     token: `${payload}.${signature}`,
@@ -97,7 +93,7 @@ export function issueMobileReadToken() {
   };
 }
 
-export function verifyMobileReadToken(token) {
+export async function verifyMobileReadToken(token) {
   if (typeof token !== 'string' || token.length === 0) {
     return null;
   }
@@ -107,7 +103,7 @@ export function verifyMobileReadToken(token) {
     return null;
   }
 
-  const expectedSignature = createHmacSignature(payloadPart, getMobileReadTokenSecret());
+  const expectedSignature = createHmacSignature(payloadPart, await getAppSecret('mobileReadTokenSecret'));
   if (!timingSafeEqualStrings(signaturePart, expectedSignature)) {
     return null;
   }
@@ -128,9 +124,9 @@ export function verifyMobileReadToken(token) {
   }
 }
 
-export function requireMobileReadToken(event) {
+export async function requireMobileReadToken(event) {
   const token = getBearerToken(event);
-  if (!verifyMobileReadToken(token)) {
+  if (!(await verifyMobileReadToken(token))) {
     return unauthorized(event);
   }
 
@@ -141,9 +137,9 @@ export function requireMobileReadToken(event) {
  * Upload and metadata routes accept either the desktop uploader's write API key or a
  * mobile session token from the passphrase login. The mobile app holds no permanent key.
  */
-export function requireWriteAccess(event) {
+export async function requireWriteAccess(event) {
   const provided = getHeader(event, 'x-api-key');
-  if (provided && timingSafeEqualStrings(provided, getWriteApiKey())) {
+  if (provided && timingSafeEqualStrings(provided, await getAppSecret('writeApiKey'))) {
     return null;
   }
 

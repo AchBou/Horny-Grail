@@ -9,7 +9,7 @@ function getQueryParam(event, key) {
 }
 
 export const getMobileRandomBrowseHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getMobileRandomBrowse',
     method: 'GET',
     allowOptions: true,

@@ -10,7 +10,7 @@ import { decodeScanCursor, parseScanLimit, scanItemsPage } from '../../lib/items
  * HTTP GET method to get all thumbnails (id.ext) from a DynamoDB table.
  */
 export const getAllThumbnailsHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getAllThumbnails',
     method: 'GET',
     authorize: requireReadOriginSecret

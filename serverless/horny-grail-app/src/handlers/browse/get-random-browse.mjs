@@ -8,7 +8,7 @@ function getQueryParam(event, key) {
 }
 
 export const getRandomBrowseHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getRandomBrowse',
     method: 'GET',
     allowMissingMethod: true,

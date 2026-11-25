@@ -15,7 +15,7 @@ function parseBody(event) {
 }
 
 export const createMobileSessionHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'createMobileSession',
     method: 'POST',
     allowOptions: true
@@ -29,7 +29,7 @@ export const createMobileSessionHandler = async (event) => {
 
   switch (outcome.status) {
     case 'ok':
-      return jsonResponse(200, issueMobileReadToken(), event);
+      return jsonResponse(200, await issueMobileReadToken(), event);
     case 'locked':
       return tooManyRequests(outcome.retryAfterSeconds, event);
     case 'unavailable':

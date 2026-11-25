@@ -31,7 +31,7 @@ function respondWithExisting(existing, ext, event) {
  */
 export const putItemHandler = async (event) => {
   const requestPath = event?.requestContext?.http?.path || event?.path || '/api/';
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'putItem',
     method: 'POST',
     allowOptions: true,

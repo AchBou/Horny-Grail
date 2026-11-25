@@ -9,7 +9,7 @@ import { isValidImageId } from '../lib/validation.mjs';
  * A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
  */
 export const getByIdHandler = async (event) => {
-  const guardError = guardRequest(event, {
+  const guardError = await guardRequest(event, {
     handlerName: 'getById',
     method: 'GET',
     authorize: requireReadOriginSecret
