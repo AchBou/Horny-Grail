@@ -756,11 +756,11 @@ Resources:
       Timeout: 60
       Description: Returns one random active image.
       Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
+        - Statement:
+          - Effect: Allow
+            Action:
+            - secretsmanager:GetSecretValue
+            Resource: !Sub '${AppSecretsSecretArn}*'
         - DynamoDBReadPolicy:
             TableName: !Ref LookupTable
         - Statement:
@@ -788,11 +788,11 @@ Resources:
       Timeout: 60
       Description: Returns randomized browse pages with cursor pagination.
       Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
+        - Statement:
+          - Effect: Allow
+            Action:
+            - secretsmanager:GetSecretValue
+            Resource: !Sub '${AppSecretsSecretArn}*'
         - DynamoDBReadPolicy:
             TableName: !Ref LookupTable
         - Statement:
@@ -858,11 +858,11 @@ Resources:
       Timeout: 60
       Description: Returns randomized mobile browse pages with signed media URLs.
       Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
+        - Statement:
+          - Effect: Allow
+            Action:
+            - secretsmanager:GetSecretValue
+            Resource: !Sub '${AppSecretsSecretArn}*'
         - DynamoDBReadPolicy:
             TableName: !Ref LookupTable
         - Statement:
