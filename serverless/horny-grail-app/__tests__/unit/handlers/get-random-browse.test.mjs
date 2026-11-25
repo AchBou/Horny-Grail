@@ -1,6 +1,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { getRandomBrowseHandler } from '../../../src/handlers/browse/get-random-browse.mjs';
+import { resetActiveItemsCache } from '../../../src/lib/random-browse.mjs';
 
 const hexId = (index) => index.toString(16).padStart(64, '0');
 const makeItems = (count) => Array.from({ length: count }, (_, index) => ({
@@ -34,6 +35,7 @@ describe('Test getRandomBrowseHandler', () => {
 
   beforeEach(() => {
     ddbMock.reset();
+    resetActiveItemsCache();
   });
 
   it('should read every active item from the random index, following pagination', async () => {
@@ -90,6 +92,7 @@ describe('Test getRandomBrowseHandler', () => {
 
     const added = { id: hexId(999), ext: 'png', status: 'active', randomKey: 0.5 };
     ddbMock.on(QueryCommand).resolves({ Items: [...items, added] });
+    resetActiveItemsCache(); // as if the cached list expired mid-session
     const rest = [];
     let cursor = first.cursor;
     while (cursor) {
@@ -100,7 +103,16 @@ describe('Test getRandomBrowseHandler', () => {
 
     const seen = [...first.items, ...rest].map((item) => item.id);
     expect(new Set(seen).size).toEqual(seen.length);
+    expect(ddbMock.commandCalls(QueryCommand).length).toBeGreaterThan(1);
     expect(seen.filter((id) => id !== added.id)).toHaveLength(20);
+  });
+
+  it('should reuse the cached item list across pages of a session', async () => {
+    ddbMock.on(QueryCommand).resolves({ Items: makeItems(25) });
+
+    await browseAll(7);
+
+    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(1);
   });
 
   it('should restart with a new shuffle for a cursor in the old format', async () => {

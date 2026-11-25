@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
 
 const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -11,44 +11,6 @@ export async function getItemById(id) {
   }));
 
   return data.Item || null;
-}
-
-export function encodeScanCursor(lastEvaluatedKey) {
-  if (!lastEvaluatedKey) return null;
-  return Buffer.from(JSON.stringify(lastEvaluatedKey)).toString('base64url');
-}
-
-export function parseScanLimit(rawValue) {
-  if (rawValue == null || rawValue === '') return 48;
-  const value = Number.parseInt(rawValue, 10);
-  return Number.isInteger(value) && value >= 1 && value <= 100 ? value : null;
-}
-
-export function decodeScanCursor(rawCursor) {
-  if (rawCursor == null || rawCursor === '') return null;
-  if (typeof rawCursor !== 'string' || rawCursor.length > 2048) return undefined;
-  try {
-    const parsed = JSON.parse(Buffer.from(rawCursor, 'base64url').toString('utf8'));
-    // The table's only key is `id`, so a real LastEvaluatedKey is exactly { id: <string> }.
-    const keys = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.keys(parsed) : [];
-    const isTableKey = keys.length === 1 && keys[0] === 'id'
-      && typeof parsed.id === 'string' && parsed.id.length > 0 && parsed.id.length <= 256;
-    return isTableKey ? { id: parsed.id } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export async function scanItemsPage({ cursor = null, limit = 48 } = {}) {
-  const data = await ddbDocClient.send(new ScanCommand({
-    TableName: getLookupTableName(),
-    Limit: limit,
-    ExclusiveStartKey: cursor || undefined
-  }));
-  return {
-    items: data.Items || [],
-    cursor: encodeScanCursor(data.LastEvaluatedKey || null)
-  };
 }
 
 export async function deleteItemById(id) {

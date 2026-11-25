@@ -1,6 +1,7 @@
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { getRandomImageHandler } from '../../../src/handlers/images/get-random-image.mjs';
+import { resetActiveItemsCache } from '../../../src/lib/random-browse.mjs';
 
 function getRandom() {
   return getRandomImageHandler({
@@ -14,6 +15,7 @@ describe('Test getRandomImageHandler', () => {
 
   beforeEach(() => {
     ddbMock.reset();
+    resetActiveItemsCache();
   });
 
   it('should return an active image from the random index', async () => {

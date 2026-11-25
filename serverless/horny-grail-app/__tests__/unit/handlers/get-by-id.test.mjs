@@ -1,10 +1,8 @@
-// Import getByIdHandler function from get-by-id.mjs 
-import { getByIdHandler } from '../../../src/handlers/get-by-id.mjs'; 
-// Import dynamodb from aws-sdk 
-import { DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { getByIdHandler, getMobileByIdHandler } from '../../../src/handlers/get-by-id.mjs';
+import { issueMobileReadToken } from '../../../src/lib/auth.mjs';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from "aws-sdk-client-mock";
  
-// This includes all tests for getByIdHandler() 
 describe('Test getByIdHandler', () => { 
     const ddbMock = mockClient(DynamoDBDocumentClient);
  
@@ -65,24 +63,49 @@ describe('Test getByIdHandler', () => {
         });
     });
 
-    it('should fall back to the list handler for an empty id', async () => {
-        const items = [{ id: 'a'.repeat(64), ext: 'jpg' }];
-        ddbMock.on(ScanCommand).resolves({
-            Items: items
+    it('should reject an empty id (GET /api/ is routed to the list handler instead)', async () => {
+        const result = await getByIdHandler({
+            httpMethod: 'GET',
+            headers: { 'x-read-origin-secret': process.env.READ_ORIGIN_SECRET },
+            pathParameters: { id: '' }
         });
+
+        expect(result.statusCode).toEqual(400);
+    });
+
+    it('should return 200 with null on the web when the item does not exist', async () => {
+        ddbMock.on(GetCommand).resolves({});
 
         const result = await getByIdHandler({
             httpMethod: 'GET',
-            headers: {
-                'x-read-origin-secret': process.env.READ_ORIGIN_SECRET
-            },
-            pathParameters: {
-                id: ''
-            }
+            headers: { 'x-read-origin-secret': process.env.READ_ORIGIN_SECRET },
+            pathParameters: { id: 'a'.repeat(64) }
         });
 
         expect(result.statusCode).toEqual(200);
-        expect(JSON.parse(result.body)).toEqual({ items, cursor: null });
+        expect(JSON.parse(result.body)).toBeNull();
     });
-}); 
+
+    it('should require a mobile session on the mobile route', async () => {
+        const result = await getMobileByIdHandler({
+            httpMethod: 'GET',
+            headers: { 'x-read-origin-secret': process.env.READ_ORIGIN_SECRET },
+            pathParameters: { id: 'a'.repeat(64) }
+        });
+
+        expect(result.statusCode).toEqual(401);
+    });
+
+    it('should return 404 on mobile when the item does not exist', async () => {
+        ddbMock.on(GetCommand).resolves({});
+
+        const result = await getMobileByIdHandler({
+            httpMethod: 'GET',
+            headers: { authorization: `Bearer ${(await issueMobileReadToken()).token}` },
+            pathParameters: { id: 'a'.repeat(64) }
+        });
+
+        expect(result.statusCode).toEqual(404);
+    });
+});
  

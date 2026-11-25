@@ -1,0 +1,13 @@
+{
+  "version": "2.0",
+  "routeKey": "POST /auth/mobile/session",
+  "rawPath": "/auth/mobile/session",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "{\"code\":\"your passphrase here\"}",
+  "requestContext": {
+    "http": { "method": "POST", "path": "/auth/mobile/session" }
+  },
+  "isBase64Encoded": false
+}

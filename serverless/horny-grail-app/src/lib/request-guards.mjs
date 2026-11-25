@@ -8,7 +8,6 @@ export async function guardRequest(event, {
   handlerName,
   method,
   allowOptions = false,
-  allowMissingMethod = false,
   authorize
 } = {}) {
   const requestMethod = getRequestMethod(event);
@@ -17,14 +16,8 @@ export async function guardRequest(event, {
     return corsPreflight(event);
   }
 
-  if (method) {
-    const hasUnexpectedMethod = allowMissingMethod
-      ? requestMethod && requestMethod !== method
-      : requestMethod !== method;
-
-    if (hasUnexpectedMethod) {
-      return methodNotAllowed(`${handlerName} only accepts ${method} method, you tried: ${requestMethod}`, event);
-    }
+  if (method && requestMethod !== method) {
+    return methodNotAllowed(`${handlerName} only accepts ${method} method, you tried: ${requestMethod}`, event);
   }
 
   if (typeof authorize === 'function') {

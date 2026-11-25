@@ -22,6 +22,17 @@ describe('template.yaml function policies', () => {
     }
   });
 
+  it.each(functions)('%s routes match its route table exactly', async (_name, resource) => {
+    const [, modulePath] = resource.Properties.Handler.match(/^(.*)\.handler$/) || [];
+    const { routes } = await import(new URL(`../../${modulePath}.mjs`, import.meta.url));
+    const declared = Object.values(resource.Properties.Events || {})
+      .filter((event) => event.Type === 'HttpApi')
+      .map((event) => `${event.Properties.Method.toUpperCase()} ${event.Properties.Path}`)
+      .sort();
+
+    expect(declared).toEqual(Object.keys(routes).sort());
+  });
+
   it.each(functions)('%s reads secrets at runtime, not from env', (_name, resource) => {
     const env = JSON.stringify(resource.Properties.Environment?.Variables || {});
     expect(env).not.toContain('resolve:secretsmanager');

@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "routeKey": "GET /api/assets/{id}/integrity",
+  "rawPath": "/api/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/integrity",
+  "headers": {
+    "x-api-key": "replace-with-a-long-random-secret"
+  },
+  "pathParameters": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestContext": {
+    "http": { "method": "GET", "path": "/api/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/integrity" }
+  },
+  "isBase64Encoded": false
+}

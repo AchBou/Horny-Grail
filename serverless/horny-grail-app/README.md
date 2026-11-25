@@ -15,23 +15,31 @@ AWS SAM backend for HornyGrail metadata, randomized browse, asset integrity chec
 
 ## Project Layout
 
-- `src/handlers/`: Lambda handlers grouped by feature
+- `src/functions/`: the three Lambda entry points (`auth`, `read`, `write`), each a route table
+- `src/handlers/`: route handlers grouped by feature
 - `src/lib/`: shared validation, auth, and HTTP helpers
 - `__tests__/`: Jest unit tests
-- `events/`: sample local invocation payloads
+- `events/`: sample HTTP API v2 events, one per function (`sam local invoke ReadFunction -e events/read-get-by-id.json --env-vars env.json`)
 - `template.yaml`: SAM stack definition
 - `env.example.json`: local SAM environment example
+
+## Functions
+
+The API runs on three Lambdas (arm64, 512 MB, 10 s timeout; write is 15 s):
+
+- `AuthFunction`: `/auth/session` and `/auth/mobile/session`
+- `ReadFunction`: every `GET` gallery route, web and mobile
+- `WriteFunction`: register, sign upload, integrity and delete
+
+Each one dispatches on the HTTP API route key (`event.routeKey`, e.g. `GET /api/{id}`) through `src/lib/router.mjs`. To add a route, add it both as an `HttpApi` event on the function in `template.yaml` and to the route table in `src/functions/*.mjs`; `__tests__/unit/template-policies.test.mjs` fails if the two disagree.
 
 ## API Surface
 
 Web read endpoints:
 
-- `GET /api`
-- `GET /api/`
 - `GET /api/{id}`
 - `GET /api/get-random-image`
 - `GET /api/browse/random`
-- `GET /api/thumbnails`
 
 Mobile read endpoints:
 
@@ -48,6 +56,7 @@ Write and repair endpoints:
 - `GET /api/assets/{id}/integrity`
 - `POST /api`
 - `POST /api/uploads/sign`
+- `DELETE /api/assets/{id}`
 
 Write endpoints accept either the desktop uploader's key or a mobile session token:
 

@@ -7,7 +7,6 @@ export const getRandomImageHandler = async (event) => {
   const guardError = await guardRequest(event, {
     handlerName: 'getRandomImage',
     method: 'GET',
-    allowMissingMethod: true,
     authorize: requireReadOriginSecret
   });
   if (guardError) {

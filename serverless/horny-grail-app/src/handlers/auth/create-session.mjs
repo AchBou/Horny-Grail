@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { attemptLogin } from '../../lib/login-flow.mjs';
+import { getRequestMethod } from '../../lib/request-guards.mjs';
 
 const secretsClient = new SecretsManagerClient({});
 let cachedPrivateKey = null;
@@ -12,10 +13,6 @@ function requireEnv(name) {
   }
 
   return value;
-}
-
-function getMethod(event) {
-  return event?.httpMethod || event?.requestContext?.http?.method || '';
 }
 
 function parseBody(event) {
@@ -121,7 +118,7 @@ function redirectResponse(location, cookies = []) {
 }
 
 export const createSessionHandler = async (event) => {
-  const method = getMethod(event);
+  const method = getRequestMethod(event);
 
   if (method === 'OPTIONS') {
     return { statusCode: 204, headers: { 'Cache-Control': 'no-store' }, body: '' };

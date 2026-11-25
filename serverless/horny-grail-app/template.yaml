@@ -544,12 +544,13 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${ProtectedReadSiteDistribution}
 
-  createAccessSessionFunction:
+  # Three functions, each dispatching its routes by HTTP API route key (src/lib/router.mjs).
+  # Every route listed under a function's Events must also be in its src/functions/*.mjs table.
+  AuthFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/auth/create-session.createSessionHandler
-      Timeout: 10
-      Description: Validates the shared access code and issues CloudFront signed cookies.
+      Handler: src/functions/auth.handler
+      Description: Passphrase logins for the web (signed cookies) and mobile (bearer token).
       Policies:
       - Statement:
         - Effect: Allow
@@ -562,71 +563,46 @@ Resources:
           TableName: !Ref LoginAttemptsTable
       Environment:
         Variables:
-          APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
           LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
           LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
           CLOUDFRONT_PRIVATE_KEY_SECRET_ARN: !Ref CloudFrontPrivateKeySecretArn
           CLOUDFRONT_KEY_PAIR_ID: !Ref ProtectedReadPublicKey
           CLOUDFRONT_COOKIE_RESOURCE: !Ref CloudFrontCookieResource
           ACCESS_COOKIE_TTL_SECONDS: !Ref AccessCookieTtlSeconds
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        AuthSessionPost:
-          Type: HttpApi
-          Properties:
-            Path: /auth/session
-            Method: POST
-        AuthSessionGet:
-          Type: HttpApi
-          Properties:
-            Path: /auth/session
-            Method: GET
-        AuthSessionOptions:
-          Type: HttpApi
-          Properties:
-            Path: /auth/session
-            Method: OPTIONS
-
-  createMobileAccessSessionFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/auth/create-mobile-session.createMobileSessionHandler
-      Timeout: 10
-      Description: Validates the shared access code and issues a short-lived mobile bearer token.
-      Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - DynamoDBCrudPolicy:
-          TableName: !Ref LoginAttemptsTable
-      Environment:
-        Variables:
-          APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn
-          LOGIN_ATTEMPTS_TABLE: !Ref LoginAttemptsTable
-          LOGIN_GLOBAL_FAILURES_PER_HOUR: !Ref LoginGlobalFailuresPerHour
           MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
-        AuthMobileSessionPost:
+        SessionGet:
+          Type: HttpApi
+          Properties:
+            Path: /auth/session
+            Method: GET
+        SessionPost:
+          Type: HttpApi
+          Properties:
+            Path: /auth/session
+            Method: POST
+        SessionOptions:
+          Type: HttpApi
+          Properties:
+            Path: /auth/session
+            Method: OPTIONS
+        MobileSessionPost:
           Type: HttpApi
           Properties:
             Path: /auth/mobile/session
             Method: POST
-        AuthMobileSessionOptions:
+        MobileSessionOptions:
           Type: HttpApi
           Properties:
             Path: /auth/mobile/session
             Method: OPTIONS
 
-  # Read handlers.
-  getAllThumbnailsFunction:
+  ReadFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/thumbnails/get-all-thumbnails.getAllThumbnailsHandler
-      Timeout: 100
-      Description: Returns thumbnail metadata for the gallery.
+      Handler: src/functions/read.handler
+      Description: Gallery reads for the web (CloudFront origin secret) and mobile (bearer token, presigned media URLs).
       Policies:
       - Statement:
         - Effect: Allow
@@ -635,355 +611,65 @@ Resources:
           Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBReadPolicy:
           TableName: !Ref LookupTable
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            Path: /api/thumbnails
-            Method: GET
-
-  getByIdFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/get-by-id.getByIdHandler
-      Timeout: 100
-      Description: Returns image metadata by canonical content hash.
-      Policies:
+      # Mobile responses carry presigned GET URLs, which are signed with this role.
       - Statement:
         - Effect: Allow
           Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - DynamoDBReadPolicy:
-          TableName: !Ref LookupTable
+          - s3:GetObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
+          BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
+          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
+          MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
-        Api:
+        GetById:
           Type: HttpApi
           Properties:
             Path: /api/{id}
             Method: GET
-
-  # Write handlers.
-  putItemFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/put-item.putItemHandler
-      Timeout: 100
-      Description: Writes image metadata once the original and thumbnail are in S3.
-      Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - DynamoDBWritePolicy:
-          TableName: !Ref LookupTable
-      - DynamoDBReadPolicy:
-          TableName: !Ref LookupTable
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:GetObject
-          Resource:
-          - !Sub arn:aws:s3:::${BucketName}/files/*
-          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:ListBucket
-          Resource: !Sub arn:aws:s3:::${BucketName}
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            Path: /api
-            Method: POST
-        ApiOptions:
-          Type: HttpApi
-          Properties:
-            Path: /api
-            Method: OPTIONS
-
-  getAllItemsFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/get-all-items.getAllItemsHandler
-      Timeout: 100
-      Description: Lists image metadata records.
-      Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - DynamoDBReadPolicy:
-          TableName: !Ref LookupTable
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            Path: /api
-            Method: GET
-        ApiTrailingSlash:
-          Type: HttpApi
-          Properties:
-            Path: /api/
-            Method: GET
-
-  # Random discovery handlers.
-  GetRandomImage:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/images/get-random-image.getRandomImageHandler
-      Timeout: 60
-      Description: Returns one random active image.
-      Policies:
-        - Statement:
-          - Effect: Allow
-            Action:
-            - secretsmanager:GetSecretValue
-            Resource: !Sub '${AppSecretsSecretArn}*'
-        - DynamoDBReadPolicy:
-            TableName: !Ref LookupTable
-        - Statement:
-          - Effect: Allow
-            Action:
-            - dynamodb:Query
-            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LookupTable}/index/RandomImageIndex
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
+        RandomImage:
           Type: HttpApi
           Properties:
             Path: /api/get-random-image
             Method: GET
-
-  getRandomBrowseFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/browse/get-random-browse.getRandomBrowseHandler
-      Timeout: 60
-      Description: Returns randomized browse pages with cursor pagination.
-      Policies:
-        - Statement:
-          - Effect: Allow
-            Action:
-            - secretsmanager:GetSecretValue
-            Resource: !Sub '${AppSecretsSecretArn}*'
-        - DynamoDBReadPolicy:
-            TableName: !Ref LookupTable
-        - Statement:
-          - Effect: Allow
-            Action:
-            - dynamodb:Query
-            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LookupTable}/index/RandomImageIndex
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
+        RandomBrowse:
           Type: HttpApi
           Properties:
             Path: /api/browse/random
             Method: GET
-  getMobileByIdFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/mobile/get-by-id.getMobileByIdHandler
-      Timeout: 100
-      Description: Returns one mobile media item with signed original and thumbnail URLs.
-      Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - DynamoDBReadPolicy:
-          TableName: !Ref LookupTable
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:GetObject
-          Resource:
-          - !Sub arn:aws:s3:::${BucketName}/files/*
-          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
-          MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
+        MobileGetById:
           Type: HttpApi
           Properties:
             Path: /api/mobile/{id}
             Method: GET
-        ApiOptions:
+        MobileGetByIdOptions:
           Type: HttpApi
           Properties:
             Path: /api/mobile/{id}
             Method: OPTIONS
-
-  getMobileRandomBrowseFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/mobile/get-random-browse.getMobileRandomBrowseHandler
-      Timeout: 60
-      Description: Returns randomized mobile browse pages with signed media URLs.
-      Policies:
-        - Statement:
-          - Effect: Allow
-            Action:
-            - secretsmanager:GetSecretValue
-            Resource: !Sub '${AppSecretsSecretArn}*'
-        - DynamoDBReadPolicy:
-            TableName: !Ref LookupTable
-        - Statement:
-          - Effect: Allow
-            Action:
-            - dynamodb:Query
-            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LookupTable}/index/RandomImageIndex
-        - Statement:
-          - Effect: Allow
-            Action:
-            - s3:GetObject
-            Resource:
-            - !Sub arn:aws:s3:::${BucketName}/files/*
-            - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          MOBILE_READ_TOKEN_TTL_SECONDS: !Ref MobileReadTokenTtlSeconds
-          MOBILE_SIGNED_URL_TTL_SECONDS: !Ref MobileSignedUrlTtlSeconds
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
+        MobileRandomBrowse:
           Type: HttpApi
           Properties:
             Path: /api/mobile/browse/random
             Method: GET
-        ApiOptions:
+        MobileRandomBrowseOptions:
           Type: HttpApi
           Properties:
             Path: /api/mobile/browse/random
             Method: OPTIONS
 
-  # Upload and repair helpers.
-  signUploadFunction:
+  WriteFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/uploads/sign-upload.signUploadHandler
-      Timeout: 30
-      Description: Issues presigned upload URLs for originals and thumbnails.
-      Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:PutObject
-          Resource:
-          - !Sub arn:aws:s3:::${BucketName}/files/*
-          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
-      Environment:
-        Variables:
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            Path: /api/uploads/sign
-            Method: POST
-        ApiOptions:
-          Type: HttpApi
-          Properties:
-            Path: /api/uploads/sign
-            Method: OPTIONS
-
-  getAssetIntegrityFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/assets/get-asset-integrity.getAssetIntegrityHandler
-      Timeout: 30
-      Description: Checks whether metadata and expected S3 assets exist (desktop write key or mobile session).
-      Policies:
-      - Statement:
-        - Effect: Allow
-          Action:
-          - secretsmanager:GetSecretValue
-          Resource: !Sub '${AppSecretsSecretArn}*'
-      - DynamoDBReadPolicy:
-          TableName: !Ref LookupTable
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:GetObject
-          Resource:
-          - !Sub arn:aws:s3:::${BucketName}/files/*
-          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
-      - Statement:
-        - Effect: Allow
-          Action:
-          - s3:ListBucket
-          Resource: !Sub arn:aws:s3:::${BucketName}
-      Environment:
-        Variables:
-          LOOKUP_TABLE: !Ref LookupTable
-          BUCKET_NAME: !Ref BucketName
-          BUCKET_REGION: !Ref BucketRegion
-          CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
-      Events:
-        Api:
-          Type: HttpApi
-          Properties:
-            Path: /api/assets/{id}/integrity
-            Method: GET
-        ApiOptions:
-          Type: HttpApi
-          Properties:
-            Path: /api/assets/{id}/integrity
-            Method: OPTIONS
-
-  deleteAssetFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: src/handlers/assets/delete-asset.deleteAssetHandler
-      Timeout: 30
-      Description: Deletes a metadata entry from DynamoDB without removing S3 objects.
+      Handler: src/functions/write.handler
+      Timeout: 15
+      Description: Uploads and repair (desktop write key or mobile session; delete is write key only).
       Policies:
       - Statement:
         - Effect: Allow
@@ -992,17 +678,63 @@ Resources:
           Resource: !Sub '${AppSecretsSecretArn}*'
       - DynamoDBCrudPolicy:
           TableName: !Ref LookupTable
+      # PutObject signs upload URLs; GetObject + ListBucket let HEAD tell a missing file (404) from a denied one.
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          - s3:PutObject
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          Resource: !Sub arn:aws:s3:::${BucketName}
       Environment:
         Variables:
           LOOKUP_TABLE: !Ref LookupTable
+          BUCKET_NAME: !Ref BucketName
+          BUCKET_REGION: !Ref BucketRegion
           CORS_ALLOWED_ORIGINS: !Ref AllowedCorsOrigins
       Events:
-        Api:
+        RegisterItem:
+          Type: HttpApi
+          Properties:
+            Path: /api
+            Method: POST
+        RegisterItemOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api
+            Method: OPTIONS
+        SignUpload:
+          Type: HttpApi
+          Properties:
+            Path: /api/uploads/sign
+            Method: POST
+        SignUploadOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/uploads/sign
+            Method: OPTIONS
+        AssetIntegrity:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/integrity
+            Method: GET
+        AssetIntegrityOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/integrity
+            Method: OPTIONS
+        DeleteAsset:
           Type: HttpApi
           Properties:
             Path: /api/assets/{id}
             Method: DELETE
-        ApiOptions:
+        DeleteAssetOptions:
           Type: HttpApi
           Properties:
             Path: /api/assets/{id}
@@ -1037,9 +769,13 @@ Outputs:
 Globals:
   Function:
     Runtime: nodejs22.x
+    # arm64 is ~20% cheaper per ms; dependencies are pure JS. 512 MB also buys more CPU,
+    # which shortens cold starts and the scrypt passphrase check.
     Architectures:
-      - x86_64
-    MemorySize: 128
+      - arm64
+    MemorySize: 512
+    # HTTP APIs stop waiting after 30 s, so longer Lambda timeouts never helped.
+    Timeout: 10
     Environment:
       Variables:
         APP_SECRETS_SECRET_ARN: !Ref AppSecretsSecretArn

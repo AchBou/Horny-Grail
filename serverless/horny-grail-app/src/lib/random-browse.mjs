@@ -65,8 +65,29 @@ export function decodeRandomBrowseCursor(rawCursor) {
   return { seed: parsed.seed, after: parsed.after };
 }
 
-/** Reads every active item from the random index. The collection is small enough to hold in memory. */
+// A warm read function reuses the item list while someone scrolls, so only the first page
+// of a session pays for the full index read. New uploads show up within a minute.
+const ACTIVE_ITEMS_TTL_MS = 60 * 1000;
+let activeItemsCache = null;
+let activeItemsLoadedAt = 0;
+
+export function resetActiveItemsCache() {
+  activeItemsCache = null;
+  activeItemsLoadedAt = 0;
+}
+
+/** Every active item, cached per container for a minute. */
 export async function loadActiveItems() {
+  if (activeItemsCache && Date.now() - activeItemsLoadedAt < ACTIVE_ITEMS_TTL_MS) {
+    return activeItemsCache;
+  }
+  activeItemsCache = await queryActiveItems();
+  activeItemsLoadedAt = Date.now();
+  return activeItemsCache;
+}
+
+/** Reads every active item from the random index. The collection is small enough to hold in memory. */
+async function queryActiveItems() {
   const items = [];
   let startKey;
 

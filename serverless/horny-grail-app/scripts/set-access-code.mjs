@@ -92,7 +92,7 @@ async function resolveSecretId(args) {
     return fromParameter;
   }
 
-  const secretId = await readFunctionEnv(args, stackName, 'createAccessSessionFunction', 'APP_SECRETS_SECRET_ARN');
+  const secretId = await readFunctionEnv(args, stackName, 'AuthFunction', 'APP_SECRETS_SECRET_ARN');
   if (!secretId) {
     throw new Error(`Could not find the app secret for stack ${stackName}. Deploy first or pass --secret-id <arn>.`);
   }

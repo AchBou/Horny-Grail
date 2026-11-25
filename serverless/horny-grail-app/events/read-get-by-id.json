@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "routeKey": "GET /api/{id}",
+  "rawPath": "/api/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "headers": {
+    "x-read-origin-secret": "replace-with-long-random-string"
+  },
+  "pathParameters": {
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestContext": {
+    "http": { "method": "GET", "path": "/api/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  },
+  "isBase64Encoded": false
+}
