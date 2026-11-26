@@ -520,8 +520,24 @@ Resources:
   # Every route listed under a function's Events must also be in its src/functions/*.mjs table.
   AuthFunction:
     Type: AWS::Serverless::Function
+    # Bundled with esbuild: one minified file per function with only the code it uses,
+    # so packages stay small and a function only redeploys when its own code changes.
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/functions/auth.mjs
+        Format: esm
+        OutExtension:
+          - .js=.mjs
+        Target: es2023
+        Minify: true
+        Sourcemap: false
+        # Some bundled CommonJS code calls require(); give ESM output a real one.
+        Banner:
+          - js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);
     Properties:
-      Handler: src/functions/auth.handler
+      Handler: auth.handler
       Description: Passphrase logins for the web (signed cookies) and mobile (bearer token).
       Policies:
       - Statement:
@@ -572,8 +588,24 @@ Resources:
 
   ReadFunction:
     Type: AWS::Serverless::Function
+    # Bundled with esbuild: one minified file per function with only the code it uses,
+    # so packages stay small and a function only redeploys when its own code changes.
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/functions/read.mjs
+        Format: esm
+        OutExtension:
+          - .js=.mjs
+        Target: es2023
+        Minify: true
+        Sourcemap: false
+        # Some bundled CommonJS code calls require(); give ESM output a real one.
+        Banner:
+          - js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);
     Properties:
-      Handler: src/functions/read.handler
+      Handler: read.handler
       Description: Gallery reads for the web (CloudFront origin secret) and mobile (bearer token, presigned media URLs).
       Policies:
       - Statement:
@@ -673,8 +705,24 @@ Resources:
 
   WriteFunction:
     Type: AWS::Serverless::Function
+    # Bundled with esbuild: one minified file per function with only the code it uses,
+    # so packages stay small and a function only redeploys when its own code changes.
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/functions/write.mjs
+        Format: esm
+        OutExtension:
+          - .js=.mjs
+        Target: es2023
+        Minify: true
+        Sourcemap: false
+        # Some bundled CommonJS code calls require(); give ESM output a real one.
+        Banner:
+          - js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);
     Properties:
-      Handler: src/functions/write.handler
+      Handler: write.handler
       Timeout: 15
       Description: Uploads and repair (desktop write key or mobile session; delete is write key only).
       Policies:

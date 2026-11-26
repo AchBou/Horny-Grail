@@ -22,9 +22,19 @@ describe('template.yaml function policies', () => {
     }
   });
 
+  it.each(functions)('%s is bundled with esbuild from its route module', (_name, resource) => {
+    expect(resource.Metadata?.BuildMethod).toBe('esbuild');
+    const [entry] = resource.Metadata.BuildProperties.EntryPoints;
+    expect(entry).toMatch(/^src\/functions\/\w+\.mjs$/);
+    // esbuild writes the bundle at the package root under the entry's file name.
+    const bundleName = entry.split('/').pop().replace(/\.mjs$/, '');
+    expect(resource.Properties.Handler).toBe(`${bundleName}.handler`);
+    expect(resource.Metadata.BuildProperties.OutExtension).toContain('.js=.mjs');
+  });
+
   it.each(functions)('%s routes match its route table exactly', async (_name, resource) => {
-    const [, modulePath] = resource.Properties.Handler.match(/^(.*)\.handler$/) || [];
-    const { routes } = await import(new URL(`../../${modulePath}.mjs`, import.meta.url));
+    const [entry] = resource.Metadata.BuildProperties.EntryPoints;
+    const { routes } = await import(new URL(`../../${entry}`, import.meta.url));
     const declared = Object.values(resource.Properties.Events || {})
       .filter((event) => event.Type === 'HttpApi')
       .map((event) => `${event.Properties.Method.toUpperCase()} ${event.Properties.Path}`)
