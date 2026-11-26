@@ -1,18 +1,16 @@
 <script>
 	import { onMount, tick } from 'svelte';
+	import { page } from '$app/state';
+	import { pushState, replaceState } from '$app/navigation';
 	import Thumbnail from '../../components/Thumbnail.svelte';
-	import {
-		USE_MOCK_GALLERY,
-		buildApiUrl,
-		buildMockThumbnailUrl,
-		buildThumbnailUrl
-	} from '$lib/config/publicEnv.js';
-	import { replaceState } from '$app/navigation';
-	import { getMockBrowsePage, getMockTagSummary } from '$lib/mocks/gallery.js';
-	import { normalizeImages, readTagFilter, writeTagFilter } from '$lib/models/image.js';
+	import MediaViewer from '../../components/MediaViewer.svelte';
+	import { USE_MOCK_GALLERY, buildApiUrl } from '$lib/config/publicEnv.js';
+	import { getMockTagSummary } from '$lib/mocks/gallery.js';
+	import { describeRequestFailure, fetchShufflePage, thumbnailUrlFor } from '$lib/media.js';
+	import { readTagFilter, writeTagFilter } from '$lib/models/image.js';
 
-	const PAGE_SIZE = 24;
-	const PRELOAD_MARGIN_PX = 240;
+	const PAGE_SIZE = 48;
+	const PRELOAD_MARGIN_PX = 600;
 
 	/** @type {import('$lib/models/image.js').ImageItem[]} */
 	let images = $state([]);
@@ -30,6 +28,13 @@
 	/** @type {{ tags: { tag: string, count: number }[], total: number, untagged: number } | null} */
 	let tagSummary = $state(null);
 	const isFiltered = $derived(filter.untagged || filter.tags.length > 0);
+
+	// The viewer opens over the grid through shallow routing: the URL becomes /image/<id> (so the
+	// link works on its own), Back closes it, and the grid keeps its order and scroll position.
+	const openId = $derived(page.state?.viewerId ?? null);
+	const openIndex = $derived(openId ? images.findIndex((image) => image.id === openId) : -1);
+	const openItem = $derived(openIndex >= 0 ? images[openIndex] : null);
+	let lastViewedId = null;
 
 	const seenIds = new Set();
 
@@ -49,8 +54,10 @@
 	function applyFilter(next) {
 		filter = next;
 		const url = new URL(window.location.href);
+		url.pathname = '/browse';
 		writeTagFilter(url.searchParams, next);
 		replaceState(url, {});
+		window.scrollTo({ top: 0 });
 		retryInitialLoad();
 		loadTagSummary();
 	}
@@ -60,44 +67,14 @@
 		applyFilter({ tags, untagged: false });
 	}
 
-	function describeRequestFailure(status, fallbackMessage) {
-		if (status === 404) {
-			return 'No active items are available to browse yet.';
-		}
-
-		if (status >= 500) {
-			return 'The gallery is temporarily unavailable. Try again in a moment.';
-		}
-
-		return fallbackMessage || 'Failed to load images.';
-	}
-
-	function buildBrowseUrl(cursor = null) {
-		const url = new URL(buildApiUrl('/browse/random'), window.location.origin);
-		url.searchParams.set('limit', PAGE_SIZE.toString());
-		if (cursor) {
-			url.searchParams.set('cursor', cursor);
-		}
-		writeTagFilter(url.searchParams, filter);
-		return url.toString();
-	}
-
 	function mergeImages(nextImages, replace = false) {
+		if (replace) seenIds.clear();
 		const merged = [];
-
-		if (replace) {
-			seenIds.clear();
-		}
-
 		for (const image of nextImages) {
-			if (!image?.id || seenIds.has(image.id)) {
-				continue;
-			}
-
+			if (!image?.id || seenIds.has(image.id)) continue;
 			seenIds.add(image.id);
 			merged.push(image);
 		}
-
 		images = replace ? merged : images.concat(merged);
 	}
 
@@ -119,45 +96,21 @@
 
 		const current = generation;
 		try {
-			const payload = USE_MOCK_GALLERY
-				? getMockBrowsePage(cursor, PAGE_SIZE, filter)
-				: await (async () => {
-					const response = await fetch(buildBrowseUrl(cursor));
-					if (!response.ok) {
-						const body = await response.json().catch(() => null);
-						const requestError = new Error(
-							describeRequestFailure(
-								response.status,
-								body?.message || `HTTP error! Status: ${response.status}`
-							)
-						);
-						requestError.status = response.status;
-						throw requestError;
-					}
-
-					return response.json();
-				})();
-
+			const result = await fetchShufflePage({ cursor, limit: PAGE_SIZE, filter });
 			if (current !== generation) return;
-			mergeImages(normalizeImages(payload.items), replace);
-			hasMore = Boolean(payload.hasMore);
-			nextCursor = typeof payload.cursor === 'string' ? payload.cursor : null;
+			mergeImages(result.items, replace);
+			hasMore = result.hasMore;
+			nextCursor = result.cursor;
 		} catch (err) {
 			if (current !== generation) return;
 			console.error(err);
-			const message = describeRequestFailure(err?.status, err.message || 'Failed to load images');
-			if (replace) {
-				error = message;
-			} else {
-				loadMoreError = message;
-			}
+			const message = describeRequestFailure(err?.status, err?.message);
+			if (replace) error = message;
+			else loadMoreError = message;
 		} finally {
 			if (current === generation) {
-				if (replace) {
-					isLoading = false;
-				} else {
-					isLoadingMore = false;
-				}
+				if (replace) isLoading = false;
+				else isLoadingMore = false;
 			}
 		}
 
@@ -168,10 +121,7 @@
 	// still be in view after a page renders, so check again instead of waiting for a scroll.
 	async function loadMoreIfSentinelVisible() {
 		await tick();
-		if (!sentinel || isLoading || isLoadingMore || loadMoreError || !hasMore || !nextCursor) {
-			return;
-		}
-
+		if (!sentinel || isLoading || isLoadingMore || loadMoreError || !hasMore || !nextCursor) return;
 		if (sentinel.getBoundingClientRect().top <= window.innerHeight + PRELOAD_MARGIN_PX) {
 			await fetchPage({ cursor: nextCursor });
 		}
@@ -184,6 +134,47 @@
 		fetchPage({ replace: true });
 	}
 
+	function viewerUrl(id) {
+		return `/image/${id}${window.location.search}`;
+	}
+
+	/** @param {MouseEvent} event */
+	function openViewer(event, id) {
+		// Let new-tab and new-window clicks open the item page as usual.
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		event.preventDefault();
+		lastViewedId = id;
+		pushState(viewerUrl(id), { viewerId: id });
+	}
+
+	async function showAt(index) {
+		const item = images[index];
+		if (!item) return;
+		lastViewedId = item.id;
+		replaceState(viewerUrl(item.id), { viewerId: item.id });
+		if (index >= images.length - 4 && hasMore && !isLoadingMore && nextCursor) {
+			await fetchPage({ cursor: nextCursor });
+		}
+	}
+
+	function closeViewer() {
+		history.back();
+	}
+
+	function filterByTagFromViewer(tag) {
+		applyFilter({ tags: [tag], untagged: false });
+	}
+
+	// After the viewer closes, keep the last item seen in view.
+	$effect(() => {
+		if (openItem || !lastViewedId) return;
+		const id = lastViewedId;
+		lastViewedId = null;
+		tick().then(() => {
+			document.querySelector(`[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+		});
+	});
+
 	onMount(() => {
 		filter = readTagFilter(new URL(window.location.href).searchParams);
 		fetchPage({ replace: true });
@@ -192,24 +183,13 @@
 		observer = new IntersectionObserver(
 			(entries) => {
 				const [entry] = entries;
-				if (!entry?.isIntersecting || isLoading || isLoadingMore || !hasMore || !nextCursor) {
-					return;
-				}
-
+				if (!entry?.isIntersecting || isLoading || isLoadingMore || !hasMore || !nextCursor) return;
 				fetchPage({ cursor: nextCursor });
 			},
-			{
-				rootMargin: `${PRELOAD_MARGIN_PX}px 0px`
-			}
+			{ rootMargin: `${PRELOAD_MARGIN_PX}px 0px` }
 		);
 
-		if (sentinel) {
-			observer.observe(sentinel);
-		}
-
-		return () => {
-			observer?.disconnect();
-		};
+		return () => observer?.disconnect();
 	});
 
 	// The sentinel only exists once the gallery renders, so observe it whenever it appears.
@@ -223,7 +203,7 @@
 </script>
 
 <div class="browse-shell">
-	<h2>Browse Images</h2>
+	<h1 class="visually-hidden">Browse</h1>
 
 	{#if tagSummary && (tagSummary.tags.length > 0 || isFiltered)}
 		<nav class="tag-bar" aria-label="Filter by tag">
@@ -245,76 +225,56 @@
 	{/if}
 
 	{#if isLoading}
-		<div class="state-card loading">
+		<div class="state">
 			<div class="spinner"></div>
-			<p>Loading gallery...</p>
 		</div>
 	{:else if error}
-		<div class="state-card">
-			<h3>Gallery unavailable</h3>
+		<div class="state">
 			<p>{error}</p>
 			<div class="actions">
-				<button type="button" class="primary-action" onclick={retryInitialLoad}>Try Again</button>
-				<a class="secondary-action" href="/random">Open Random</a>
+				<button type="button" class="primary-action" onclick={retryInitialLoad}>Try again</button>
 			</div>
 		</div>
 	{:else if images.length === 0 && isFiltered}
-		<div class="state-card">
-			<h3>{filter.untagged ? 'Everything is tagged' : 'Nothing has all of these tags'}</h3>
+		<div class="state">
+			<p>{filter.untagged ? 'Everything is tagged.' : 'Nothing has all of these tags.'}</p>
 			<div class="actions">
-				<button type="button" class="primary-action" onclick={() => applyFilter({ tags: [], untagged: false })}>Show Everything</button>
+				<button type="button" class="primary-action" onclick={() => applyFilter({ tags: [], untagged: false })}>Show everything</button>
 			</div>
 		</div>
 	{:else if images.length === 0}
-		<div class="state-card">
-			<h3>No items yet</h3>
-			<div class="actions">
-				<a class="primary-link" href="/random">Try Random</a>
-				<a class="secondary-action" href="/">Back Home</a>
-			</div>
+		<div class="state">
+			<p>Nothing here yet.</p>
 		</div>
 	{:else}
-		<section class="gallery-panel">
-			<div class="gallery">
-				{#each images as img (img.id)}
-					<a
-						class="thumbnail-wrapper"
-						href={`/image/${img.id}`}
-						data-id={img.id}
-						aria-label={`Open ${img.kind === 'video' ? 'video' : 'image'} ${img.id}`}
-					>
-						<Thumbnail
-							src={USE_MOCK_GALLERY ? buildMockThumbnailUrl(img.id) : buildThumbnailUrl(img.id)}
-							alt={img.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'}
-							kind={img.kind}
-						/>
-					</a>
-				{/each}
-			</div>
-		</section>
+		<div class="gallery">
+			{#each images as img (img.id)}
+				<a
+					class="tile"
+					href={`/image/${img.id}`}
+					data-id={img.id}
+					onclick={(event) => openViewer(event, img.id)}
+					aria-label={img.kind === 'video' ? 'Open video' : 'Open image'}
+				>
+					<Thumbnail src={thumbnailUrlFor(img)} alt="" kind={img.kind} />
+				</a>
+			{/each}
+		</div>
 
 		<div class="load-more-area">
 			{#if isLoadingMore}
-				<div class="loading loading-more">
-					<div class="spinner small"></div>
-					<p>Loading more...</p>
-				</div>
+				<div class="spinner small"></div>
 			{:else if loadMoreError}
-				<div class="state-card inline-error">
-					<h3>Could not load more</h3>
+				<div class="state compact">
 					<p>{loadMoreError}</p>
 					<div class="actions">
-						<button type="button" class="primary-action" onclick={() => fetchPage({ cursor: nextCursor })}>Try Again</button>
-						<button type="button" class="secondary-action" onclick={retryInitialLoad}>Refresh Gallery</button>
+						<button type="button" class="primary-action" onclick={() => fetchPage({ cursor: nextCursor })}>Try again</button>
 					</div>
 				</div>
 			{:else if !hasMore}
 				<div class="end-state">
-					<h3>End of gallery</h3>
-					<div class="actions">
-						<button type="button" class="primary-action" onclick={retryInitialLoad}>Shuffle Again</button>
-						<a class="secondary-action" href="/random">Open Random</a>
-					</div>
+					<span>That's everything{isFiltered ? ' with these tags' : ''}.</span>
+					<button type="button" class="secondary-action" onclick={() => { window.scrollTo({ top: 0 }); retryInitialLoad(); }}>Shuffle again</button>
 				</div>
 			{/if}
 
@@ -323,46 +283,56 @@
 	{/if}
 </div>
 
+{#if openItem}
+	<MediaViewer
+		item={openItem}
+		hasPrev={openIndex > 0}
+		hasNext={openIndex < images.length - 1}
+		onPrev={() => showAt(openIndex - 1)}
+		onNext={() => showAt(openIndex + 1)}
+		onClose={closeViewer}
+		onTag={filterByTagFromViewer}
+		label={`${openIndex + 1} / ${hasMore ? `${images.length}+` : images.length}`}
+	/>
+{/if}
+
 <style>
 	.browse-shell {
-		padding: 24px 0 56px;
-		max-width: 1380px;
-		margin: 0 auto;
+		padding: 4px 0 40px;
 	}
 
-	h2 {
-		color: #23364a;
-		margin: 0 0 24px;
-		text-align: center;
-		font-size: clamp(2.1rem, 4vw, 3.2rem);
-		font-weight: 800;
-		letter-spacing: -0.04em;
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
 	.tag-bar {
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
-		gap: 8px;
-		margin: -8px auto 24px;
-		max-width: 1100px;
+		gap: 6px;
+		margin: 0 auto 16px;
 	}
 
 	.tag-chip {
-		padding: 8px 16px;
+		padding: 6px 14px;
 		border-radius: 999px;
 		border: 1px solid rgba(44, 62, 80, 0.18);
-		background: rgba(255, 255, 255, 0.95);
+		background: white;
 		color: #2c3e50;
 		font-family: 'Montserrat', sans-serif;
 		font-size: 0.85rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: all 0.2s;
+		transition: background-color 0.15s, border-color 0.15s;
 	}
 
 	.tag-chip:hover {
-		border-color: rgba(44, 62, 80, 0.35);
+		border-color: rgba(44, 62, 80, 0.4);
 	}
 
 	.tag-chip.dashed:not(.selected) {
@@ -373,7 +343,6 @@
 		background-color: #e74c3c;
 		border-color: #e74c3c;
 		color: white;
-		box-shadow: 0 8px 18px rgba(231, 76, 60, 0.18);
 	}
 
 	.tag-count {
@@ -382,186 +351,113 @@
 		opacity: 0.7;
 	}
 
-	.gallery-panel {
-		padding: clamp(18px, 2.5vw, 28px);
-		border-radius: 28px;
-		background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(251, 252, 253, 0.98));
-		box-shadow:
-			0 24px 50px rgba(44, 62, 80, 0.08),
-			inset 0 0 0 1px rgba(44, 62, 80, 0.08);
-	}
-
-	.state-card h3,
-	.end-state h3 {
-		margin: 0;
-		color: #23364a;
-		font-size: 1.75rem;
-		font-weight: 800;
-		letter-spacing: -0.03em;
-	}
-
 	.gallery {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-		gap: 22px;
-		align-items: start;
+		grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+		gap: 10px;
 	}
 
-	.thumbnail-wrapper {
+	.tile {
 		display: block;
-		width: 100%;
+		border-radius: 10px;
 		text-decoration: none;
-		transition:
-			transform 0.28s ease,
-			filter 0.28s ease;
-		border-radius: 20px;
 	}
 
-	.thumbnail-wrapper:hover,
-	.thumbnail-wrapper:focus-visible {
-		transform: translateY(-6px);
-		filter: saturate(1.03);
-		outline: none;
+	.tile:focus-visible {
+		outline: 3px solid #e74c3c;
+		outline-offset: 2px;
 	}
 
-	.state-card,
-	.end-state,
-	.loading {
+	.state {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
+		min-height: 40vh;
 		text-align: center;
-		padding: clamp(28px, 5vw, 50px);
-		border-radius: 28px;
-		background: rgba(255, 255, 255, 0.96);
-		box-shadow:
-			0 24px 50px rgba(44, 62, 80, 0.08),
-			inset 0 0 0 1px rgba(44, 62, 80, 0.08);
-		min-height: 220px;
+		color: #4b5563;
 	}
 
-	.loading-more {
-		min-height: 120px;
-		padding: 18px 0 12px;
-		border-radius: 0;
-		background: transparent;
-		box-shadow: none;
+	.state.compact {
+		min-height: 0;
+		padding: 16px 0;
+	}
+
+	.state p {
+		margin: 0;
+		font-size: 1.05rem;
 	}
 
 	.spinner {
 		border: 4px solid rgba(0, 0, 0, 0.1);
 		border-radius: 50%;
 		border-top: 4px solid #e74c3c;
-		width: 40px;
-		height: 40px;
+		width: 36px;
+		height: 36px;
 		animation: spin 1s linear infinite;
-		margin-bottom: 20px;
 	}
 
 	.spinner.small {
-		width: 28px;
-		height: 28px;
-		margin-bottom: 12px;
+		width: 24px;
+		height: 24px;
+		border-width: 3px;
+		margin: 8px auto;
 	}
 
 	@keyframes spin {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
+		to {
 			transform: rotate(360deg);
 		}
-	}
-
-	.inline-error {
-		padding: 24px;
-		margin-top: 24px;
-		min-height: 0;
-	}
-
-	.state-card p,
-	.loading p {
-		color: #555;
-		font-size: 1.05rem;
-		letter-spacing: 0.01em;
-		line-height: 1.7;
-		max-width: 660px;
-	}
-
-	.state-card p {
-		margin-bottom: 20px;
-	}
-
-	.loading p {
-		margin-top: 15px;
-		margin-bottom: 0;
-		font-weight: 500;
-		color: #5c6773;
-		text-align: center;
-	}
-
-	.primary-action,
-	.primary-link {
-		background-color: #e74c3c;
-		color: white;
-		border: none;
-		padding: 12px 22px;
-		border-radius: 999px;
-		cursor: pointer;
-		font-weight: 700;
-		font-family: 'Montserrat', sans-serif;
-		letter-spacing: 0.5px;
-		text-transform: uppercase;
-		transition: all 0.3s;
-		box-shadow: 0 12px 24px rgba(231, 76, 60, 0.18);
-		text-decoration: none;
-	}
-
-	.primary-action:hover,
-	.primary-link:hover {
-		background-color: #c0392b;
 	}
 
 	.actions {
 		display: flex;
 		justify-content: center;
-		flex-wrap: wrap;
-		gap: 12px;
-		margin-top: 20px;
+		gap: 10px;
+		margin-top: 16px;
+	}
+
+	.primary-action,
+	.secondary-action {
+		padding: 9px 18px;
+		border-radius: 999px;
+		cursor: pointer;
+		font-weight: 700;
+		font-family: 'Montserrat', sans-serif;
+		font-size: 0.9rem;
+	}
+
+	.primary-action {
+		background-color: #e74c3c;
+		color: white;
+		border: none;
+	}
+
+	.primary-action:hover {
+		background-color: #c0392b;
 	}
 
 	.secondary-action {
-		background-color: rgba(255, 255, 255, 0.95);
+		background-color: white;
 		color: #2c3e50;
-		border: 1px solid rgba(44, 62, 80, 0.18);
-		padding: 12px 20px;
-		border-radius: 999px;
-		cursor: pointer;
-		font-weight: 600;
-		font-family: 'Montserrat', sans-serif;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		text-decoration: none;
-		transition: all 0.3s;
+		border: 1px solid rgba(44, 62, 80, 0.2);
 	}
 
 	.secondary-action:hover {
-		border-color: rgba(44, 62, 80, 0.35);
-		background-color: #f7f8fa;
+		border-color: rgba(44, 62, 80, 0.4);
 	}
 
 	.load-more-area {
-		padding: 22px 0 0;
+		padding-top: 16px;
 	}
 
 	.end-state {
-		margin-top: 14px;
-		min-height: 0;
-	}
-
-	.end-state .actions {
-		margin-top: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
+		color: #6b7280;
+		font-size: 0.95rem;
 	}
 
 	.scroll-sentinel {
@@ -569,25 +465,28 @@
 		height: 1px;
 	}
 
-	@media (max-width: 768px) {
-		.browse-shell {
-			padding: 12px 0 40px;
-		}
-
-		.gallery-panel,
-		.state-card,
-		.end-state {
-			border-radius: 20px;
-		}
-
-		h2 {
-			text-align: center;
-			font-size: 2.4rem;
-		}
-
+	@media (max-width: 600px) {
 		.gallery {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			gap: 14px;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: 4px;
+		}
+
+		.tile,
+		.tile :global(.thumbnail) {
+			border-radius: 4px;
+		}
+
+		.tag-bar {
+			flex-wrap: nowrap;
+			justify-content: flex-start;
+			overflow-x: auto;
+			margin: 0 -12px 12px;
+			padding: 0 12px;
+			scrollbar-width: none;
+		}
+
+		.tag-chip {
+			flex: 0 0 auto;
 		}
 	}
 </style>

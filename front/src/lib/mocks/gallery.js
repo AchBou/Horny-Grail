@@ -59,11 +59,6 @@ export function getMockTagSummary() {
 	};
 }
 
-export function getMockRandomItem() {
-	const randomIndex = Math.floor(Math.random() * mockGalleryItems.length);
-	return mockGalleryItems[randomIndex] || null;
-}
-
 export function getMockItemById(id) {
 	return mockGalleryItems.find((item) => item.id === id) || null;
 }

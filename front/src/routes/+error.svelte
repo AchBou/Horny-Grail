@@ -10,10 +10,6 @@
         : (page.error?.message || 'The app hit an unexpected error while loading this page.'));
 </script>
 
-<svelte:head>
-    <title>{title} | The Horny Grail</title>
-</svelte:head>
-
 <div class="error-page">
     <div class="error-card">
         <p class="status">{status}</p>
@@ -21,7 +17,6 @@
         <p class="message">{message}</p>
 
         <div class="actions">
-            <a href="/">Back Home</a>
             <a href="/browse">Browse</a>
             <a href="/random">Random</a>
         </div>

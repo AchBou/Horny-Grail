@@ -13,6 +13,12 @@
 			rel="stylesheet"
 		/>
 		<title>The Horny Grail</title>
+		<script>
+			// Discreet mode: neutral title from the first paint, before the app loads.
+			try {
+				if (localStorage.getItem('hg.discreet') === '1') document.title = 'Notes';
+			} catch {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body>
