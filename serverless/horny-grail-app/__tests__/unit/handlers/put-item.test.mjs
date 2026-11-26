@@ -165,6 +165,37 @@ describe('Test putItemHandler', () => {
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
+  it('should bring back a deleted item when its files are uploaded again', async () => {
+    const id = 'a'.repeat(64);
+    ddbMock.on(GetCommand).resolves({
+      Item: { id, ext: 'jpg', status: 'deleted', deletedAt: 'x', expiresAt: 2000000000, randomKey: 0.3, tags: ['beach'] }
+    });
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const result = await register({ id, ext: 'jpg', tags: ['sun'] });
+
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body).toEqual(expect.objectContaining({ id, status: 'active', randomKey: 0.3, tags: ['beach', 'sun'] }));
+    expect(body.deletedAt).toBeUndefined();
+    expect(body.expiresAt).toBeUndefined();
+    const update = ddbMock.commandCalls(UpdateCommand)[0].args[0].input;
+    expect(update.ConditionExpression).toBe('#status = :deleted');
+    expect(update.UpdateExpression).toContain('REMOVE #deletedAt, #expiresAt');
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should not bring back a deleted item before its files are uploaded', async () => {
+    const id = 'a'.repeat(64);
+    ddbMock.on(GetCommand).resolves({ Item: { id, ext: 'jpg', status: 'deleted' } });
+    s3Mock.on(HeadObjectCommand).rejects(notFoundError());
+
+    const result = await register({ id, ext: 'jpg' });
+
+    expect(result.statusCode).toBe(409);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
   it('should refuse tags from a phone session and invalid tags', async () => {
     const { token } = await issueMobileReadToken();
     const fromPhone = await register({ id: 'b'.repeat(64), ext: 'jpg', tags: ['x'] }, { authorization: `Bearer ${token}` });

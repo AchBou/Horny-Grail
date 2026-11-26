@@ -1,5 +1,6 @@
 import { requireMobileReadToken, requireReadOriginSecret } from '../lib/auth.mjs';
 import { badRequest, jsonResponse, notFound, serverError } from '../lib/http.mjs';
+import { isDeleted } from '../lib/deletion.mjs';
 import { getItemById } from '../lib/items-repository.mjs';
 import { createSignedMediaView } from '../lib/mobile-media.mjs';
 import { guardRequest } from '../lib/request-guards.mjs';
@@ -24,7 +25,9 @@ function createGetByIdHandler({ handlerName, authorize, allowOptions = false, pr
     }
 
     try {
-      const item = await getItemById(id);
+      const found = await getItemById(id);
+      // A deleted item is gone for every app, even while it can still be restored.
+      const item = isDeleted(found) ? null : found;
       if (!presentItem) {
         // The web client treats a null body as "not found".
         return jsonResponse(200, item || null, event);

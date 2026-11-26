@@ -81,6 +81,11 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       DeletionProtectionEnabled: true
+      # Items deleted from the Grail carry expiresAt (30 days later, matching the bucket's
+      # rule for old file versions); DynamoDB then removes the row on its own.
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
       AttributeDefinitions:
       - AttributeName: id
         AttributeType: S
@@ -748,10 +753,23 @@ Resources:
           Resource:
           - !Sub arn:aws:s3:::${BucketName}/files/*
           - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
+      # Delete from the Grail: DeleteObject leaves a restorable version behind a delete marker
+      # (the bucket is versioned); restore removes the marker (DeleteObjectVersion) and the
+      # Deleted view previews the old thumbnail version (GetObjectVersion).
+      - Statement:
+        - Effect: Allow
+          Action:
+          - s3:DeleteObject
+          - s3:DeleteObjectVersion
+          - s3:GetObjectVersion
+          Resource:
+          - !Sub arn:aws:s3:::${BucketName}/files/*
+          - !Sub arn:aws:s3:::${BucketName}/thumbnails/*
       - Statement:
         - Effect: Allow
           Action:
           - s3:ListBucket
+          - s3:ListBucketVersions
           Resource: !Sub arn:aws:s3:::${BucketName}
       Environment:
         Variables:
@@ -809,6 +827,26 @@ Resources:
           Type: HttpApi
           Properties:
             Path: /api/assets/{id}
+            Method: OPTIONS
+        RestoreAsset:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/restore
+            Method: POST
+        RestoreAssetOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/assets/{id}/restore
+            Method: OPTIONS
+        ListDeletedAssets:
+          Type: HttpApi
+          Properties:
+            Path: /api/desktop/deleted
+            Method: GET
+        ListDeletedAssetsOptions:
+          Type: HttpApi
+          Properties:
+            Path: /api/desktop/deleted
             Method: OPTIONS
 
 Outputs:

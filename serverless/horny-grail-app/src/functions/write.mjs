@@ -1,4 +1,4 @@
-import { deleteAssetHandler } from '../handlers/assets/delete-asset.mjs';
+import { deleteAssetHandler, listDeletedAssetsHandler, restoreAssetHandler } from '../handlers/assets/delete-asset.mjs';
 import { getAssetIntegrityHandler } from '../handlers/assets/get-asset-integrity.mjs';
 import { putItemHandler } from '../handlers/put-item.mjs';
 import { updateTagsHandler } from '../handlers/tags/update-tags.mjs';
@@ -16,7 +16,11 @@ export const routes = {
   'PATCH /api/assets/{id}/tags': updateTagsHandler,
   'OPTIONS /api/assets/{id}/tags': updateTagsHandler,
   'DELETE /api/assets/{id}': deleteAssetHandler,
-  'OPTIONS /api/assets/{id}': deleteAssetHandler
+  'OPTIONS /api/assets/{id}': deleteAssetHandler,
+  'POST /api/assets/{id}/restore': restoreAssetHandler,
+  'OPTIONS /api/assets/{id}/restore': restoreAssetHandler,
+  'GET /api/desktop/deleted': listDeletedAssetsHandler,
+  'OPTIONS /api/desktop/deleted': listDeletedAssetsHandler
 };
 
 export const handler = createRouter(routes);

@@ -1,5 +1,6 @@
 import { requireWriteAccess } from '../../lib/auth.mjs';
 import { badRequest, jsonResponse, serverError } from '../../lib/http.mjs';
+import { isDeleted } from '../../lib/deletion.mjs';
 import { getItemById } from '../../lib/items-repository.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
 import { findMissingAssets } from '../../lib/s3-objects.mjs';
@@ -11,7 +12,9 @@ async function buildAssetIntegrityResponse(id, event) {
   }
 
   try {
-    const item = await getItemById(id);
+    const found = await getItemById(id);
+    // A deleted item counts as absent, so clients upload it again (which restores it).
+    const item = isDeleted(found) ? null : found;
 
     if (!item) {
       return jsonResponse(200, {

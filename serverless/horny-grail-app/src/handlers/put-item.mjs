@@ -2,6 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getLookupTableName } from '../config/env.mjs';
 import { hasWriteApiKey, requireWriteAccess } from '../lib/auth.mjs';
+import { isDeleted, reactivateItem } from '../lib/deletion.mjs';
 import { setItemTags } from '../lib/items-repository.mjs';
 import { applyTagChange, itemTags, MAX_TAGS_PER_ITEM, parseTagList } from '../lib/tags.mjs';
 import { badRequest, conflict, jsonResponse, serverError } from '../lib/http.mjs';
@@ -79,7 +80,7 @@ export const putItemHandler = async (event) => {
 
   try {
     const existing = await getExistingItem(id);
-    if (existing) {
+    if (existing && !isDeleted(existing)) {
       return await respondWithExisting(existing, ext, tags, event);
     }
 
@@ -87,6 +88,18 @@ export const putItemHandler = async (event) => {
     if (missing.length > 0) {
       console.warn('putItem refused: uploads missing', { path: requestPath, id, ext, missing });
       return conflict('Upload the original and thumbnail before registering the item', event, { missing });
+    }
+
+    // Uploading a deleted file again brings it back, keeping its old tags plus any new ones.
+    if (existing) {
+      if (existing.ext !== ext) {
+        return badRequest('Image id is already registered with a different extension', event);
+      }
+      const merged = applyTagChange(itemTags(existing), { add: tags });
+      await reactivateItem(id, merged.length > 0 ? merged : null);
+      console.info('putItem restored a deleted item', { path: requestPath, id });
+      const { deletedAt, expiresAt, ...rest } = existing;
+      return jsonResponse(200, { ...rest, status: 'active', ...(merged.length > 0 ? { tags: merged } : {}) }, event);
     }
   } catch (error) {
     console.error('putItem pre-checks failed', { path: requestPath, id, error });
