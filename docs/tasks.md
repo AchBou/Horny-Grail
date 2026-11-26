@@ -69,6 +69,8 @@ Security and operations:
 - [x] Rate-limited passphrase logins with a global lockout
 - [x] Desktop window CSP limiting scripts, media and network sources
 - [x] Lockfiles tracked; CI runs check and unit tests before every website deploy
+- [x] Backups: upload bucket versioning (deleted or replaced files kept 30 days), point-in-time recovery and deletion protection on the metadata table
+- [x] Backend functions bundled with esbuild (small packages, fast deploys and cold starts)
 
 Documentation:
 
