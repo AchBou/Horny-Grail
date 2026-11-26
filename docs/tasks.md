@@ -53,6 +53,23 @@ Backend:
 - [x] Asset integrity endpoint for repair-aware clients
 - [x] Input validation for ids, extensions, MIME types, and upload size limits
 
+Tags and library:
+
+- [x] Free-form tags on items, set from the desktop only (upload rows, batch tags, Watch tab)
+- [x] Desktop Watch tab: shuffled feed from the Grail, tag filters, full viewer with quick tagging
+- [x] Tag-filtered browse (`tags=a,b`, `untagged=1`) with tag counts, shown read-only on the phone
+
+No duplicates on devices:
+
+- [x] Phone: delete uploaded media from the phone once saved
+- [x] Desktop: move uploaded files to the Recycle Bin once the Grail confirms them (re-hashed first)
+
+Security and operations:
+
+- [x] Rate-limited passphrase logins with a global lockout
+- [x] Desktop window CSP limiting scripts, media and network sources
+- [x] Lockfiles tracked; CI runs check and unit tests before every website deploy
+
 Documentation:
 
 - [x] Shared upload contract for desktop and mobile
@@ -67,13 +84,14 @@ This priority order assumes uploads are mainly done by you through the private d
 
 ## Do Next
 
-- [ ] Add stronger persistence or resume behavior if uploads are interrupted by suspension or process death
-- [ ] Add targeted automated coverage for thumbnail generation, upload repair, and duplicate-detection flows
+- [ ] Add targeted automated coverage for upload repair and duplicate-detection flows (thumbnails are covered by Rust tests)
 - [ ] Replace the placeholder frontend Playwright test with real browse, random, and item-detail coverage
 - [ ] Add broader backend test coverage around route behavior and deployment-sensitive config
 - [ ] Add staging or environment-specific config strategy beyond local examples and production values
 - [ ] Add rollback guidance for backend and client deployments so production changes are reversible
 - [ ] Add a safe delete, archive, or moderation workflow for uploaded media
+- [ ] Tag filter on the website browse page (the API already supports it)
+- [ ] Move to SvelteKit 3 once it has matured (needs Node 22.17+ and TypeScript 6)
 
 ## Important Soon
 
@@ -84,7 +102,7 @@ This priority order assumes uploads are mainly done by you through the private d
 
 ## Later Hardening
 
-- [ ] Add rate limiting or similar abuse controls for public read traffic and authenticated writes
+- [ ] Add rate limiting for authenticated writes (logins are already limited, reads sit behind signed cookies)
 - [ ] Replace the shared client-held write API key with a stronger write-auth strategy if private upload clients are ever distributed beyond your own devices
 - [ ] Add a clearer logging and monitoring strategy across backend and clients
 - [ ] Document monitoring, alerting, and operational runbooks

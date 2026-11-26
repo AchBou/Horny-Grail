@@ -90,20 +90,17 @@ Desktop app env:
 - `VITE_API_BASE_URL`
 - `VITE_WRITE_API_KEY`
 
-Mobile private config:
+Mobile private config (`local/mobile-app/mobile.private.json`), no keys:
 
 - `apiBaseUrl`
-- `cloudFrontBaseUrl`
-- `writeApiKey`
 
 Backend runtime env or SAM parameters:
 
 - `LOOKUP_TABLE`
-- `CLOUDFRONT_BASE_URL`
 - `BUCKET_NAME`
 - `BUCKET_REGION`
-- `WRITE_API_KEY`
 - `CORS_ALLOWED_ORIGINS`
+- `APP_SECRETS_SECRET_ARN`: the write key, origin secret, mobile token secret and passphrase hash are read from this Secrets Manager secret at runtime (see `serverless/horny-grail-app/README.md`)
 
 ## Verification
 
