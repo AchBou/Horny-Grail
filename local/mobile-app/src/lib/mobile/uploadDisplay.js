@@ -82,3 +82,12 @@ export function canCancel(item) {
 export function detailUrlForUpload(item) {
   return item.id ? `/image/${item.id}` : '';
 }
+
+/**
+ * True when the file may be deleted from the phone: the upload flow ended with the server
+ * confirming the item and both of its files ('complete'), or found it already saved
+ * ('duplicate'), and the phone still has it.
+ */
+export function isDeletableFromPhone(item) {
+  return Boolean(item?.sourceUri && item.id && (item.status === 'complete' || item.status === 'duplicate'));
+}

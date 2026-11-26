@@ -3,6 +3,7 @@
     canCancel,
     detailUrlForUpload,
     formatFileSize,
+    isDeletableFromPhone,
     isVideoUpload,
     statusText,
     uploadProgress
@@ -168,7 +169,7 @@
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4 11 13M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4" /></svg>
                   </a>
                 {/if}
-                {#if item.sourceUri && (item.status === 'complete' || item.status === 'duplicate')}
+                {#if isDeletableFromPhone(item)}
                   <button class="upload-action danger" type="button" onclick={() => onDeleteFromPhone(item.localId)} aria-label={`Delete ${item.name} from phone`} title="Delete from phone">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
                   </button>

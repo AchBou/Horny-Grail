@@ -20,7 +20,7 @@
   import { deleteNativeMedia, pickNativeMedia } from '$lib/mobile/media.js';
   import { allowNextBackground, onAppLock, startAppLock } from '$lib/mobile/appLock.js';
   import { runUploadFlow } from '$lib/mobile/uploadFlow.js';
-  import { CANCELLABLE_STATUSES, uploadProgress } from '$lib/mobile/uploadDisplay.js';
+  import { CANCELLABLE_STATUSES, isDeletableFromPhone, uploadProgress } from '$lib/mobile/uploadDisplay.js';
   import { createUploadQueueProcessor } from '$lib/mobile/uploadQueueController.js';
   import { loadPersistedUploadQueue, persistUploadQueue } from '$lib/mobile/uploadQueueStore.js';
 
@@ -77,9 +77,7 @@
     .slice(-4)
     .reverse();
   $: homePreviewItems = recentUploads.length > 0 ? recentUploads : browseItems.slice(0, 4);
-  $: deletableUploadItems = uploadItems.filter((item) =>
-    item.sourceUri && (item.status === 'complete' || item.status === 'duplicate')
-  );
+  $: deletableUploadItems = uploadItems.filter(isDeletableFromPhone);
 
   function nextLocalId() {
     return `upload-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
