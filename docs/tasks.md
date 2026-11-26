@@ -72,6 +72,8 @@ No duplicates on devices:
 
 - [x] Phone: delete uploaded media from the phone once saved
 - [x] Desktop: move uploaded files to the Recycle Bin once the Grail confirms them (re-hashed first)
+- [x] Tests for upload, duplicate detection, repair and the delete-from-device rules (desktop `npm run test`, phone `npm run test`, Rust `cargo test --lib`)
+- [x] Quieter desktop logging: no per-event or per-upload logs, errors logged once
 
 Security and operations:
 
@@ -95,7 +97,6 @@ This priority order assumes uploads are mainly done by you through the private d
 
 ## Do Next
 
-- [ ] Add targeted automated coverage for upload repair and duplicate-detection flows (thumbnails are covered by Rust tests)
 - [ ] Replace the placeholder frontend Playwright test with real browse, random, and item-detail coverage
 - [ ] Add broader backend test coverage around route behavior and deployment-sensitive config
 - [ ] Add staging or environment-specific config strategy beyond local examples and production values
@@ -107,7 +108,6 @@ This priority order assumes uploads are mainly done by you through the private d
 - [ ] Add richer metadata, navigation polish, and non-hash-facing UX where appropriate
 - [ ] Expand verification on real devices beyond the current Android-first path
 - [ ] Standardize error handling and logging more strictly across every handler
-- [ ] Reduce noisy console logging in upload and watch flows
 
 ## Later Hardening
 

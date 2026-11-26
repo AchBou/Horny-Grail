@@ -38,6 +38,7 @@ npm install
 npm run ffmpeg:ensure
 npm run dev
 npm run check
+npm run test        # upload-safety rules (node --test)
 npm run tauri -- dev
 npm run tauri -- build
 ```
@@ -106,6 +107,7 @@ Do not commit real AWS credentials, local `.env` files, generated SAM build fold
 - The mobile app home screen is chooser-first. Do not make browse or upload the implicit default on entry unless there is an explicit product decision to change that.
 - The mobile app should load randomized browse content only after the user explicitly opens browse mode.
 - The mobile app upload queue should stay explicit and understandable. Prefer clear per-file status and recovery actions over dense instructional copy.
+- Rules deciding when a file may leave a device live in pure, tested modules: desktop `src/lib/functions/uploadSafety.js` (what an integrity answer means, which files may go to the Recycle Bin) and phone `src/lib/mobile/uploadFlowCore.js` (upload flow) plus `isDeletableFromPhone` in `uploadDisplay.js`. Change them there and keep the tests passing.
 - Keep desktop uploads hash-based. Duplicate detection depends on the uploaded DynamoDB `id` matching the SHA-256 content hash.
 - New metadata writes should preserve `status` and `randomKey` so random-image and randomized-browse queries stay indexable.
 - Use Tauri commands for large local-file work when available. `compute_sha256_streaming` exists for memory-safe hashing.
@@ -121,7 +123,7 @@ Choose checks based on the area changed:
 
 - Frontend UI or routing: run `npm run check` and `npm run build` in `front/`; run `npm run test` when behavior changes are testable.
 - Mobile app UI or routing: run `npm run check` (svelte-check) and `npm run test` in `local/mobile-app/`; run `npm run cap:sync` when changing Capacitor-facing behavior or native plugin wiring.
-- Desktop Svelte code: run `npm run check` in `local/desktop-app/`; run `npm run build` for frontend bundle changes and `npm run tauri -- build` when Tauri packaging or bundled resources change.
+- Desktop Svelte code: run `npm run check` and `npm run test` in `local/desktop-app/`; run `npm run build` for frontend bundle changes and `npm run tauri -- build` when Tauri packaging or bundled resources change.
 - Tauri Rust code: run `cargo check` and `cargo test --lib` in `local/desktop-app/src-tauri/`.
 - Serverless handlers: run `npm run test` in `serverless/horny-grail-app/`; run `npm run build` (not bare `sam build`) after template or dependency changes. Functions are bundled with esbuild (`Metadata` in `template.yaml`): each is one file named after its `src/functions/*.mjs` entry, and the handler is `<name>.handler`.
 
