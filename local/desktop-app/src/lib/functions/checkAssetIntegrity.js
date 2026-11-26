@@ -31,7 +31,7 @@ export async function checkAssetIntegrityByHex(hex) {
     }
     return response.json();
   } catch (error) {
-    console.error("checkAssetIntegrityByHex error", error);
+    console.warn("Integrity check failed", error);
     return null;
   }
 }

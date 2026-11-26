@@ -450,7 +450,6 @@ export async function uploadThumbnail(filePath, hex) {
 
   if (!res.ok) {
     throw new Error(`S3 thumbnail upload via presigned URL failed with status ${res.status}`);
-  }
-  console.log('Thumbnail Upload Success via presigned URL');
+  }
   return hex;
 }

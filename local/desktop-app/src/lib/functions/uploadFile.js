@@ -98,28 +98,22 @@ export async function uploadFile(filePath, knownHash, { registerMetadata = true 
         throw new Error(`Unsupported upload extension: ${fileExtension}`);
     }
     
-    try {
-        const uploadTarget = await requestUploadTarget("files", hex, fileExtension, fileData.byteLength, contentType);
+    const uploadTarget = await requestUploadTarget("files", hex, fileExtension, fileData.byteLength, contentType);
 
-        // Upload file using the presigned URL
-        const res = await httpFetch(uploadTarget.uploadUrl, {
-            method: 'PUT',
-            body: fileData,
-            headers: uploadTarget.headers || {}
-        });
+    // Upload file using the presigned URL
+    const res = await httpFetch(uploadTarget.uploadUrl, {
+        method: 'PUT',
+        body: fileData,
+        headers: uploadTarget.headers || {}
+    });
 
-        if (!res.ok) {
-            throw new Error(`S3 upload via presigned URL failed with status ${res.status}`);
-        }
-        console.log("Upload Success via presigned URL");
-        
-        if (registerMetadata) {
-            await registerUploadedFile(hex, fileExtension);
-        }
-        
-        return hex;
-    } catch (err) {
-        console.error("Error", err);
-        throw err;
+    if (!res.ok) {
+        throw new Error(`S3 upload via presigned URL failed with status ${res.status}`);
+    }
+    
+    if (registerMetadata) {
+        await registerUploadedFile(hex, fileExtension);
     }
+    
+    return hex;
 }

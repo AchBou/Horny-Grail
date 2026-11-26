@@ -10,6 +10,7 @@
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
   import { deleteFromGrail } from "$lib/functions/grailItems.js";
   import { moveUploadedToRecycleBin } from "$lib/functions/recycleUploaded.js";
+  import { classifyIntegrity } from "$lib/functions/uploadSafety.js";
   import { fetchTagSummary, updateItemTags } from "$lib/functions/tags.js";
   import TagEditor from "$lib/components/TagEditor.svelte";
   import WatchView from "$lib/components/WatchView.svelte";
@@ -333,15 +334,15 @@
           if (!integrity) {
             throw new Error("Integrity check failed");
           }
-          const exists = Boolean(integrity?.metadataExists);
+          const state = classifyIntegrity(integrity);
           if (generation !== scanGeneration) return;
 
           fileHashes[f.path] = hex;
-          fileExists[f.path] = exists;
+          fileExists[f.path] = state.exists;
           fileCheckStatus[f.path] = 'done';
-          fileRepairNeeded[f.path] = Boolean(exists && integrity?.repairRequired);
-          fileMissingParts[f.path] = Array.isArray(integrity?.missing) ? integrity.missing : [];
-          savedTags[f.path] = Array.isArray(integrity?.item?.tags) ? integrity.item.tags : [];
+          fileRepairNeeded[f.path] = state.repairNeeded;
+          fileMissingParts[f.path] = state.missing;
+          savedTags[f.path] = state.tags;
         } catch (e) {
           console.error('Existence check failed for', f.path, e);
           if (generation !== scanGeneration) return;
@@ -435,24 +436,11 @@
       const normalizedPath = path.replace(/\//g, '\\');
       
       // Set up a file watcher for the directory
-      unwatchFn = await watch(normalizedPath, async (event) => {
-        console.log("File system event:", event);
-        
+      unwatchFn = await watch(normalizedPath, async (event) => {
         try {
           // Update last change timestamp
           lastChangeDetected = new Date();
-          
-          // Determine what kind of event occurred for better error handling
-          let eventType = "change";
-          if (typeof event.type !== 'string' && 'create' in event.type) {
-            eventType = "create";
-          } else if (typeof event.type !== 'string' && 'remove' in event.type) {
-            eventType = "remove";
-          } else if (typeof event.type !== 'string' && 'modify' in event.type) {
-            eventType = "modify";
-          }
-          
-          console.log(`Detected ${eventType} event for:`, event.paths);
+          
           resetFileMetadata((event.paths || []).map((path) => path.replace(/\//g, '\\')));
           
           // Increment pending updates counter
@@ -468,8 +456,7 @@
           updateTimeout = setTimeout(async () => {
             try {
               // Refresh in place: keep the list on screen and only re-check changed files.
-              await loadFiles(normalizedPath, { quiet: true });
-              console.log(`Processed ${pendingUpdates} file system events`);
+              await loadFiles(normalizedPath, { quiet: true });
             } catch (timeoutError) {
               console.error("Error in delayed file update:", timeoutError);
             } finally {
@@ -491,8 +478,7 @@
       });
       
       // Set watching state to true
-      isWatching = true;
-      console.log("File watcher set up for:", normalizedPath);
+      isWatching = true;
     } catch (error) {
       console.error("Error setting up file watcher:", error);
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
