@@ -57,7 +57,7 @@ Tags and library:
 
 - [x] Free-form tags on items, set from the desktop only (upload rows, batch tags, Watch tab)
 - [x] Desktop Watch tab: shuffled feed from the Grail, tag filters, full viewer with quick tagging
-- [x] Tag-filtered browse (`tags=a,b`, `untagged=1`) with tag counts, shown read-only on the phone
+- [x] Tag-filtered browse (`tags=a,b`, `untagged=1`) with tag counts, read-only on the phone and the website
 
 No duplicates on devices:
 
@@ -90,7 +90,6 @@ This priority order assumes uploads are mainly done by you through the private d
 - [ ] Add staging or environment-specific config strategy beyond local examples and production values
 - [ ] Add rollback guidance for backend and client deployments so production changes are reversible
 - [ ] Add a safe delete, archive, or moderation workflow for uploaded media
-- [ ] Tag filter on the website browse page (the API already supports it)
 - [ ] Move to SvelteKit 3 once it has matured (needs Node 22.17+ and TypeScript 6)
 
 ## Important Soon
