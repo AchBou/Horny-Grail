@@ -21,6 +21,7 @@ Frontend:
 - [x] Random in the same viewer, following the tag filter (`GET /api/browse/random` without a cursor)
 - [x] Denser grid, header menu, video controls on every video
 - [x] Discreet mode (neutral tab title and icon) and Hide (B key blanks the page)
+- [x] Playwright tests on the mock gallery: filters, viewer, Back, direct links, Random by tag, discreet mode, Hide, phone swipe
 - [x] Static SPA build for S3 + CloudFront deployment
 - [x] Automated frontend deployment workflow in GitHub Actions
 - [x] Improved error states and recovery UX across browse, random, and detail flows
@@ -97,7 +98,6 @@ This priority order assumes uploads are mainly done by you through the private d
 
 ## Do Next
 
-- [ ] Replace the placeholder frontend Playwright test with real browse, random, and item-detail coverage
 - [ ] Add broader backend test coverage around route behavior and deployment-sensitive config
 - [ ] Add staging or environment-specific config strategy beyond local examples and production values
 - [ ] Add rollback guidance for backend and client deployments so production changes are reversible

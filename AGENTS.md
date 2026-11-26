@@ -26,7 +26,7 @@ npm run dev
 npm run build
 npm run check
 npm run test        # unit tests (node --test)
-npm run test:e2e    # Playwright smoke test
+npm run test:e2e    # Playwright, on the built site with the mock gallery
 npm run lint
 ```
 
@@ -121,7 +121,7 @@ Do not commit real AWS credentials, local `.env` files, generated SAM build fold
 
 Choose checks based on the area changed:
 
-- Frontend UI or routing: run `npm run check` and `npm run build` in `front/`; run `npm run test` when behavior changes are testable.
+- Frontend UI or routing: run `npm run check` and `npm run build` in `front/`; run `npm run test` when behavior changes are testable, and `npm run test:e2e` (first time: `npx playwright install chromium`) after UI changes. E2E tests use the mock gallery, never the real Grail.
 - Mobile app UI or routing: run `npm run check` (svelte-check) and `npm run test` in `local/mobile-app/`; run `npm run cap:sync` when changing Capacitor-facing behavior or native plugin wiring.
 - Desktop Svelte code: run `npm run check` and `npm run test` in `local/desktop-app/`; run `npm run build` for frontend bundle changes and `npm run tauri -- build` when Tauri packaging or bundled resources change.
 - Tauri Rust code: run `cargo check` and `cargo test --lib` in `local/desktop-app/src-tauri/`.
