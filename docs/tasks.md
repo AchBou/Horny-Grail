@@ -63,6 +63,8 @@ Tags and library:
 - [x] Desktop Watch tab: shuffled feed from the Grail, tag filters, full viewer with quick tagging
 - [x] Tag-filtered browse (`tags=a,b`, `untagged=1`) with tag counts, read-only on the phone and the website
 - [x] Phone app rebuilt with tags and Capacitor 8.6.2
+- [x] Phone UX: opens on Browse, 3-column grid, viewer over the grid (swipe within the grid, Back keeps place), video controls, readable details, simpler Add screen
+- [x] Desktop UX: one font and palette, compact rows (tag bubbles on the focused row), After upload toggle defaulting to Recycle Bin (also clears files already in the Grail and repaired ones), Repair all, Delete from Grail kept apart from Repair
 
 Delete from the Grail:
 
