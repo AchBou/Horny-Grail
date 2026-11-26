@@ -1,7 +1,7 @@
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { getDesktopRandomBrowseHandler, getRandomBrowseHandler } from '../../../src/handlers/browse/get-random-browse.mjs';
-import { listDesktopTagsHandler, listMobileTagsHandler } from '../../../src/handlers/tags/list-tags.mjs';
+import { listDesktopTagsHandler, listMobileTagsHandler, listWebTagsHandler } from '../../../src/handlers/tags/list-tags.mjs';
 import { updateTagsHandler } from '../../../src/handlers/tags/update-tags.mjs';
 import { issueMobileReadToken } from '../../../src/lib/auth.mjs';
 import { resetActiveItemsCache } from '../../../src/lib/random-browse.mjs';
@@ -110,6 +110,17 @@ describe('tag routes', () => {
       };
       expect(JSON.parse(mobile.body)).toEqual(expected);
       expect(JSON.parse(desktop.body)).toEqual(expected);
+    });
+
+    it('lists tags for the website with the CloudFront origin secret', async () => {
+      const result = await listWebTagsHandler({
+        httpMethod: 'GET',
+        headers: { 'x-read-origin-secret': process.env.READ_ORIGIN_SECRET }
+      });
+
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).untagged).toBe(1);
+      expect((await listWebTagsHandler({ httpMethod: 'GET', headers: {} })).statusCode).toBe(401);
     });
 
     it('does not list tags without credentials', async () => {

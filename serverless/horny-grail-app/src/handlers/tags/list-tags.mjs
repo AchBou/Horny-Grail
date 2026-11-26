@@ -1,16 +1,16 @@
-import { requireMobileReadToken, requireWriteApiKey } from '../../lib/auth.mjs';
+import { requireMobileReadToken, requireReadOriginSecret, requireWriteApiKey } from '../../lib/auth.mjs';
 import { jsonResponse, serverError } from '../../lib/http.mjs';
 import { loadActiveItems } from '../../lib/random-browse.mjs';
 import { guardRequest } from '../../lib/request-guards.mjs';
 import { countTags, itemTags } from '../../lib/tags.mjs';
 
 /** Every tag in use with its item count, plus how many items have no tags yet. */
-function createListTagsHandler({ handlerName, authorize }) {
+function createListTagsHandler({ handlerName, authorize, allowOptions = true }) {
   return async (event) => {
     const guardError = await guardRequest(event, {
       handlerName,
       method: 'GET',
-      allowOptions: true,
+      allowOptions,
       authorize
     });
     if (guardError) {
@@ -30,6 +30,13 @@ function createListTagsHandler({ handlerName, authorize }) {
     }
   };
 }
+
+// The website, through CloudFront like its other reads (same origin, so no preflight).
+export const listWebTagsHandler = createListTagsHandler({
+  handlerName: 'listWebTags',
+  authorize: requireReadOriginSecret,
+  allowOptions: false
+});
 
 export const listMobileTagsHandler = createListTagsHandler({
   handlerName: 'listMobileTags',

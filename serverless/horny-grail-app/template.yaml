@@ -635,6 +635,11 @@ Resources:
           Properties:
             Path: /api/mobile/browse/random
             Method: OPTIONS
+        WebTags:
+          Type: HttpApi
+          Properties:
+            Path: /api/tags
+            Method: GET
         MobileTags:
           Type: HttpApi
           Properties:
