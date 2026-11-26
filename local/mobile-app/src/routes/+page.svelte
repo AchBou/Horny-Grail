@@ -1,8 +1,10 @@
 <script>
   import { onDestroy, onMount, tick } from 'svelte';
+  import { page } from '$app/stores';
+  import { pushState, replaceState } from '$app/navigation';
   import BrowseView from '$lib/components/BrowseView.svelte';
+  import MediaViewer from '$lib/components/MediaViewer.svelte';
   import DeleteAllDialog from '$lib/components/DeleteAllDialog.svelte';
-  import HomeView from '$lib/components/HomeView.svelte';
   import ReadAccessGate from '$lib/components/ReadAccessGate.svelte';
   import UploadView from '$lib/components/UploadView.svelte';
   import {
@@ -49,8 +51,9 @@
   let fileInput;
   let showUploadQueue = false;
   let showDeleteAllDialog = false;
-  let homeMode = 'home';
-  let hasBrowseIntent = false;
+  // The app opens on Browse; Add is the other tab.
+  let homeMode = 'browse';
+  let hasBrowseIntent = true;
   let hasLoadedBrowse = false;
   let hasRestoredUploadQueue = false;
   let queuePersistenceTimer = null;
@@ -72,12 +75,50 @@
       : finishedUploadCount > 0
         ? `${finishedUploadCount} saved`
         : 'Ready';
-  $: recentUploads = uploadItems
-    .filter((item) => item.previewUrl)
-    .slice(-4)
-    .reverse();
-  $: homePreviewItems = recentUploads.length > 0 ? recentUploads : browseItems.slice(0, 4);
   $: deletableUploadItems = uploadItems.filter(isDeletableFromPhone);
+
+  // The viewer opens over the grid through shallow routing, so the phone's Back button closes
+  // it and the grid keeps its filter, order and scroll position.
+  let lastViewedId = null;
+  $: viewerId = $page.state?.viewerId ?? null;
+  $: viewerIndex = viewerId ? browseItems.findIndex((item) => item.id === viewerId) : -1;
+  $: viewerItem = viewerIndex >= 0 ? browseItems[viewerIndex] : null;
+  $: if (!viewerItem && lastViewedId) {
+    const id = lastViewedId;
+    lastViewedId = null;
+    tick().then(() => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: 'nearest' }));
+  }
+
+  function openViewer(index) {
+    const item = browseItems[index];
+    if (!item) return;
+    lastViewedId = item.id;
+    pushState('', { viewerId: item.id });
+  }
+
+  async function stepViewer(delta) {
+    const next = viewerIndex + delta;
+    if (next < 0) return;
+    if (next >= browseItems.length - 4 && browseHasMore && browseCursor && !browseLoadingMore) {
+      const load = loadBrowsePage(browseCursor);
+      if (next >= browseItems.length) await load;
+    }
+    const item = browseItems[next];
+    if (!item) return;
+    lastViewedId = item.id;
+    replaceState('', { viewerId: item.id });
+  }
+
+  function closeViewer() {
+    history.back();
+  }
+
+  function filterFromViewer(tag) {
+    lastViewedId = null;
+    replaceState('', {});
+    window.scrollTo({ top: 0 });
+    applyBrowseFilter(setBrowseFilter({ tags: [tag] }));
+  }
 
   function nextLocalId() {
     return `upload-${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
@@ -283,10 +324,6 @@
     browseLoading = false;
     browseLoadingMore = false;
     hasLoadedBrowse = false;
-    hasBrowseIntent = false;
-    if (homeMode === 'browse') {
-      homeMode = 'home';
-    }
   }
 
 
@@ -300,13 +337,6 @@
       ? 'No saved items yet'
       : `${browseItems.length} item${browseItems.length === 1 ? '' : 's'} in view`;
 
-  $: homeSummaryText = activeUploadCount > 0
-    ? `${activeUploadCount} file${activeUploadCount === 1 ? '' : 's'} saving now`
-    : finishedUploadCount > 0
-      ? `${finishedUploadCount} file${finishedUploadCount === 1 ? '' : 's'} saved recently`
-      : hasLoadedBrowse && browseItems.length > 0
-        ? `${browseItems.length} saved item${browseItems.length === 1 ? '' : 's'} ready to browse`
-        : 'Browse when you want, add when you need to.';
 
   function outcomeText(outcome) {
     if (outcome === 'duplicate') {
@@ -582,7 +612,7 @@
   }
 
   function goHome() {
-    homeMode = 'home';
+    openBrowse();
   }
 
   async function unlockReadAccess() {
@@ -695,23 +725,20 @@
         class="app-logo"
         src="/brand/horny-grail-mobile.svg"
         alt=""
-        width="52"
-        height="52"
+        width="36"
+        height="36"
       />
-      <div class="app-bar-copy">
-        <p class="kicker">Private Vault</p>
-        <h1>{homeMode === 'browse' ? 'Collection' : homeMode === 'upload' ? 'Add Media' : 'HornyGrail'}</h1>
-      </div>
+      <h1>HornyGrail</h1>
     </div>
 
-    {#if homeMode === 'home'}
-      <button class="icon-button" type="button" aria-label="Open upload" on:click={openUpload}>
-        Add
-      </button>
-    {:else}
-      <button class="soft-button" type="button" aria-label="Back to home" on:click={goHome}>
-        Home
-      </button>
+    {#if hasReadSession}
+      <nav class="mode-tabs" aria-label="Choose a view">
+        <button type="button" class:active={homeMode === 'browse'} aria-pressed={homeMode === 'browse'} on:click={openBrowse}>Browse</button>
+        <button type="button" class:active={homeMode === 'upload'} aria-pressed={homeMode === 'upload'} on:click={openUpload}>
+          Add
+          {#if activeUploadCount > 0}<span class="tab-badge">{activeUploadCount}</span>{:else if deletableUploadItems.length > 0}<span class="tab-badge warm">{deletableUploadItems.length}</span>{/if}
+        </button>
+      </nav>
     {/if}
   </header>
 
@@ -727,21 +754,6 @@
         on:submit={unlockReadAccess}
       />
     {:else}
-    {#if homeMode === 'home'}
-      <div class="vault-view">
-        <HomeView
-          summary={homeSummaryText}
-          uploadCount={uploadItems.length}
-          {uploadSummary}
-          uploadProgress={uploadQueueProgress}
-          previewItems={homePreviewItems}
-          canOpenBrowse={hasLoadedBrowse && browseItems.length > 0}
-          onBrowse={openBrowse}
-          onUpload={openUpload}
-        />
-      </div>
-    {/if}
-
     {#if homeMode === 'upload'}
       <div class="vault-view">
         <UploadView
@@ -782,12 +794,26 @@
           onShowAll={() => applyBrowseFilter(setBrowseFilter({}))}
           onShowUntagged={() => applyBrowseFilter(setBrowseFilter({ untagged: true }))}
           onRefresh={retryBrowse}
+          onOpen={openViewer}
           onAdd={() => { openUpload(); openPicker(); }}
         />
       </div>
     {/if}
     {/if}
   </main>
+
+  {#if viewerItem && homeMode === 'browse' && hasReadSession}
+    <MediaViewer
+      item={viewerItem}
+      position={`${viewerIndex + 1} / ${browseHasMore ? `${browseItems.length}+` : browseItems.length}`}
+      hasPrev={viewerIndex > 0}
+      hasNext={viewerIndex < browseItems.length - 1 || browseHasMore}
+      onPrev={() => stepViewer(-1)}
+      onNext={() => stepViewer(1)}
+      onClose={closeViewer}
+      onTag={filterFromViewer}
+    />
+  {/if}
 
   {#if showDeleteAllDialog}
     <div class="vault-view">
@@ -797,12 +823,6 @@
         onConfirm={confirmDeleteAllUploads}
       />
     </div>
-  {/if}
-
-  {#if homeMode === 'browse'}
-    <button class="floating-add" type="button" aria-label="Add media" on:click={() => { openUpload(); openPicker(); }}>
-      Add
-    </button>
   {/if}
 
   <input
@@ -884,7 +904,7 @@
     position: relative;
     isolation: isolate;
     min-height: 100dvh;
-    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
     background:
       radial-gradient(circle at 12% 0%, rgba(213, 102, 42, 0.12), transparent 28%),
       radial-gradient(circle at 90% 10%, rgba(29, 122, 109, 0.14), transparent 24%),
@@ -905,7 +925,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1rem 0.75rem;
+    padding: calc(0.5rem + env(safe-area-inset-top, 0px)) 1rem 0.5rem;
     backdrop-filter: blur(14px);
     background: rgba(243, 238, 230, 0.72);
     border-bottom: 1px solid rgba(40, 29, 22, 0.05);
@@ -919,24 +939,62 @@
   }
 
   .app-logo {
-    width: 3.25rem;
-    height: 3.25rem;
+    width: 2.25rem;
+    height: 2.25rem;
     flex: 0 0 auto;
     filter: drop-shadow(0 7px 14px rgba(40, 29, 22, 0.12));
   }
 
-  .app-bar-copy {
-    min-width: 0;
+  .app-bar h1 {
+    font-size: 1.35rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    white-space: nowrap;
   }
 
-  .app-bar-copy h1 {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .mode-tabs {
+    display: flex;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: rgba(40, 29, 22, 0.07);
+  }
+
+  .mode-tabs button {
+    position: relative;
+    min-height: 2.3rem;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #5b4b40;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .mode-tabs button.active {
+    background: #fffdf9;
+    color: var(--text-strong);
+    box-shadow: 0 2px 8px rgba(40, 29, 22, 0.1);
+  }
+
+  .tab-badge {
+    margin-left: 0.3rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: white;
+    font-size: 0.72rem;
+  }
+
+  .tab-badge.warm {
+    background: var(--accent-warm);
   }
 
   .shell {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.85rem;
     padding: 0 1rem 1.75rem;
   }
@@ -946,8 +1004,7 @@
     display: contents;
   }
 
-  h1,
-  p {
+  h1 {
     margin: 0;
   }
 
@@ -991,13 +1048,6 @@
     font-weight: 700;
   }
 
-  .kicker {
-    color: #9a5d3a;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-  }
 
   .vault-view :global(.eyebrow) {
     color: #9a5d3a;
@@ -1007,9 +1057,6 @@
     text-transform: uppercase;
   }
 
-  .kicker {
-    margin-bottom: 0.28rem;
-  }
 
   .vault-view :global(.eyebrow) {
     margin-bottom: 0.45rem;
@@ -1019,13 +1066,6 @@
     display: none;
   }
 
-  .soft-button {
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
 
   .vault-view :global(.primary-button),
   .vault-view :global(.secondary-button),
@@ -1037,21 +1077,7 @@
     cursor: pointer;
   }
 
-  .icon-button {
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
 
-  .soft-button {
-    min-height: 3rem;
-    border-radius: 999px;
-    padding: 0.82rem 1.05rem;
-    font-weight: 700;
-    letter-spacing: -0.015em;
-  }
 
   .vault-view :global(.primary-button),
   .vault-view :global(.secondary-button),
@@ -1063,13 +1089,6 @@
     letter-spacing: -0.015em;
   }
 
-  .icon-button {
-    min-height: 3rem;
-    border-radius: 999px;
-    padding: 0.82rem 1.05rem;
-    font-weight: 700;
-    letter-spacing: -0.015em;
-  }
 
   .vault-view :global(.primary-button) {
     background: var(--accent-strong);
@@ -1077,11 +1096,6 @@
     box-shadow: 0 10px 22px rgba(23, 17, 13, 0.13);
   }
 
-  .soft-button {
-    border: 1px solid var(--stroke-strong);
-    background: rgba(255, 255, 255, 0.54);
-    color: #33261f;
-  }
 
   .vault-view :global(.secondary-button),
   .vault-view :global(.soft-button) {
@@ -1090,16 +1104,7 @@
     color: #33261f;
   }
 
-  .icon-button {
-    border: 1px solid var(--stroke-strong);
-    background: rgba(255, 255, 255, 0.54);
-    color: #33261f;
-  }
 
-  .icon-button {
-    min-width: 3.2rem;
-    padding-inline: 0.95rem;
-  }
 
   .vault-view :global(.section-heading) {
     display: flex;
@@ -1121,23 +1126,6 @@
     letter-spacing: 0.03em;
   }
 
-  .floating-add {
-    position: fixed;
-    right: 1rem;
-    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-    z-index: 6;
-    min-width: 3.9rem;
-    height: 3.7rem;
-    border: 0;
-    border-radius: 999px;
-    padding: 0 1rem;
-    background: var(--accent-warm);
-    color: #fff9f3;
-    font: inherit;
-    font-weight: 800;
-    box-shadow: 0 14px 28px rgba(213, 102, 42, 0.24);
-    cursor: pointer;
-  }
 
   @media (min-width: 720px) {
     .app-bar {

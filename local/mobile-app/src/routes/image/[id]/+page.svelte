@@ -59,8 +59,22 @@
   let accessSubmitting = false;
   let accessError = '';
 
+  // Back returns to where the item was opened from (the upload list or Browse).
+  function goBack(event) {
+    if (history.length > 1) {
+      event.preventDefault();
+      history.back();
+    }
+  }
+
+  function formatAddedDate(value) {
+    if (!value) return 'Unknown';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
   function isPlayerVideoMedia(currentMedia) {
-    return currentMedia?.kind === 'video' && currentMedia?.ext === 'mp4';
+    return currentMedia?.kind === 'video';
   }
 
   function hasInteractiveVideoControls() {
@@ -399,10 +413,10 @@
             poster={media.thumbnailUrl}
             aria-label="Saved video"
             on:error={handleMediaError}
-            autoplay={!isPlayerVideoMedia(media)}
-            controls={hasInteractiveVideoControls()}
-            loop={media.kind === 'video' && !hasInteractiveVideoControls()}
-            muted={media.kind === 'video' && !hasInteractiveVideoControls()}
+            autoplay
+            controls
+            loop
+            muted
             playsinline
             preload="auto"
             in:fly={{ x: swipeDirection * SWIPE_TRANSITION_OFFSET_PX, duration: SWIPE_IN_DURATION_MS, opacity: 0.18, easing: cubicOut }}
@@ -442,7 +456,7 @@
     </main>
 
     <nav class={`top-bar ${showChrome ? 'visible' : ''}`} aria-label="Detail navigation">
-      <a class="viewer-action back-action" href="/" aria-label="Back to collection" title="Back to collection">
+      <a class="viewer-action back-action" href="/" aria-label="Back" title="Back" on:click={goBack}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7M8 12h12" /></svg>
       </a>
       <div class="top-actions">
@@ -467,16 +481,12 @@
       {#if showDetails}
         <dl class="details">
           <div>
-            <dt>{media.kind === 'video' ? 'Clip ID' : 'Image ID'}</dt>
-            <dd>{media.id}</dd>
-          </div>
-          <div>
             <dt>Type</dt>
-            <dd>{media.ext}</dd>
+            <dd>{media.kind === 'video' ? 'Video' : 'Image'} · {media.ext?.toUpperCase()}</dd>
           </div>
           <div>
-            <dt>Date</dt>
-            <dd>{media.dateAdded || 'Unknown'}</dd>
+            <dt>Added</dt>
+            <dd>{formatAddedDate(media.dateAdded)}</dd>
           </div>
           <div>
             <dt>Tags</dt>

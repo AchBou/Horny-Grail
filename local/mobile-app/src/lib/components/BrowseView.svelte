@@ -14,34 +14,22 @@
    *   onShowAll: () => void,
    *   onShowUntagged: () => void,
    *   onRefresh: () => void,
+   *   onOpen: (index: number) => void,
    *   onAdd: () => void
    * }}
    */
   let {
     summary, loading, error, items, loadingMore, hasMore, sentinel = $bindable(),
-    tagSummary = null, filter, onToggleTag, onShowAll, onShowUntagged, onRefresh, onAdd
+    tagSummary = null, filter, onToggleTag, onShowAll, onShowUntagged, onRefresh, onOpen, onAdd
   } = $props();
 
   const isFiltered = $derived(filter.untagged || filter.tags.length > 0);
 </script>
 
-<section class="browse-top">
-  <div>
-    <p class="eyebrow">Browse</p>
-    <h2>Your collection</h2>
-    <p class="section-copy">{summary}</p>
-  </div>
-
-  <div class="browse-actions">
-    <button class="toggle-chip active" type="button" aria-pressed="true">
-      Shuffle
-    </button>
-    <button class="soft-button" type="button" onclick={onRefresh}>
-      Refresh
-    </button>
-  </div>
-</section>
-
+<div class="browse-bar">
+  <button class="shuffle-button" type="button" onclick={onRefresh} aria-label="Shuffle" title="Shuffle">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5" /></svg>
+  </button>
 {#if tagSummary && (tagSummary.tags.length > 0 || isFiltered)}
   <nav class="tag-bar" aria-label="Filter by tag">
     <button class="tag-chip" class:selected={!isFiltered} type="button" aria-pressed={!isFiltered} onclick={onShowAll}>
@@ -60,6 +48,7 @@
     {/each}
   </nav>
 {/if}
+</div>
 
 {#if loading}
   <section class="gallery-grid skeleton-grid" aria-label="Loading gallery">
@@ -88,11 +77,13 @@
   </section>
 {:else}
   <section class="gallery-grid" aria-label="Randomized gallery">
-    {#each items as item (item.id)}
-      <a class="gallery-card" href={item.detailUrl}>
+    {#each items as item, index (item.id)}
+      <a class="gallery-card" href={item.detailUrl} data-id={item.id} onclick={(event) => { event.preventDefault(); onOpen(index); }}>
         <img src={item.thumbnailUrl} alt={item.kind === 'video' ? 'Video thumbnail' : 'Image thumbnail'} loading="lazy" />
         {#if item.kind === 'video'}
-          <span class="media-badge">Clip</span>
+          <span class="video-badge" aria-label="Video">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" /></svg>
+          </span>
         {/if}
       </a>
     {/each}
@@ -108,7 +99,6 @@
 {/if}
 
 <style>
-  .section-copy,
   .footer-note,
   .empty-state p {
     color: var(--text-body);
@@ -116,28 +106,20 @@
     font-size: 0.98rem;
   }
 
-  .toggle-chip {
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
 
   .gallery-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.6rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    margin-inline: -0.6rem;
   }
 
   .gallery-card,
   .skeleton-card {
     position: relative;
     overflow: hidden;
-    border-radius: 1rem;
-    border: 1px solid var(--stroke-soft);
-    background: var(--bg-surface-strong);
-    box-shadow: var(--shadow-soft);
+    border-radius: 4px;
+    background: #2b231e;
   }
 
   .gallery-card img {
@@ -147,40 +129,13 @@
     display: block;
   }
 
-  .browse-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-  }
 
-  .toggle-chip {
-    border-radius: 999px;
-    padding: 0.42rem 0.68rem;
-    background: rgba(255, 255, 255, 0.65);
-    border: 1px solid var(--stroke-soft);
-    font-size: 0.7rem;
-    font-weight: 700;
-  }
 
-  .toggle-chip.active {
-    background: rgba(29, 122, 109, 0.12);
-    border-color: rgba(29, 122, 109, 0.2);
-    color: var(--accent);
-  }
 
-  .browse-top {
-    display: grid;
-    gap: 0.75rem;
-    margin-top: 0.1rem;
-  }
-
-  .gallery-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   .gallery-card,
   .skeleton-card {
-    aspect-ratio: 0.84 / 1;
+    aspect-ratio: 4 / 5;
   }
 
   .gallery-card {
@@ -221,12 +176,68 @@
     text-align: center;
   }
 
+  .browse-bar {
+    position: sticky;
+    top: var(--app-bar-height, 0px);
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 -1rem;
+    padding: 0.35rem 1rem 0.45rem;
+    background: rgba(243, 238, 230, 0.92);
+    backdrop-filter: blur(12px);
+  }
+
+  .shuffle-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.3rem;
+    height: 2.3rem;
+    border: 1px solid var(--stroke-strong);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    color: #33261f;
+    cursor: pointer;
+  }
+
+  .shuffle-button svg,
+  .video-badge svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .video-badge {
+    position: absolute;
+    top: 0.3rem;
+    left: 0.3rem;
+    display: inline-flex;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+  }
+
+  .video-badge svg {
+    width: 0.8rem;
+    height: 0.8rem;
+    fill: currentColor;
+    stroke: none;
+  }
+
   .tag-bar {
     display: flex;
+    min-width: 0;
     gap: 0.4rem;
     overflow-x: auto;
-    padding: 0.1rem 0.05rem 0.5rem;
-    margin-bottom: 0.2rem;
+    padding: 0.1rem 0.05rem;
     scrollbar-width: none;
   }
 
@@ -268,12 +279,7 @@
   @media (min-width: 720px) {
 
     .gallery-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .browse-top {
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: end;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 }
 

@@ -52,38 +52,11 @@
 </script>
 
 <section class="upload-panel">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Add Media</p>
-      <h2>Pick files and keep moving.</h2>
-    </div>
-  </div>
-
-  <p class="upload-copy">The queue handles duplicates, cover generation, and retries in the background.</p>
-
-  <div class="type-strip" aria-label="Supported upload types">
-    <span>JPG</span>
-    <span>PNG</span>
-    <span>GIF</span>
-    <span>WEBP</span>
-    <span>WEBM</span>
-  </div>
-
-  <div class="upload-actions">
-    <button class="primary-button" type="button" onclick={onPick}>
-      Choose Files
-    </button>
-    <button class="secondary-button" type="button" onclick={onBack}>
-      Back
-    </button>
-  </div>
-
-  {#if items.length > 0}
-    <div class="mini-stats" aria-label="Upload queue summary">
-      <span><strong>{finishedCount}</strong> done</span>
-      <span><strong>{activeCount}</strong> active</span>
-      <span><strong>{failedCount}</strong> issues</span>
-    </div>
+  <button class="primary-button" type="button" onclick={onPick}>
+    Choose files
+  </button>
+  {#if items.length === 0}
+    <p class="upload-copy">Pick photos and videos. Anything already in the Grail is skipped, and once a file is saved you can delete it from the phone.</p>
   {/if}
 </section>
 
@@ -149,7 +122,7 @@
                 <span style={`width: ${uploadProgress(item)}%`}></span>
               </div>
 
-              {#if item.message}
+              {#if item.message && item.status !== 'complete' && item.status !== 'duplicate'}
                 <p class={`message ${item.status === 'failed' ? 'error-text' : item.status === 'cancelled' ? 'warning' : 'success'}`}>{item.message}</p>
               {/if}
 
@@ -212,10 +185,6 @@
     backdrop-filter: blur(14px);
   }
 
-  .upload-actions {
-    display: grid;
-    gap: 0.65rem;
-  }
 
   .dock-label {
     color: var(--text-muted);
@@ -225,31 +194,9 @@
     letter-spacing: 0.14em;
   }
 
-  .type-strip,
-  .mini-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-  }
 
-  .type-strip span,
-  .mini-stats span {
-    border-radius: 999px;
-    padding: 0.42rem 0.68rem;
-    background: rgba(255, 255, 255, 0.65);
-    border: 1px solid var(--stroke-soft);
-    font-size: 0.7rem;
-    font-weight: 700;
-  }
 
-  .mini-stats span {
-    color: #4a3b31;
-  }
 
-  .mini-stats strong {
-    font-size: 0.94rem;
-    font-weight: 700;
-  }
 
   .upload-dock {
     position: static;
@@ -639,9 +586,7 @@
       align-items: end;
     }
 
-    .upload-copy,
-    .type-strip,
-    .mini-stats {
+    .upload-copy {
       grid-column: 1 / -1;
     }
 }
