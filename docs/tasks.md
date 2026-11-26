@@ -17,7 +17,10 @@ Frontend:
 
 - [x] Public SvelteKit frontend for browse, random item, and single-item detail
 - [x] Cursor-based randomized infinite scroll backed by `GET /api/browse/random`
-- [x] Random single-item route backed by `GET /api/get-random-image`
+- [x] Opens on Browse; items open in a full-screen viewer over the grid (←/→, swipe, Back keeps filter, order and scroll)
+- [x] Random in the same viewer, following the tag filter (`GET /api/browse/random` without a cursor)
+- [x] Denser grid, header menu, video controls on every video
+- [x] Discreet mode (neutral tab title and icon) and Hide (B key blanks the page)
 - [x] Static SPA build for S3 + CloudFront deployment
 - [x] Automated frontend deployment workflow in GitHub Actions
 - [x] Improved error states and recovery UX across browse, random, and detail flows
@@ -58,6 +61,12 @@ Tags and library:
 - [x] Free-form tags on items, set from the desktop only (upload rows, batch tags, Watch tab)
 - [x] Desktop Watch tab: shuffled feed from the Grail, tag filters, full viewer with quick tagging
 - [x] Tag-filtered browse (`tags=a,b`, `untagged=1`) with tag counts, read-only on the phone and the website
+- [x] Phone app rebuilt with tags and Capacitor 8.6.2
+
+Delete from the Grail:
+
+- [x] Desktop-only delete (upload list and Watch viewer) with Undo; deleted items are hidden everywhere
+- [x] Recently deleted view in the Watch tab: restore with tags for 30 days, then gone for good (DynamoDB TTL + bucket versioning)
 
 No duplicates on devices:
 
@@ -91,7 +100,6 @@ This priority order assumes uploads are mainly done by you through the private d
 - [ ] Add broader backend test coverage around route behavior and deployment-sensitive config
 - [ ] Add staging or environment-specific config strategy beyond local examples and production values
 - [ ] Add rollback guidance for backend and client deployments so production changes are reversible
-- [ ] Add a safe delete, archive, or moderation workflow for uploaded media
 - [ ] Move to SvelteKit 3 once it has matured (needs Node 22.17+ and TypeScript 6)
 
 ## Important Soon
