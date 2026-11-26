@@ -12,6 +12,16 @@ const template = yaml.load(readFileSync(new URL('../../template.yaml', import.me
 });
 const functions = Object.entries(template.Resources).filter(([, r]) => r.Type === 'AWS::Serverless::Function');
 
+describe('template.yaml data protection', () => {
+  it('keeps the metadata table backed up, retained and undeletable', () => {
+    const table = template.Resources.LookupTable;
+    expect(table.DeletionPolicy).toBe('Retain');
+    expect(table.UpdateReplacePolicy).toBe('Retain');
+    expect(table.Properties.PointInTimeRecoverySpecification).toEqual({ PointInTimeRecoveryEnabled: true });
+    expect(table.Properties.DeletionProtectionEnabled).toBe(true);
+  });
+});
+
 describe('template.yaml function policies', () => {
   it.each(functions)('%s has well-formed policies', (_name, resource) => {
     for (const policy of resource.Properties.Policies || []) {

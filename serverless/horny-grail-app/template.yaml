@@ -75,6 +75,12 @@ Resources:
     Properties:
       TableName: !Ref LookupTableName
       BillingMode: PAY_PER_REQUEST
+      # Files leave the phone and PC after upload, so this table (items and tags) is the
+      # only record: restorable to any second of the last 35 days, and not deletable by
+      # accident. Both cost almost nothing at this size.
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: true
       AttributeDefinitions:
       - AttributeName: id
         AttributeType: S
