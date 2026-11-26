@@ -101,6 +101,7 @@ Do not commit real AWS credentials, local `.env` files, generated SAM build fold
 - Prefer existing SvelteKit and Svelte 5 patterns in each app. The desktop uploader uses Svelte runes such as `$state`.
 - Keep frontend API response parsing compatible with both current object payloads and older string payloads where the code already does so.
 - The frontend browse page now uses `GET /api/browse/random` with cursor-based infinite scroll. Preserve the cursor contract when iterating on browse.
+- The website opens straight on Browse. Items open in `MediaViewer` over the grid through shallow routing (`pushState` to `/image/<id>`), so Back closes the viewer and the grid keeps its order and scroll; `/image/<id>` loaded directly shows the same viewer on its own. Random reads `GET /api/browse/random` without a cursor (a fresh shuffle) and follows the `?tags=`/`?untagged=` filter. Discreet mode (`src/lib/privacy.svelte.js`) swaps the tab title and icon; Hide (B key) blanks the page.
 - The mobile home page (`src/routes/+page.svelte`) owns state and handlers; each view lives in `src/lib/components/` (`HomeView`, `UploadView`, `BrowseView`, `DeleteAllDialog`). Styles used by several views stay in the page, scoped to `.vault-view` wrappers.
 - The mobile app home screen is chooser-first. Do not make browse or upload the implicit default on entry unless there is an explicit product decision to change that.
 - The mobile app should load randomized browse content only after the user explicitly opens browse mode.
