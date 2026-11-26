@@ -574,7 +574,7 @@
     z-index: 50;
     display: flex;
     flex-direction: column;
-    background-color: rgba(10, 10, 12, 0.96);
+    background-color: #0a0a0c;
     color: #eee;
   }
 

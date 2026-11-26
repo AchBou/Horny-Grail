@@ -67,12 +67,15 @@
   let previewFailed = $state<{[key: string]: boolean}>({});
   let currentUpload = $state<{ path: string; name: string; index: number; total: number } | null>(null);
 
-  // What happens to a file once it is safely uploaded. Remembered between launches.
+  // What happens to a file once it is safely in the Grail. Remembered between launches;
+  // Recycle Bin by default, since the Grail is meant to be the only copy.
   type AfterUpload = 'keep' | 'recycle';
   const AFTER_UPLOAD_KEY = 'hornygrail-after-upload';
   let afterUpload = $state<AfterUpload>(
-    typeof localStorage !== 'undefined' && localStorage.getItem(AFTER_UPLOAD_KEY) === 'recycle' ? 'recycle' : 'keep'
+    typeof localStorage !== 'undefined' && localStorage.getItem(AFTER_UPLOAD_KEY) === 'keep' ? 'keep' : 'recycle'
   );
+  // The row whose tag field has focus shows the quick tag bubbles; other rows stay compact.
+  let focusedRow = $state<string | null>(null);
   $effect(() => {
     localStorage.setItem(AFTER_UPLOAD_KEY, afterUpload);
   });
@@ -366,6 +369,7 @@
     } finally {
       if (generation === scanGeneration) {
         isScanningMetadata = false;
+        void recycleFilesAlreadyInGrail();
       }
     }
   }
@@ -789,12 +793,20 @@
   async function handleUploadAll(): Promise<void> {
     try {
       errorMessage = "";
+      noticeMessage = "";
       if (activeTab !== 'all') activeTab = 'new';
       const eligible = [...getEligibleFiles()].sort((a, b) => b.modifiedAt - a.modifiedAt || a.name.localeCompare(b.name));
+      let uploaded = 0;
+      let recycled = 0;
       for (const [index, f] of eligible.entries()) {
         currentUpload = { path: f.path, name: f.name, index: index + 1, total: eligible.length };
         await handleFileUpload(f);
-        await recycleAfterUpload(f);
+        if (uploadStatus[f.path] === 'completed') uploaded += 1;
+        recycled += await recycleAfterUpload(f);
+      }
+      if (uploaded > 0) {
+        noticeMessage = `Uploaded ${uploaded} file${uploaded === 1 ? '' : 's'}` +
+          (recycled > 0 ? `, moved ${recycled} to the Recycle Bin.` : '.');
       }
     } catch (e) {
       console.error("Error in Upload All:", e);
@@ -815,22 +827,58 @@
     }
   }
 
-  // With "Move to Recycle Bin" on, a file leaves the PC as soon as its upload completes.
-  async function recycleAfterUpload(file: FileEntry): Promise<void> {
-    if (afterUpload === 'recycle' && uploadStatus[file.path] === 'completed') {
-      await removeFromPc([file], { quiet: true });
+  /**
+   * With "Move to Recycle Bin" on, files the scan found already in the Grail leave the PC too,
+   * not only the ones uploaded now. Each is checked with the Grail and re-hashed first.
+   */
+  async function recycleFilesAlreadyInGrail(): Promise<void> {
+    if (afterUpload !== 'recycle' || isUploading || isRemoving || currentUpload) return;
+    const targets = [...removableFiles];
+    if (targets.length === 0) return;
+    const moved = await removeFromPc(targets, { quiet: true });
+    if (moved > 0) {
+      noticeMessage = `Moved ${moved} file${moved === 1 ? '' : 's'} already in the Grail to the Recycle Bin.`;
     }
+  }
+
+  function setAfterUpload(value: AfterUpload): void {
+    afterUpload = value;
+    if (value === 'recycle') void recycleFilesAlreadyInGrail();
+  }
+
+  async function handleRepairAll(): Promise<void> {
+    const targets = files.filter((file) => getFileCategory(file) === 'repair');
+    for (const [index, file] of targets.entries()) {
+      currentUpload = { path: file.path, name: file.name, index: index + 1, total: targets.length };
+      await handleFileRepair(file);
+    }
+    currentUpload = null;
+    // Repaired items are complete in the Grail, so they leave the PC like uploads do.
+    await recycleFilesAlreadyInGrail();
+  }
+
+  async function handleSingleRepair(file: FileEntry): Promise<void> {
+    await handleFileRepair(file);
+    await recycleAfterUpload(file);
+  }
+
+  // With "Move to Recycle Bin" on, a file leaves the PC as soon as its upload completes.
+  async function recycleAfterUpload(file: FileEntry): Promise<number> {
+    if (afterUpload === 'recycle' && uploadStatus[file.path] === 'completed') {
+      return removeFromPc([file], { quiet: true });
+    }
+    return 0;
   }
 
   /**
    * Moves files to the Recycle Bin once the Grail confirms it holds them. Each file is
    * checked with the server and re-hashed first; anything not confirmed stays on the PC.
    */
-  async function removeFromPc(targets: FileEntry[], { quiet = false } = {}): Promise<void> {
-    if (!selectedPath || targets.length === 0) return;
+  async function removeFromPc(targets: FileEntry[], { quiet = false } = {}): Promise<number> {
+    if (!selectedPath || targets.length === 0) return 0;
 
     const removable = targets.filter((file) => fileHashes[file.path]);
-    if (removable.length === 0) return;
+    if (removable.length === 0) return 0;
 
     for (const file of removable) uploadStatus[file.path] = 'removing';
     isRemoving = true;
@@ -854,10 +902,12 @@
       if (moved.length > 0 && !quiet) {
         noticeMessage = `Moved ${moved.length} file${moved.length === 1 ? '' : 's'} to the Recycle Bin.`;
       }
+      return moved.length;
     } catch (error) {
       console.error("Error removing files from PC:", error);
       for (const file of removable) uploadStatus[file.path] = 'completed';
       errorMessage = `Could not remove files from this PC: ${getErrorDetail(error)}`;
+      return 0;
     } finally {
       isRemoving = false;
     }
@@ -906,10 +956,10 @@
       width="76"
       height="76"
     />
-    <h1 class="app-title">The Horny Grail Uploader</h1>
+    <h1 class="app-title">Grail Uploader</h1>
     <div class="view-switch" role="tablist" aria-label="Choose a view">
-      <button role="tab" aria-selected={appView === 'upload'} class:selected={appView === 'upload'} onclick={() => appView = 'upload'}>⬆️ Upload</button>
-      <button role="tab" aria-selected={appView === 'watch'} class:selected={appView === 'watch'} onclick={() => appView = 'watch'}>▶️ Watch</button>
+      <button role="tab" aria-selected={appView === 'upload'} class:selected={appView === 'upload'} onclick={() => appView = 'upload'}>Upload</button>
+      <button role="tab" aria-selected={appView === 'watch'} class:selected={appView === 'watch'} onclick={() => appView = 'watch'}>Watch</button>
     </div>
   </div>
 
@@ -919,50 +969,33 @@
 
   <div class="file-explorer" class:hidden-view={appView !== 'upload'}>
     <div class="controls">
-      <div class="control-buttons">
-        <button onclick={selectFolder} class="sync-button" title="Choose a folder to watch and upload">🔄 Sync Folder</button>
-        {#if selectedPath}
-          <button
-            onclick={recheckExistingFiles}
-            class="recheck-button"
-            disabled={isScanningMetadata || isLoading}
-            title="Re-run the duplicate check for the files in this folder"
-          >
-            Recheck Existing Files
-          </button>
-        {/if}
-        <label class="after-upload" title="What happens to a file on this PC once it is safely in the Grail">
-          After upload
-          <select bind:value={afterUpload}>
-            <option value="keep">Keep on PC</option>
-            <option value="recycle">Move to Recycle Bin</option>
-          </select>
-        </label>
-      </div>
+      <button onclick={selectFolder} class="secondary-button" title="Choose a folder to watch and upload">
+        {selectedPath ? 'Change folder' : 'Choose folder'}
+      </button>
       {#if selectedPath}
-        <p class="selected-path">Sync folder: {selectedPath}</p>
-        {#if isWatching}
-          <p class="watch-status watching">
-            <span class="watch-indicator"></span> Watching for changes
-            {#if lastChangeDetected}
-              <span class="last-change">
-                (Last change: {lastChangeDetected.toLocaleTimeString()})
-                {#if pendingUpdates > 0}
-                  <span class="pending-updates">{pendingUpdates} updates pending...</span>
-                {/if}
-              </span>
-            {/if}
-          </p>
-        {:else}
-          <p class="watch-status">Not watching</p>
-        {/if}
+        <span class="selected-path" title={selectedPath}>{selectedPath}</span>
+        <span class="watch-status" class:watching={isWatching} title={isWatching ? 'New files in this folder show up on their own' : 'Not watching this folder'}>
+          <span class="watch-indicator"></span>{isWatching ? 'Watching' : 'Not watching'}
+        </span>
+        <button
+          onclick={recheckExistingFiles}
+          class="icon-button"
+          disabled={isScanningMetadata || isLoading}
+          title="Check every file in this folder against the Grail again"
+          aria-label="Recheck files"
+        >↻</button>
       {/if}
+      <div class="after-upload" role="radiogroup" aria-label="After upload" title="What happens to a file on this PC once it is safely in the Grail">
+        <span>After upload</span>
+        <button role="radio" aria-checked={afterUpload === 'recycle'} class:selected={afterUpload === 'recycle'} onclick={() => setAfterUpload('recycle')}>Move to Recycle Bin</button>
+        <button role="radio" aria-checked={afterUpload === 'keep'} class:selected={afterUpload === 'keep'} onclick={() => setAfterUpload('keep')}>Keep on PC</button>
+      </div>
     </div>
 
     {#if errorMessage}
       <div class="error-message">
-        <p>⚠️ {errorMessage}</p>
-        <button class="close-error" onclick={() => errorMessage = ""}>×</button>
+        <p>{errorMessage}</p>
+        <button class="close-error" onclick={() => errorMessage = ""} aria-label="Dismiss">×</button>
       </div>
     {/if}
 
@@ -974,7 +1007,7 @@
     {/if}
 
     {#if isScanningMetadata}
-      <p class="scan-status">Checking existing files... {scannedMetadataCount}/{totalMetadataCount}</p>
+      <p class="scan-status">Checking files against the Grail… {scannedMetadataCount}/{totalMetadataCount}</p>
     {/if}
 
     {#if files.length > 0}
@@ -985,7 +1018,7 @@
             aria-selected={activeTab === tab.id}
             class="list-tab"
             class:selected={activeTab === tab.id}
-            class:alert={tab.id === 'failed' && tabCounts.failed > 0}
+            class:alert={(tab.id === 'failed' || tab.id === 'repair') && tabCounts[tab.id] > 0}
             onclick={() => activeTab = tab.id}
           >
             {tab.label} <span class="tab-count">{tabCounts[tab.id]}</span>
@@ -996,13 +1029,14 @@
 
     {#if selectedPath && (activeTab === 'new' || activeTab === 'all') && tabCounts.new > 0}
       <div class="batch-tags">
-        <span class="batch-tags-label" title="Every file you upload from this folder gets these tags, plus the tags on its own row">Tags for this upload</span>
+        <span class="batch-tags-label" title="Every file you upload from this folder gets these tags, plus the tags on its own row">Tags for all new files</span>
         <TagEditor
           tags={batchTags}
           suggestions={tagSuggestions}
           placeholder="Tags for every file in this upload…"
           onAdd={(tags) => batchTags = [...new Set([...batchTags, ...tags])]}
           onRemove={(tag) => batchTags = batchTags.filter((value) => value !== tag)}
+          quickCount={10}
           disabled={isUploading}
         />
       </div>
@@ -1019,7 +1053,7 @@
         {/if}
         <div class="now-uploading-text">
           <span class="now-uploading-label">
-            Uploading {currentUpload.total > 1 ? `${currentUpload.index} of ${currentUpload.total}` : ''}
+            {uploadStatus[currentUpload.path] === 'repairing' ? 'Repairing' : 'Uploading'} {currentUpload.total > 1 ? `${currentUpload.index} of ${currentUpload.total}` : ''}
           </span>
           <span class="now-uploading-name" title={currentUpload.name}>{currentUpload.name}</span>
           {#if currentUpload.total > 1}
@@ -1033,27 +1067,32 @@
 
     <div class="file-list">
       {#if isLoading}
-        <p>Loading files...</p>
+        <p class="empty-tab">Loading files…</p>
       {:else if files.length === 0}
-        <p>No files found. Select a folder to view its contents.</p>
+        <p class="empty-tab">{selectedPath ? 'No media files in this folder.' : 'Choose a folder to see its files.'}</p>
       {:else if visibleFiles.length === 0}
         <p class="empty-tab">
           {LIST_TABS.find((tab) => tab.id === activeTab)?.empty}
-          {#if activeTab === 'new' && isScanningMetadata}Still checking the rest of the folder...{/if}
+          {#if activeTab === 'new' && isScanningMetadata}Still checking the rest of the folder…{/if}
         </p>
       {:else}
         <ul>
           {#each visibleFiles as file (file.path)}
+            {@const busy = uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging"}
             <li
               class="file-item"
               class:active={currentUpload?.path === file.path}
               class:failed={getFileCategory(file) === 'failed'}
               data-path={file.path}
+              onfocusin={() => focusedRow = file.path}
+              onfocusout={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) focusedRow = null; }}
             >
               <button
-                onclick={() => copyFileName(file)}
-                class="file-button"
-                title={`Copy ${file.name}`}
+                class="preview-button"
+                type="button"
+                onclick={() => openLocalFile(file)}
+                title="Open in your usual viewer or player"
+                aria-label={`Open ${file.name}`}
               >
                 {#if canPreview(file)}
                   <img
@@ -1065,139 +1104,24 @@
                     onerror={() => previewFailed[file.path] = true}
                   />
                 {:else if isVideoFile(file.name) && videoPreviews[file.path]}
-                  <span class="video-preview">
-                    <img class="file-preview" src={videoPreviews[file.path]} alt="" decoding="async" />
-                    <span class="video-badge">▶</span>
-                  </span>
+                  <img class="file-preview" src={videoPreviews[file.path]} alt="" decoding="async" />
                 {:else if isVideoFile(file.name) && !videoPreviewFailed[file.path]}
                   <span class="file-preview file-preview-icon" use:lazyVideoPreview={file} title="Loading a frame…">{getIconForFile(file.name)}</span>
                 {:else}
                   <span class="file-preview file-preview-icon" title={getFileExt(file.name).toUpperCase()}>{getIconForFile(file.name)}</span>
                 {/if}
-                <span class="file-text">
-                  <span class="file-name" title={file.name}>{file.name}</span>
-                  <span class="file-details">{formatFileDetails(file)}</span>
-                </span>
-                {#if copiedFilePath === file.path}
-                  <span class="copied-badge">Copied</span>
-                {/if}
+                {#if isVideoFile(file.name)}<span class="video-badge">▶</span>{/if}
               </button>
-              
-              {#if !file.isDirectory}
-                {#if fileCheckStatus[file.path] === "failed"}
-                  <span class="repair-badge" title="This file could not be checked against the backend">Check failed</span>
-                {:else if fileCheckStatus[file.path] !== "done"}
-                  <span class="checking-badge" title="Computing hash and checking whether this file already exists">Checking...</span>
-                {:else if fileExists[file.path] && fileRepairNeeded[file.path]}
-                  <div class="repair-actions">
-                    <span class="repair-badge" title={`Metadata exists but this asset is missing: ${(fileMissingParts[file.path] || []).join(', ')}`}>
-                      Missing {(fileMissingParts[file.path] || []).join(' + ')}
-                    </span>
-                    <button
-                      onclick={() => handleFileRepair(file)}
-                      class="repair-button"
-                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
-                    >
-                      {#if uploadStatus[file.path] === "repairing"}
-                        Repairing...
-                      {:else}
-                        Repair
-                      {/if}
-                    </button>
-                    <button
-                      onclick={() => handleDeleteFromGrail(file)}
-                      class="purge-button"
-                      title="Delete from the Grail (restorable for 30 days)"
-                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging")}
-                    >
-                      {#if uploadStatus[file.path] === "purging"}
-                        Deleting...
-                      {:else}
-                        Delete
-                      {/if}
-                    </button>
-                    <button
-                      onclick={() => handleThumbnailRegeneration(file)}
-                      class="thumbnail-button"
-                      title="Regenerate thumbnail"
-                      aria-label={`Regenerate thumbnail for ${file.name}`}
-                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
-                    >
-                      {#if uploadStatus[file.path] === "thumbnailing"}
-                        ...
-                      {:else}
-                        ↻
-                      {/if}
-                    </button>
-                  </div>
-                {:else if fileExists[file.path]}
-                  <div class="repair-actions">
-                    <span class="exists-badge" title="This file's hash already exists in the database and its stored assets look complete">Already exists</span>
-                    <button
-                      onclick={() => removeFromPc([file])}
-                      class="remove-pc-button"
-                      title="Move this file to the Recycle Bin. It stays saved in the Grail."
-                      disabled={isRemoving || isUploading}
-                    >
-                      {#if uploadStatus[file.path] === "removing"}
-                        Removing...
-                      {:else}
-                        Remove from PC
-                      {/if}
-                    </button>
-                    <button
-                      onclick={() => handleDeleteFromGrail(file)}
-                      class="purge-button"
-                      title="Delete from the Grail (restorable for 30 days)"
-                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging")}
-                    >
-                      {#if uploadStatus[file.path] === "purging"}
-                        Deleting...
-                      {:else}
-                        Delete
-                      {/if}
-                    </button>
-                    <button
-                      onclick={() => handleThumbnailRegeneration(file)}
-                      class="thumbnail-button"
-                      title="Regenerate thumbnail"
-                      aria-label={`Regenerate thumbnail for ${file.name}`}
-                      disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing")}
-                    >
-                      {#if uploadStatus[file.path] === "thumbnailing"}
-                        ...
-                      {:else}
-                        ↻
-                      {/if}
-                    </button>
-                  </div>
-                {:else}
-                  <button
-                    onclick={() => handleSingleUpload(file)}
-                    class="upload-button"
-                    disabled={isUploading && uploadStatus[file.path] === "uploading"}
-                  >
-                    {#if uploadStatus[file.path] === "uploading"}
-                      Uploading...
-                    {:else if uploadStatus[file.path] === "completed"}
-                      ✓ Uploaded
-                    {:else if uploadStatus[file.path] === "failed"}
-                      ❌ Failed
-                    {:else}
-                      Upload
-                    {/if}
-                  </button>
-                {/if}
-              {/if}
-              {#if fileCheckStatus[file.path] === "done" && getFileCategory(file) !== 'repair'}
-                <div class="row-tags">
-                  <button
-                    class="open-button"
-                    type="button"
-                    onclick={() => openLocalFile(file)}
-                    title="Open in your usual viewer or player"
-                    aria-label={`Open ${file.name}`}
-                  >▶ Open</button>
+
+              <div class="file-main">
+                <div class="file-head">
+                  <button class="file-name" type="button" onclick={() => copyFileName(file)} title={`Copy ${file.name}`}>{file.name}</button>
+                  <span class="file-details">{formatFileDetails(file)}</span>
+                  {#if copiedFilePath === file.path}
+                    <span class="copied-badge">Copied</span>
+                  {/if}
+                </div>
+                {#if fileCheckStatus[file.path] === "done" && getFileCategory(file) !== 'repair'}
                   {#if fileExists[file.path]}
                     <TagEditor
                       compact
@@ -1206,7 +1130,7 @@
                       placeholder="Add tags (saved right away)…"
                       onAdd={(tags) => changeSavedTags(file, { add: tags })}
                       onRemove={(tag) => changeSavedTags(file, { remove: [tag] })}
-                      quickCount={8}
+                      quickCount={focusedRow === file.path ? 8 : 0}
                       disabled={uploadStatus[file.path] === 'removing'}
                     />
                   {:else}
@@ -1214,36 +1138,95 @@
                       compact
                       tags={pendingTags[file.path] || []}
                       suggestions={tagSuggestions}
-                      placeholder={batchTags.length ? `Extra tags (plus: ${batchTags.join(', ')})…` : "Tags for this file…"}
+                      placeholder={batchTags.length ? `More tags (plus: ${batchTags.join(', ')})…` : "Tags for this file…"}
                       onAdd={(tags) => addPendingTags(file, tags)}
                       onRemove={(tag) => removePendingTag(file, tag)}
-                      quickCount={8}
+                      quickCount={focusedRow === file.path ? 8 : 0}
                       disabled={uploadStatus[file.path] === 'uploading'}
                     />
                   {/if}
-                </div>
-              {/if}
+                {/if}
+              </div>
+
+              <div class="file-actions">
+                {#if fileCheckStatus[file.path] === "failed"}
+                  <span class="badge danger" title="This file could not be checked against the Grail">Check failed</span>
+                {:else if fileCheckStatus[file.path] !== "done"}
+                  <span class="badge info" title="Computing the hash and checking whether this file is already in the Grail">Checking…</span>
+                {:else if fileExists[file.path] && fileRepairNeeded[file.path]}
+                  <span class="badge warning" title={`The Grail has this item but is missing: ${(fileMissingParts[file.path] || []).join(', ')}`}>
+                    Missing {(fileMissingParts[file.path] || []).join(' + ')}
+                  </span>
+                  <button onclick={() => handleSingleRepair(file)} class="primary-button small" disabled={isUploading && busy}>
+                    {uploadStatus[file.path] === "repairing" ? 'Repairing…' : 'Repair'}
+                  </button>
+                  <button onclick={() => handleThumbnailRegeneration(file)} class="secondary-button small" title="Make and upload a new cover image" disabled={isUploading && busy}>
+                    {uploadStatus[file.path] === "thumbnailing" ? 'Working…' : 'New cover'}
+                  </button>
+                  <button onclick={() => handleDeleteFromGrail(file)} class="danger-link" title="Delete from the Grail (restorable for 30 days)" disabled={isUploading && busy}>
+                    {uploadStatus[file.path] === "purging" ? 'Deleting…' : 'Delete from Grail'}
+                  </button>
+                {:else if fileExists[file.path]}
+                  <span class="badge success" title="This file is already in the Grail, complete">In the Grail</span>
+                  <button
+                    onclick={() => removeFromPc([file])}
+                    class="secondary-button small"
+                    title="Move this file to the Recycle Bin. It stays saved in the Grail."
+                    disabled={isRemoving || isUploading}
+                  >
+                    {uploadStatus[file.path] === "removing" ? 'Removing…' : 'Remove from PC'}
+                  </button>
+                  <button onclick={() => handleThumbnailRegeneration(file)} class="secondary-button small" title="Make and upload a new cover image" disabled={isUploading && busy}>
+                    {uploadStatus[file.path] === "thumbnailing" ? 'Working…' : 'New cover'}
+                  </button>
+                  <button onclick={() => handleDeleteFromGrail(file)} class="danger-link" title="Delete from the Grail (restorable for 30 days)" disabled={isUploading && busy}>
+                    {uploadStatus[file.path] === "purging" ? 'Deleting…' : 'Delete from Grail'}
+                  </button>
+                {:else}
+                  <button
+                    onclick={() => handleSingleUpload(file)}
+                    class="primary-button small"
+                    class:failed={uploadStatus[file.path] === "failed"}
+                    disabled={isUploading && uploadStatus[file.path] === "uploading"}
+                  >
+                    {#if uploadStatus[file.path] === "uploading"}
+                      Uploading…
+                    {:else if uploadStatus[file.path] === "completed"}
+                      Uploaded
+                    {:else if uploadStatus[file.path] === "failed"}
+                      Retry
+                    {:else}
+                      Upload
+                    {/if}
+                  </button>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>
       {/if}
     </div>
 
-    {#if selectedPath && (getEligibleFiles().length > 0 || removableFiles.length > 0)}
+    {#if selectedPath && (getEligibleFiles().length > 0 || removableFiles.length > 0 || tabCounts.repair > 0)}
       <div class="bottom-actions">
         {#if removableFiles.length > 0}
           <button
             onclick={handleRemoveAllUploaded}
-            class="remove-all-button"
+            class="secondary-button"
             disabled={isUploading || isRemoving}
-            title="Move every uploaded file in this folder to the Recycle Bin. They stay saved in the Grail."
+            title="Move every file that is already in the Grail to the Recycle Bin"
           >
-            🗑️ {isRemoving ? 'Removing...' : `Remove uploaded from PC (${removableFiles.length})`}
+            {isRemoving ? 'Removing…' : `Remove ${removableFiles.length} from PC`}
+          </button>
+        {/if}
+        {#if tabCounts.repair > 0}
+          <button onclick={handleRepairAll} class="secondary-button" disabled={isUploading || isRemoving} title="Upload the missing parts of every item that needs repair">
+            Repair all ({tabCounts.repair})
           </button>
         {/if}
         {#if getEligibleFiles().length > 0}
-          <button onclick={handleUploadAll} class="upload-all-button" disabled={isUploading || isRemoving} title="Upload all new images in this folder">
-            ⬆️ Upload All ({getEligibleFiles().length})
+          <button onclick={handleUploadAll} class="primary-button" disabled={isUploading || isRemoving} title="Upload every new file in this folder">
+            Upload all ({getEligibleFiles().length})
           </button>
         {/if}
       </div>
@@ -1252,26 +1235,75 @@
 </main>
 
 <style>
+  /* One font and a small palette: blue for the main action, neutral for the rest, red only
+     for deleting from the Grail. */
+  :global(:root) {
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --surface-muted: #f9fafb;
+    --border: #e5e7eb;
+    --border-strong: #d1d5db;
+    --text: #111827;
+    --text-muted: #6b7280;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-soft: #dbeafe;
+    --danger: #dc2626;
+    --success-bg: #dcfce7;
+    --success-text: #166534;
+    --warning-bg: #ffedd5;
+    --warning-text: #9a3412;
+    --danger-bg: #fee2e2;
+    --info-bg: #e0f2fe;
+    --info-text: #075985;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root) {
+      --bg: #18181b;
+      --surface: #232326;
+      --surface-muted: #1c1c1f;
+      --border: #34343a;
+      --border-strong: #44444c;
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-soft: #1e3a5f;
+      --danger: #f87171;
+      --success-bg: #14321f;
+      --success-text: #86efac;
+      --warning-bg: #3b2414;
+      --warning-text: #fdba74;
+      --danger-bg: #3a1f1f;
+      --info-bg: #0c2a3d;
+      --info-text: #7dd3fc;
+    }
+  }
+
   :global(html, body) {
     height: 100%;
     margin: 0;
     overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+  }
+
+  :global(button, input, select, textarea) {
+    font-family: inherit;
   }
 
   .container {
     margin: 0 auto;
-    padding: 0.9rem 1.25rem 1rem;
-    max-width: 1200px;
+    padding: 0.75rem 1.25rem 1rem;
+    max-width: 1280px;
     height: 100vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     box-sizing: border-box;
-  }
-
-  h1 {
-    text-align: center;
-    margin-bottom: 0;
   }
 
   .brand-header {
@@ -1283,52 +1315,136 @@
   }
 
   .brand-logo {
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2rem;
+    height: 2rem;
     flex: 0 0 auto;
-    filter: drop-shadow(0 3px 6px rgba(59, 130, 246, 0.18));
-  }
-  
-  .app-title {
-    font-size: 1.35rem;
-    font-weight: bold;
-    color: #3b82f6;
-    margin: 0;
-    letter-spacing: 0.5px;
-    position: relative;
-  }
-  
-  .app-title::after {
-    display: none;
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100px;
-    height: 3px;
-    background: linear-gradient(90deg, transparent, #3b82f6, transparent);
   }
 
-  @media (max-width: 720px) {
-    .app-title {
-      font-size: 1.15rem;
-    }
+  .app-title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .view-switch {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--border);
+  }
+
+  .view-switch button {
+    padding: 0.3rem 1rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .view-switch button.selected {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+
+  .hidden-view {
+    display: none !important;
   }
 
   .file-explorer {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 1rem;
-    background-color: #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     flex: 1 1 auto;
-    min-height: 0; /* allow inner flex children to shrink */
+    min-height: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
   }
 
+  /* Buttons */
+  .primary-button,
+  .secondary-button,
+  .icon-button,
+  .danger-link {
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .primary-button {
+    padding: 0.45rem 1rem;
+    border: 1px solid var(--primary);
+    background: var(--primary);
+    color: white;
+  }
+
+  .primary-button:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+
+  .primary-button.failed {
+    border-color: var(--danger);
+    background: var(--danger);
+  }
+
+  .secondary-button {
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .secondary-button:hover:not(:disabled),
+  .icon-button:hover:not(:disabled) {
+    background: var(--surface-muted);
+    border-color: var(--text-muted);
+  }
+
+  .small {
+    padding: 0.25rem 0.7rem;
+    font-size: 0.82rem;
+  }
+
+  .icon-button {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+  }
+
+  .danger-link {
+    padding: 0.25rem 0.4rem;
+    margin-left: 0.6rem;
+    border: none;
+    background: none;
+    color: var(--danger);
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+
+  .danger-link:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+
+  button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* Folder bar */
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -1336,224 +1452,156 @@
     gap: 0.5rem 0.75rem;
   }
 
-  .control-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .sync-button,
-  .recheck-button {
-    padding: 0.4em 0.9em;
-    font-size: 0.9rem;
-  }
-
-  .sync-button {
-    min-width: 0;
-  }
-
-  .recheck-button {
-    min-width: 0;
-    background-color: #0f766e;
-  }
-
-  .recheck-button:hover:not(:disabled) {
-    background-color: #0d5f59;
-  }
-
   .selected-path {
     flex: 1 1 12rem;
     min-width: 0;
-    margin: 0;
-    font-size: 0.8rem;
-    color: #666;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    background-color: #f5f5f5;
-    padding: 0.35rem 0.7rem;
-    border-radius: 6px;
-    border: 1px solid #e0e0e0;
-    text-align: left;
+    color: var(--text-muted);
+    font-size: 0.85rem;
   }
-  
+
   .watch-status {
-    margin: 0;
-    font-size: 0.8rem;
-    color: #666;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
     white-space: nowrap;
   }
-  
-  .watch-status.watching {
-    color: #2563eb;
-  }
-  
+
   .watch-indicator {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background-color: #2563eb;
-    animation: pulse 1.5s infinite;
+    background: var(--border-strong);
   }
-  
-  .last-change {
-    font-size: 0.8rem;
-    color: #666;
-    margin-left: 0.5rem;
+
+  .watch-status.watching .watch-indicator {
+    background: #22c55e;
   }
-  
-  .pending-updates {
-    font-weight: bold;
-    color: #f59e0b;
-    margin-left: 0.5rem;
-    animation: pulse-text 1s infinite;
+
+  .after-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--border);
+    font-size: 0.82rem;
   }
-  
-  @keyframes pulse-text {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.6;
-    }
-    100% {
-      opacity: 1;
-    }
+
+  .after-upload > span {
+    padding: 0 0.5rem;
+    color: var(--text-muted);
   }
-  
-  @keyframes pulse {
-    0% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.6;
-      transform: scale(1.2);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
+
+  .after-upload button {
+    padding: 0.25rem 0.7rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .after-upload button.selected {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+
+  /* Messages */
+  .error-message,
+  .notice-message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
   }
 
   .error-message {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background-color: #fff3f3;
-    border: 1px solid #ffcdd2;
-    border-radius: 4px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    color: #d32f2f;
+    background: var(--danger-bg);
+    color: var(--danger);
   }
 
-  .error-message p {
+  .notice-message {
+    background: var(--success-bg);
+    color: var(--success-text);
+  }
+
+  .error-message p,
+  .notice-message p {
     margin: 0;
     flex: 1;
+  }
+
+  .close-error,
+  .close-notice {
+    padding: 0 0.25rem;
+    border: none;
+    background: none;
+    color: inherit;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
   }
 
   .scan-status {
-    margin: -0.25rem 0 0;
-    font-size: 0.85rem;
-    color: #666;
-    text-align: center;
-  }
-
-  .close-error {
-    background: none;
-    border: none;
-    color: #d32f2f;
-    font-size: 1.5rem;
-    cursor: pointer;
-    padding: 0;
-    margin-left: 0.5rem;
-    line-height: 1;
-  }
-
-  .file-list {
-    border: 1px solid #eee;
-    border-radius: 4px;
-    padding: 1rem;
-    overflow-y: auto;
-    background-color: #f9f9f9;
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-
-  .file-list ul {
-    list-style: none;
-    padding: 0;
     margin: 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
   }
 
-  .file-list li {
-    margin-bottom: 0.25rem;
-  }
-  
-  .file-item {
+  /* Tabs and batch tags */
+  .list-tabs {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.35rem;
   }
 
-  .video-preview {
-    position: relative;
-    display: inline-flex;
-    flex: 0 0 auto;
+  .list-tab {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
   }
 
-  .video-badge {
-    position: absolute;
-    right: 2px;
-    bottom: 2px;
-    padding: 0 0.25rem;
-    font-size: 0.6rem;
-    line-height: 1.3;
+  .list-tab.selected {
+    border-color: var(--primary);
+    background: var(--primary);
     color: white;
-    background-color: rgba(0, 0, 0, 0.65);
-    border-radius: 3px;
   }
 
-  .row-tags {
-    flex-basis: 100%;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0 0.5rem 0.4rem 3.4rem;
-    min-width: 0;
+  .list-tab.alert:not(.selected) {
+    border-color: var(--danger);
+    color: var(--danger);
   }
 
-  .row-tags :global(.tag-editor) {
-    flex: 1;
-  }
-
-  .open-button {
-    flex: 0 0 auto;
-    padding: 0.15rem 0.5rem;
-    font-size: 0.78rem;
-    border-radius: 6px;
-    background-color: #64748b;
-  }
-
-  .open-button:hover {
-    background-color: #475569;
+  .tab-count {
+    margin-left: 0.2rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
   }
 
   .batch-tags {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin-bottom: 0.6rem;
+    align-items: flex-start;
+    gap: 0.75rem;
     padding: 0.5rem 0.75rem;
-    border: 1px dashed #93c5fd;
     border-radius: 8px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
   }
 
   .batch-tags :global(.tag-editor) {
@@ -1562,150 +1610,28 @@
 
   .batch-tags-label {
     flex: 0 0 auto;
+    padding-top: 0.3rem;
     font-size: 0.85rem;
     font-weight: 600;
   }
 
-  .view-switch {
-    display: flex;
-    gap: 0.25rem;
-    margin-left: auto;
-  }
-
-  .view-switch button {
-    padding: 0.35em 0.9em;
-    font-size: 0.9rem;
-    background-color: transparent;
-    color: inherit;
-    border: 1px solid #cbd5e1;
-  }
-
-  .view-switch button.selected {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
-  }
-
-  .hidden-view {
-    display: none !important;
-  }
-
-  .file-button {
-    flex: 1;
-    min-width: 0;
-    text-align: left;
-    padding: 0.5rem;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background-color 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: none;
-    border: none;
-    color: inherit;
-    font-size: inherit;
-    box-shadow: none;
-  }
-
-  .file-preview {
-    flex: 0 0 auto;
-    width: 48px;
-    height: 48px;
-    border-radius: 6px;
-    object-fit: cover;
-    background-color: #e5e7eb;
-  }
-
-  .file-preview-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-  }
-
-  .file-text {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  .file-details {
-    font-size: 0.75rem;
-    color: #6b7280;
-  }
-
-  .file-item.active {
-    background-color: #dbeafe;
-    box-shadow: inset 3px 0 0 #3b82f6;
-    border-radius: 6px;
-  }
-
-  .file-item.failed {
-    background-color: #fee2e2;
-    box-shadow: inset 3px 0 0 #dc2626;
-    border-radius: 6px;
-  }
-
-  .list-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-bottom: 0.6rem;
-  }
-
-  .list-tab {
-    padding: 0.3rem 0.7rem;
-    font-size: 0.85rem;
-    border-radius: 9999px;
-    border: 1px solid #d1d5db;
-    background-color: transparent;
-    color: inherit;
-    box-shadow: none;
-    cursor: pointer;
-  }
-
-  .list-tab.selected {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
-  }
-
-  .list-tab.alert:not(.selected) {
-    border-color: #dc2626;
-    color: #dc2626;
-  }
-
-  .tab-count {
-    margin-left: 0.25rem;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.8;
-  }
-
-  .empty-tab {
-    color: #6b7280;
-  }
-
+  /* Upload in progress */
   .now-uploading {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.6rem;
-    border: 1px solid #93c5fd;
+    padding: 0.5rem 0.75rem;
     border-radius: 8px;
-    background-color: #eff6ff;
+    background: var(--primary-soft);
   }
 
   .now-uploading-preview {
     flex: 0 0 auto;
-    width: 56px;
-    height: 56px;
+    width: 44px;
+    height: 44px;
     border-radius: 6px;
     object-fit: cover;
-    background-color: #e5e7eb;
+    background: var(--border);
   }
 
   .now-uploading-text {
@@ -1717,9 +1643,9 @@
   }
 
   .now-uploading-label {
+    color: var(--primary);
     font-size: 0.75rem;
-    font-weight: 600;
-    color: #2563eb;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -1732,401 +1658,185 @@
 
   .now-uploading-progress {
     height: 4px;
-    border-radius: 9999px;
-    background-color: #bfdbfe;
+    border-radius: 999px;
+    background: var(--surface);
     overflow: hidden;
   }
 
   .now-uploading-progress > div {
     height: 100%;
-    background-color: #2563eb;
+    background: var(--primary);
     transition: width 0.3s;
   }
 
-  .file-name {
+  /* File list */
+  .file-list {
     flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .file-list ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .empty-tab {
+    margin: 1rem;
+    color: var(--text-muted);
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .file-item:last-child {
+    border-bottom: none;
+  }
+
+  .file-item:focus-within {
+    background: var(--surface-muted);
+  }
+
+  .file-item.active {
+    background: var(--primary-soft);
+    box-shadow: inset 3px 0 0 var(--primary);
+  }
+
+  .file-item.failed {
+    background: var(--danger-bg);
+    box-shadow: inset 3px 0 0 var(--danger);
+  }
+
+  .preview-button {
+    position: relative;
+    flex: 0 0 auto;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    cursor: zoom-in;
+  }
+
+  .file-preview {
+    display: block;
+    width: 72px;
+    height: 72px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: var(--border);
+  }
+
+  .file-preview-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+  }
+
+  .video-badge {
+    position: absolute;
+    left: 4px;
+    bottom: 4px;
+    padding: 0 0.3rem;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    font-size: 0.6rem;
+    line-height: 1.4;
+  }
+
+  .file-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .file-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  .file-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: copy;
+  }
+
+  .file-details {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.78rem;
   }
 
   .copied-badge {
     flex: 0 0 auto;
-    padding: 0.15rem 0.45rem;
+    padding: 0 0.45rem;
+    border-radius: 999px;
+    background: var(--success-bg);
+    color: var(--success-text);
     font-size: 0.72rem;
-    color: #065f46;
-    background-color: #d1fae5;
-    border: 1px solid #34d399;
-    border-radius: 9999px;
-    white-space: nowrap;
-  }
-  
-  .upload-button {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-    min-width: 80px;
-    text-align: center;
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  
-  .upload-button:hover:not(:disabled) {
-    background-color: #45a049;
-  }
-  
-  .upload-button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-    opacity: 0.7;
   }
 
-  .exists-badge {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
-    color: #1f2937;
-    background-color: #fde68a;
-    border: 1px solid #f59e0b;
-    border-radius: 9999px;
-    white-space: nowrap;
-  }
-
-  .repair-actions {
+  .file-actions {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
-  .repair-badge {
-    padding: 0.2rem 0.5rem;
+  .badge {
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
     font-size: 0.75rem;
-    color: #7c2d12;
-    background-color: #fed7aa;
-    border: 1px solid #fb923c;
-    border-radius: 9999px;
+    font-weight: 600;
     white-space: nowrap;
   }
 
-  .repair-button {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-    min-width: 80px;
-    text-align: center;
-    background-color: #ea580c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
+  .badge.success {
+    background: var(--success-bg);
+    color: var(--success-text);
   }
 
-  .repair-button:hover:not(:disabled) {
-    background-color: #c2410c;
+  .badge.warning {
+    background: var(--warning-bg);
+    color: var(--warning-text);
   }
 
-  .purge-button {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-    min-width: 80px;
-    text-align: center;
-    background-color: #b91c1c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
+  .badge.danger {
+    background: var(--danger-bg);
+    color: var(--danger);
   }
 
-  .purge-button:hover:not(:disabled) {
-    background-color: #991b1b;
-  }
-
-  .thumbnail-button {
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    font-size: 1rem;
-    line-height: 1;
-    text-align: center;
-    background-color: #2563eb;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-    flex: 0 0 auto;
-  }
-
-  .thumbnail-button:hover:not(:disabled) {
-    background-color: #1d4ed8;
-  }
-
-  .checking-badge {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
-    color: #1f2937;
-    background-color: #dbeafe;
-    border: 1px solid #60a5fa;
-    border-radius: 9999px;
-    white-space: nowrap;
-  }
-
-  .file-button:hover {
-    background-color: #eee;
-  }
-
-  button {
-    border-radius: 8px;
-    border: 1px solid #ddd;
-    padding: 0.6em 1.2em;
-    font-size: 1em;
-    font-weight: 500;
-    background-color: #3b82f6;
-    color: white;
-    cursor: pointer;
-  }
-
-  button:hover {
-    background-color: #2563eb;
-  }
-
-  .upload-all-button {
-    margin-left: 0.5rem;
-    min-width: 130px;
-  }
-
-  .upload-all-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .badge.info {
+    background: var(--info-bg);
+    color: var(--info-text);
   }
 
   .bottom-actions {
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
-    padding-top: 0.75rem;
-    margin-top: 0.5rem;
-    border-top: 1px solid #eee;
-    background-color: #fff;
     flex: 0 0 auto;
-  }
-
-  .upload-all-button {
-    font-weight: 600;
-  }
-
-  .after-upload {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.85rem;
-    color: #555;
-  }
-
-  .after-upload select {
-    padding: 0.3rem 0.4rem;
-    font-size: 0.85rem;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-  }
-
-  .notice-message {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background-color: #ecfdf5;
-    border: 1px solid #a7f3d0;
-    border-radius: 4px;
-    padding: 0.5rem 1rem;
-    margin-bottom: 0.75rem;
-    color: #047857;
-  }
-
-  .notice-message p {
-    margin: 0;
-    flex: 1;
-  }
-
-  .close-notice {
-    background: none;
-    border: none;
-    color: inherit;
-    font-size: 1.3rem;
-    padding: 0;
-    margin-left: 0.5rem;
-  }
-
-  .close-notice:hover {
-    background: none;
-  }
-
-  .remove-pc-button {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-    min-width: 80px;
-    text-align: center;
-    background-color: #475569;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    white-space: nowrap;
-  }
-
-  .remove-pc-button:hover:not(:disabled),
-  .remove-all-button:hover:not(:disabled) {
-    background-color: #334155;
-  }
-
-  .remove-all-button {
-    background-color: #475569;
-  }
-
-  .remove-pc-button:disabled,
-  .remove-all-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .after-upload {
-      color: #ccc;
-    }
-
-    .after-upload select {
-      background-color: #2a2a2a;
-      color: #eee;
-      border-color: #555;
-    }
-
-    .notice-message {
-      background-color: #12302a;
-      border-color: #1f5d4c;
-      color: #6ee7b7;
-    }
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .file-explorer {
-      background-color: #333;
-      border-color: #444;
-    }
-
-    .file-list {
-      background-color: #2a2a2a;
-      border-color: #444;
-    }
-
-    .file-button:hover {
-      background-color: #444;
-    }
-
-    .error-message {
-      background-color: #3a2222;
-      border-color: #5c2626;
-      color: #ff6b6b;
-    }
-
-    .close-error {
-      color: #ff6b6b;
-    }
-
-    .selected-path {
-      color: #aaa;
-      background-color: #2a2a2a;
-      border-color: #444;
-    }
-    
-    .watch-status {
-      color: #888;
-    }
-
-    .scan-status {
-      color: #aaa;
-    }
-    
-    .watch-status.watching {
-      color: #60a5fa;
-    }
-    
-    .watch-indicator {
-      background-color: #60a5fa;
-    }
-    
-    .last-change {
-      color: #888;
-    }
-    
-    .pending-updates {
-      color: #fbbf24;
-    }
-
-    button {
-      background-color: #3b82f6;
-      color: white;
-      border-color: #555;
-    }
-
-    button:hover {
-      background-color: #2563eb;
-    }
-    
-    .app-title {
-      color: #60a5fa;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-    }
-    
-    .app-title::after {
-      background: linear-gradient(90deg, transparent, #60a5fa, transparent);
-    }
-    
-    .bottom-actions {
-      border-top-color: #444;
-      background-color: #333;
-    }
-
-    .file-preview,
-    .now-uploading-preview {
-      background-color: #3f3f46;
-    }
-
-    .file-details,
-    .empty-tab {
-      color: #9ca3af;
-    }
-
-    .file-item.active {
-      background-color: #1e3a5f;
-    }
-
-    .file-item.failed {
-      background-color: #3a2222;
-    }
-
-    .list-tab {
-      background-color: transparent;
-      border-color: #555;
-    }
-
-    .list-tab.selected {
-      background-color: #3b82f6;
-      border-color: #3b82f6;
-    }
-
-    .now-uploading {
-      background-color: #1e293b;
-      border-color: #1d4ed8;
-    }
-
-    .now-uploading-label {
-      color: #60a5fa;
-    }
-
-    .now-uploading-progress {
-      background-color: #1e3a5f;
-    }
   }
 </style>
