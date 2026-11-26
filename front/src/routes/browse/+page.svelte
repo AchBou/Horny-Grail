@@ -7,8 +7,9 @@
 		buildMockThumbnailUrl,
 		buildThumbnailUrl
 	} from '$lib/config/publicEnv.js';
-	import { getMockBrowsePage } from '$lib/mocks/gallery.js';
-	import { normalizeImages } from '$lib/models/image.js';
+	import { replaceState } from '$app/navigation';
+	import { getMockBrowsePage, getMockTagSummary } from '$lib/mocks/gallery.js';
+	import { normalizeImages, readTagFilter, writeTagFilter } from '$lib/models/image.js';
 
 	const PAGE_SIZE = 24;
 	const PRELOAD_MARGIN_PX = 240;
@@ -24,7 +25,40 @@
 	let sentinel = $state();
 	let observer = $state();
 
+	// Tag filter: items with every selected tag, or only untagged ones. Kept in the URL.
+	let filter = $state({ tags: [], untagged: false });
+	/** @type {{ tags: { tag: string, count: number }[], total: number, untagged: number } | null} */
+	let tagSummary = $state(null);
+	const isFiltered = $derived(filter.untagged || filter.tags.length > 0);
+
 	const seenIds = new Set();
+
+	async function loadTagSummary() {
+		try {
+			if (USE_MOCK_GALLERY) {
+				tagSummary = getMockTagSummary();
+				return;
+			}
+			const response = await fetch(buildApiUrl('/tags'));
+			if (response.ok) tagSummary = await response.json();
+		} catch (err) {
+			console.warn('Could not load tags', err);
+		}
+	}
+
+	function applyFilter(next) {
+		filter = next;
+		const url = new URL(window.location.href);
+		writeTagFilter(url.searchParams, next);
+		replaceState(url, {});
+		retryInitialLoad();
+		loadTagSummary();
+	}
+
+	function toggleTag(tag) {
+		const tags = filter.tags.includes(tag) ? filter.tags.filter((value) => value !== tag) : [...filter.tags, tag];
+		applyFilter({ tags, untagged: false });
+	}
 
 	function describeRequestFailure(status, fallbackMessage) {
 		if (status === 404) {
@@ -44,6 +78,7 @@
 		if (cursor) {
 			url.searchParams.set('cursor', cursor);
 		}
+		writeTagFilter(url.searchParams, filter);
 		return url.toString();
 	}
 
@@ -66,9 +101,15 @@
 		images = replace ? merged : images.concat(merged);
 	}
 
+	// A fresh load (new filter, reshuffle) starts a new generation; pages still in flight
+	// for the old one are dropped when they land instead of mixing into the new list.
+	let generation = 0;
+
 	async function fetchPage({ cursor = null, replace = false } = {}) {
 		if (replace) {
+			generation += 1;
 			isLoading = true;
+			isLoadingMore = false;
 			error = null;
 			loadMoreError = null;
 		} else {
@@ -76,9 +117,10 @@
 			loadMoreError = null;
 		}
 
+		const current = generation;
 		try {
 			const payload = USE_MOCK_GALLERY
-				? getMockBrowsePage(cursor, PAGE_SIZE)
+				? getMockBrowsePage(cursor, PAGE_SIZE, filter)
 				: await (async () => {
 					const response = await fetch(buildBrowseUrl(cursor));
 					if (!response.ok) {
@@ -96,10 +138,12 @@
 					return response.json();
 				})();
 
+			if (current !== generation) return;
 			mergeImages(normalizeImages(payload.items), replace);
 			hasMore = Boolean(payload.hasMore);
 			nextCursor = typeof payload.cursor === 'string' ? payload.cursor : null;
 		} catch (err) {
+			if (current !== generation) return;
 			console.error(err);
 			const message = describeRequestFailure(err?.status, err.message || 'Failed to load images');
 			if (replace) {
@@ -108,14 +152,16 @@
 				loadMoreError = message;
 			}
 		} finally {
-			if (replace) {
-				isLoading = false;
-			} else {
-				isLoadingMore = false;
+			if (current === generation) {
+				if (replace) {
+					isLoading = false;
+				} else {
+					isLoadingMore = false;
+				}
 			}
 		}
 
-		await loadMoreIfSentinelVisible();
+		if (current === generation) await loadMoreIfSentinelVisible();
 	}
 
 	// IntersectionObserver only fires when visibility changes. On a tall screen the sentinel can
@@ -139,7 +185,9 @@
 	}
 
 	onMount(() => {
+		filter = readTagFilter(new URL(window.location.href).searchParams);
 		fetchPage({ replace: true });
+		loadTagSummary();
 
 		observer = new IntersectionObserver(
 			(entries) => {
@@ -177,6 +225,25 @@
 <div class="browse-shell">
 	<h2>Browse Images</h2>
 
+	{#if tagSummary && (tagSummary.tags.length > 0 || isFiltered)}
+		<nav class="tag-bar" aria-label="Filter by tag">
+			<button type="button" class="tag-chip" class:selected={!isFiltered} aria-pressed={!isFiltered} onclick={() => applyFilter({ tags: [], untagged: false })}>
+				All <span class="tag-count">{tagSummary.total}</span>
+			</button>
+			{#if tagSummary.untagged > 0 || filter.untagged}
+				<button type="button" class="tag-chip dashed" class:selected={filter.untagged} aria-pressed={filter.untagged} onclick={() => applyFilter({ tags: [], untagged: true })}>
+					Untagged <span class="tag-count">{tagSummary.untagged}</span>
+				</button>
+			{/if}
+			{#each tagSummary.tags as entry (entry.tag)}
+				{@const selected = filter.tags.includes(entry.tag)}
+				<button type="button" class="tag-chip" class:selected aria-pressed={selected} onclick={() => toggleTag(entry.tag)}>
+					{entry.tag} <span class="tag-count">{entry.count}</span>
+				</button>
+			{/each}
+		</nav>
+	{/if}
+
 	{#if isLoading}
 		<div class="state-card loading">
 			<div class="spinner"></div>
@@ -189,6 +256,13 @@
 			<div class="actions">
 				<button type="button" class="primary-action" onclick={retryInitialLoad}>Try Again</button>
 				<a class="secondary-action" href="/random">Open Random</a>
+			</div>
+		</div>
+	{:else if images.length === 0 && isFiltered}
+		<div class="state-card">
+			<h3>{filter.untagged ? 'Everything is tagged' : 'Nothing has all of these tags'}</h3>
+			<div class="actions">
+				<button type="button" class="primary-action" onclick={() => applyFilter({ tags: [], untagged: false })}>Show Everything</button>
 			</div>
 		</div>
 	{:else if images.length === 0}
@@ -263,6 +337,49 @@
 		font-size: clamp(2.1rem, 4vw, 3.2rem);
 		font-weight: 800;
 		letter-spacing: -0.04em;
+	}
+
+	.tag-bar {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 8px;
+		margin: -8px auto 24px;
+		max-width: 1100px;
+	}
+
+	.tag-chip {
+		padding: 8px 16px;
+		border-radius: 999px;
+		border: 1px solid rgba(44, 62, 80, 0.18);
+		background: rgba(255, 255, 255, 0.95);
+		color: #2c3e50;
+		font-family: 'Montserrat', sans-serif;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.tag-chip:hover {
+		border-color: rgba(44, 62, 80, 0.35);
+	}
+
+	.tag-chip.dashed:not(.selected) {
+		border-style: dashed;
+	}
+
+	.tag-chip.selected {
+		background-color: #e74c3c;
+		border-color: #e74c3c;
+		color: white;
+		box-shadow: 0 8px 18px rgba(231, 76, 60, 0.18);
+	}
+
+	.tag-count {
+		margin-left: 4px;
+		font-weight: 500;
+		opacity: 0.7;
 	}
 
 	.gallery-panel {

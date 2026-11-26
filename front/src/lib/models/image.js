@@ -6,7 +6,16 @@
  * @property {string|null} [ext] - Original file extension.
  * @property {'image'|'video'} [kind] - Media kind inferred from extension.
  * @property {string|null} dateAdded - ISO timestamp string when the picture was added (or null if unknown).
+ * @property {string[]} tags - Tags set from the desktop app (sorted, lowercase); empty when untagged.
  */
+
+/**
+ * @param {any} value
+ * @returns {string[]}
+ */
+function normalizeTags(value) {
+  return Array.isArray(value) ? value.filter((tag) => typeof tag === 'string' && tag.length > 0) : [];
+}
 
 const VIDEO_EXTENSIONS = new Set(['webm', 'mp4']);
 
@@ -45,7 +54,7 @@ export function normalizeImageItem(item) {
     const id = base ? (base.includes('.') ? base.split('.')[0] : base) : null;
     if (!id) return null;
     const ext = getExtFromStringValue(item);
-    return { id, ext, kind: getMediaKindFromExt(ext), dateAdded: null };
+    return { id, ext, kind: getMediaKindFromExt(ext), dateAdded: null, tags: [] };
   }
 
   if (typeof item === 'object') {
@@ -59,11 +68,37 @@ export function normalizeImageItem(item) {
       id,
       ext,
       kind: getMediaKindFromExt(ext),
-      dateAdded: typeof dateAdded === 'string' ? dateAdded : (dateAdded?.toString?.() ?? null)
+      dateAdded: typeof dateAdded === 'string' ? dateAdded : (dateAdded?.toString?.() ?? null),
+      tags: normalizeTags(item.tags)
     };
   }
 
   return null;
+}
+
+/**
+ * The browse filter in the page URL: `?tags=a,b` (items with all of them) or `?untagged=1`.
+ * @param {URLSearchParams} params
+ * @returns {{ tags: string[], untagged: boolean }}
+ */
+export function readTagFilter(params) {
+  const untagged = params.get('untagged') === '1';
+  const tags = untagged
+    ? []
+    : [...new Set((params.get('tags') || '').split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
+  return { tags, untagged };
+}
+
+/**
+ * Writes a browse filter into query parameters (removing it when empty).
+ * @param {URLSearchParams} params
+ * @param {{ tags: string[], untagged: boolean }} filter
+ */
+export function writeTagFilter(params, filter) {
+  params.delete('tags');
+  params.delete('untagged');
+  if (filter.untagged) params.set('untagged', '1');
+  else if (filter.tags.length > 0) params.set('tags', filter.tags.join(','));
 }
 
 /**

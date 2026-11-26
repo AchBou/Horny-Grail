@@ -2,11 +2,13 @@
     import { onMount } from 'svelte';
     import { USE_MOCK_GALLERY, buildApiUrl, buildFileUrl, buildMockFileUrl } from '$lib/config/publicEnv.js';
     import { getMockItemById } from '$lib/mocks/gallery.js';
-    import { getMediaKindFromExt } from '$lib/models/image.js';
+    import { getMediaKindFromExt, normalizeImageItem } from '$lib/models/image.js';
 
     let imageUrl = $state('');
     let mediaKind = $state('image');
     let mediaExt = $state('');
+    /** @type {string[]} */
+    let mediaTags = $state([]);
     let isLoading = $state(true);
     let error = $state(null);
     let errorTitle = $state('Unable to load item');
@@ -79,6 +81,7 @@
             errorTitle = 'Unable to load item';
             imageUrl = '';
             mediaExt = '';
+            mediaTags = [];
             videoControlsEnabled = false;
             id = getCurrentIdFromPath();
 
@@ -113,6 +116,7 @@
             const ext = item?.ext || 'jpeg';
             mediaExt = typeof ext === 'string' ? ext.toLowerCase() : '';
             mediaKind = getMediaKindFromExt(ext);
+            mediaTags = normalizeImageItem(item)?.tags ?? [];
             imageUrl = USE_MOCK_GALLERY ? buildMockFileUrl(id) : buildFileUrl(id, ext);
         } catch (e) {
             console.error(e);
@@ -176,6 +180,14 @@
             </div>
         {/if}
     </div>
+
+    {#if mediaTags.length > 0 && !isLoading && !error}
+        <nav class="item-tags" aria-label="Tags">
+            {#each mediaTags as tag (tag)}
+                <a class="item-tag" href={`/browse?tags=${encodeURIComponent(tag)}`}>{tag}</a>
+            {/each}
+        </nav>
+    {/if}
 
     <div class="controls">
         {#if mediaKind === 'video' && imageUrl && !isLoading && !error && !isPlayerVideoExt(mediaExt)}
@@ -255,6 +267,32 @@
         max-height: 70vh;
         object-fit: contain;
         border-radius: 4px;
+    }
+
+    .item-tags {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 20px;
+    }
+
+    .item-tag {
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(44, 62, 80, 0.18);
+        background: rgba(255, 255, 255, 0.95);
+        color: #2c3e50;
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+
+    .item-tag:hover {
+        border-color: #e74c3c;
+        color: #e74c3c;
     }
 
     .controls {
