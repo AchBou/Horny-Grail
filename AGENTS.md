@@ -61,7 +61,7 @@ Serverless app:
 cd serverless/horny-grail-app
 npm install
 npm run test
-sam build
+npm run build       # sam build via npm, so SAM finds the project's esbuild
 sam local start-api
 sam deploy --guided
 ```
@@ -122,7 +122,7 @@ Choose checks based on the area changed:
 - Mobile app UI or routing: run `npm run check` (svelte-check) and `npm run test` in `local/mobile-app/`; run `npm run cap:sync` when changing Capacitor-facing behavior or native plugin wiring.
 - Desktop Svelte code: run `npm run check` in `local/desktop-app/`; run `npm run build` for frontend bundle changes and `npm run tauri -- build` when Tauri packaging or bundled resources change.
 - Tauri Rust code: run `cargo check` and `cargo test --lib` in `local/desktop-app/src-tauri/`.
-- Serverless handlers: run `npm run test` in `serverless/horny-grail-app/`; run `sam build` after template or dependency changes.
+- Serverless handlers: run `npm run test` in `serverless/horny-grail-app/`; run `npm run build` (not bare `sam build`) after template or dependency changes. Functions are bundled with esbuild (`Metadata` in `template.yaml`): each is one file named after its `src/functions/*.mjs` entry, and the handler is `<name>.handler`.
 
 If dependencies are missing and installing them is outside the current task, report that verification was not run.
 

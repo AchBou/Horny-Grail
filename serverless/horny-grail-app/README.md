@@ -139,10 +139,10 @@ npm install
 npm run test
 ```
 
-Build or run the local API:
+Build or run the local API. Each function is bundled with esbuild into one small file; run the build through npm so SAM finds the project's esbuild (bare `sam build` fails with "Cannot find esbuild"):
 
 ```bash
-sam build
+npm run build
 sam local start-api
 ```
 
@@ -160,7 +160,7 @@ The local API uses the handler environment mappings in `env.json` or another SAM
 First deploy:
 
 ```bash
-sam build
+npm run build
 sam deploy --guided
 ```
 
@@ -322,6 +322,6 @@ If the collection grows into the tens of thousands, cache the item list per cont
 Run these checks when changing backend code or infrastructure:
 
 - `npm run test`
-- `sam build`
+- `npm run build`
 
 For template changes that affect IAM, S3 permissions, or API routes, also verify the generated CloudFormation changeset before deployment.

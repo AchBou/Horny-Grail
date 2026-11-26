@@ -74,7 +74,7 @@ Backend:
 cd serverless/horny-grail-app
 npm install
 npm run test
-sam build
+npm run build
 sam local start-api
 ```
 
@@ -110,7 +110,7 @@ Use checks that match the area changed:
 - `local/mobile-app/`: `npm run check`, `npm run cap:sync`
 - `local/desktop-app/`: `npm run check`, `npm run build`, `npm run tauri -- build`
 - `local/desktop-app/src-tauri/`: `cargo check`
-- `serverless/horny-grail-app/`: `npm run test`, `sam build`
+- `serverless/horny-grail-app/`: `npm run test`, `npm run build`
 
 ## Documentation Map
 
