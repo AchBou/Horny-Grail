@@ -2,6 +2,8 @@
   import { onDestroy, tick } from "svelte";
   import TagEditor from "./TagEditor.svelte";
   import { fetchTagSummary, fetchWatchPage, updateItemTags } from "$lib/functions/tags.js";
+  import { deleteFromGrail, fetchDeletedItems, restoreToGrail } from "$lib/functions/grailItems.js";
+  import type { DeletedItem } from "$lib/functions/grailItems.js";
 
   // The Watch tab: a shuffled feed of everything in the Grail. Open an item to view it full
   // size and tag it on the spot; ←/→ move through the feed, Esc closes the viewer.
@@ -38,6 +40,19 @@
 
   let openIndex = $state<number | null>(null);
   let pendingSaves = $state(0);
+
+  // Delete from the Grail. Deleted items leave the feed at once; an Undo bar offers to bring
+  // the last one back, and the Deleted view lists everything still restorable (30 days).
+  // The server's item list can lag a minute, so items deleted here stay hidden this session.
+  const hiddenIds = new Set<string>();
+  let undo = $state<{ item: WatchItem; index: number } | null>(null);
+  let undoTimer: ReturnType<typeof setTimeout> | null = null;
+  let deleting = $state(false);
+  let showDeleted = $state(false);
+  let deletedItems = $state<DeletedItem[]>([]);
+  let deletedLoading = $state(false);
+  let restoring = $state<{ [id: string]: boolean }>({});
+  let noticeMessage = $state("");
   let sentinel: HTMLElement | undefined = $state();
   const openItem = $derived(openIndex == null ? null : items[openIndex] ?? null);
 
@@ -79,7 +94,7 @@
       const page = await fetchWatchPage({ cursor, tags: filterTags, untagged: untaggedOnly });
       if (current !== generation) return;
       const known = new Set(items.map((item) => item.id));
-      items = [...items, ...page.items.filter((item: WatchItem) => !known.has(item.id))];
+      items = [...items, ...page.items.filter((item: WatchItem) => !known.has(item.id) && !hiddenIds.has(item.id))];
       cursor = page.cursor;
       hasMore = page.hasMore;
     } catch (error) {
@@ -92,21 +107,123 @@
   }
 
   function toggleFilterTag(tag: string): void {
+    showDeleted = false;
     untaggedOnly = false;
     filterTags = filterTags.includes(tag) ? filterTags.filter((value) => value !== tag) : [...filterTags, tag];
     void restart();
   }
 
   function showAll(): void {
+    showDeleted = false;
     untaggedOnly = false;
     filterTags = [];
     void restart();
   }
 
   function showUntagged(): void {
+    showDeleted = false;
     untaggedOnly = true;
     filterTags = [];
     void restart();
+  }
+
+  function clearUndo(): void {
+    if (undoTimer) clearTimeout(undoTimer);
+    undoTimer = null;
+    undo = null;
+  }
+
+  /** Deletes the open item, moves the viewer to the next one, and offers Undo for a while. */
+  async function deleteOpenItem(): Promise<void> {
+    if (openIndex == null || deleting) return;
+    const index = openIndex;
+    const item = items[index];
+    if (!item) return;
+
+    deleting = true;
+    errorMessage = "";
+    try {
+      await deleteFromGrail(item.id);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Deleting failed";
+      deleting = false;
+      return;
+    }
+    deleting = false;
+
+    hiddenIds.add(item.id);
+    items = items.filter((entry) => entry.id !== item.id);
+    totalCount = Math.max(0, totalCount - 1);
+    if (items.length === 0) {
+      openIndex = null;
+    } else {
+      openIndex = Math.min(index, items.length - 1);
+      if (openIndex >= items.length - 3 && hasMore) void loadMore();
+    }
+
+    clearUndo();
+    undo = { item, index };
+    undoTimer = setTimeout(clearUndo, 10000);
+  }
+
+  async function undoDelete(): Promise<void> {
+    if (!undo) return;
+    const { item, index } = undo;
+    clearUndo();
+    try {
+      await restoreToGrail(item.id);
+      hiddenIds.delete(item.id);
+      const at = Math.min(index, items.length);
+      items = [...items.slice(0, at), item, ...items.slice(at)];
+      totalCount += 1;
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Restoring failed";
+    }
+  }
+
+  async function openDeletedView(): Promise<void> {
+    showDeleted = true;
+    openIndex = null;
+    deletedLoading = true;
+    errorMessage = "";
+    try {
+      deletedItems = await fetchDeletedItems();
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Loading deleted items failed";
+    } finally {
+      deletedLoading = false;
+    }
+  }
+
+  async function restoreDeleted(item: DeletedItem): Promise<void> {
+    restoring[item.id] = true;
+    errorMessage = "";
+    try {
+      await restoreToGrail(item.id);
+      hiddenIds.delete(item.id);
+      deletedItems = deletedItems.filter((entry) => entry.id !== item.id);
+      totalCount += 1;
+      noticeMessage = "Restored. It is back in the feed.";
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Restoring failed";
+    } finally {
+      restoring[item.id] = false;
+    }
+  }
+
+  function closeDeletedView(): void {
+    showDeleted = false;
+  }
+
+  function formatDate(value: string | null): string {
+    return value ? new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "unknown";
+  }
+
+  function daysLeft(value: string | null): string {
+    if (!value) return "";
+    const days = Math.ceil((new Date(value).getTime() - Date.now()) / 86400000);
+    if (days <= 1) return "Last day";
+    return `${days} days left`;
   }
 
   function setItemTags(id: string, tags: string[]): void {
@@ -173,32 +290,98 @@
 
   onDestroy(() => {
     generation += 1;
+    if (undoTimer) clearTimeout(undoTimer);
   });
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
+{#snippet trashIcon()}
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </svg>
+{/snippet}
+
+{#snippet closeIcon()}
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+{/snippet}
+
 <section class="watch">
-  <div class="watch-filters" aria-label="Filter the feed">
-    <button class="filter-chip" class:selected={!untaggedOnly && filterTags.length === 0} onclick={showAll}>
-      All <span class="count">{totalCount || ''}</span>
-    </button>
-    <button class="filter-chip untagged" class:selected={untaggedOnly} onclick={showUntagged} title="Items with no tags yet">
-      Untagged <span class="count">{untaggedCount}</span>
-    </button>
-    {#each tagCounts as entry (entry.tag)}
-      <button class="filter-chip" class:selected={filterTags.includes(entry.tag)} onclick={() => toggleFilterTag(entry.tag)}>
-        {entry.tag} <span class="count">{entry.count}</span>
+  {#if showDeleted}
+    <div class="deleted-header">
+      <button class="back-button" onclick={closeDeletedView}>‹ Back to the feed</button>
+      <h2>Recently deleted</h2>
+      <span class="deleted-sub">Restore brings an item back with its tags. After 30 days it is gone for good.</span>
+    </div>
+  {:else}
+    <div class="watch-filters" aria-label="Filter the feed">
+      <button class="filter-chip" class:selected={!untaggedOnly && filterTags.length === 0} onclick={showAll}>
+        All <span class="count">{totalCount || ''}</span>
       </button>
-    {/each}
-    <button class="reshuffle" onclick={restart} title="New shuffle (also refreshes expired links)">🔀 Reshuffle</button>
-  </div>
+      <button class="filter-chip untagged" class:selected={untaggedOnly} onclick={showUntagged} title="Items with no tags yet">
+        Untagged <span class="count">{untaggedCount}</span>
+      </button>
+      {#each tagCounts as entry (entry.tag)}
+        <button class="filter-chip" class:selected={filterTags.includes(entry.tag)} onclick={() => toggleFilterTag(entry.tag)}>
+          {entry.tag} <span class="count">{entry.count}</span>
+        </button>
+      {/each}
+      <div class="watch-actions">
+        <button class="quiet-button" onclick={openDeletedView} title="Items deleted in the last 30 days">
+          {@render trashIcon()} Recently deleted
+        </button>
+        <button class="reshuffle" onclick={restart} title="New shuffle (also refreshes expired links)">🔀 Reshuffle</button>
+      </div>
+    </div>
+  {/if}
 
   {#if errorMessage}
     <p class="watch-error" role="alert">⚠️ {errorMessage}</p>
   {/if}
+  {#if noticeMessage}
+    <p class="watch-notice" role="status">{noticeMessage} <button class="link-button" onclick={() => noticeMessage = ""}>OK</button></p>
+  {/if}
 
-  <div class="watch-grid-wrap">
+  {#if showDeleted}
+    <div class="watch-grid-wrap">
+      {#if deletedLoading}
+        <p class="watch-empty">Loading…</p>
+      {:else if deletedItems.length === 0}
+        <p class="watch-empty">Nothing deleted in the last 30 days.</p>
+      {:else}
+        <ul class="deleted-grid">
+          {#each deletedItems as item (item.id)}
+            <li class="deleted-card">
+              <div class="tile" title={item.tags.length ? item.tags.join(', ') : 'No tags'}>
+                {#if item.thumbnailUrl}<img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" />{/if}
+                {#if item.ext === 'mp4' || item.ext === 'webm'}<span class="tile-video">▶</span>{/if}
+              </div>
+              <div class="deleted-meta">
+                <span class="days-left" title="Deleted {formatDate(item.deletedAt)}, gone for good on {formatDate(item.restorableUntil)}">
+                  {daysLeft(item.restorableUntil)}
+                </span>
+                <button class="restore-button" onclick={() => restoreDeleted(item)} disabled={restoring[item.id]}>
+                  {restoring[item.id] ? 'Restoring…' : 'Restore'}
+                </button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+
+  {#if undo}
+    <div class="toast" role="status">
+      <span>Deleted from the Grail</span>
+      <button class="toast-undo" onclick={undoDelete}>Undo</button>
+      <button class="toast-close" onclick={clearUndo} aria-label="Dismiss">{@render closeIcon()}</button>
+    </div>
+  {/if}
+
+  <div class="watch-grid-wrap" class:hidden={showDeleted}>
     {#if items.length === 0 && !loading}
       <p class="watch-empty">
         {untaggedOnly ? 'Everything is tagged. 🎉' : filterTags.length ? 'No items have all of these tags.' : 'Nothing in the Grail yet.'}
@@ -232,7 +415,16 @@
           {/if}
         {/key}
         <button class="viewer-nav next" onclick={() => step(1)} disabled={openIndex === items.length - 1 && !hasMore} aria-label="Next">›</button>
-        <button class="viewer-close" onclick={() => openIndex = null} aria-label="Close viewer">✕</button>
+        <div class="viewer-toolbar">
+          <button
+            class="icon-button danger"
+            onclick={deleteOpenItem}
+            disabled={deleting}
+            title="Delete from the Grail (restorable for 30 days)"
+            aria-label="Delete from the Grail"
+          >{@render trashIcon()}</button>
+          <button class="icon-button" onclick={() => openIndex = null} title="Close (Esc)" aria-label="Close viewer">{@render closeIcon()}</button>
+        </div>
       </div>
       <div class="viewer-tags">
         {#key openItem.id}
@@ -402,8 +594,7 @@
     object-fit: contain;
   }
 
-  .viewer-nav,
-  .viewer-close {
+  .viewer-nav {
     position: absolute;
     border: none;
     color: white;
@@ -431,14 +622,223 @@
     right: 0.6rem;
   }
 
-  .viewer-close {
+  .viewer-toolbar {
+    position: absolute;
     top: 0.6rem;
     right: 0.6rem;
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 2.4rem;
     height: 2.4rem;
     padding: 0;
-    font-size: 1.1rem;
+    color: #e5e7eb;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: none;
     border-radius: 9999px;
+    box-shadow: none;
+  }
+
+  .icon-button:hover:not(:disabled) {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .icon-button.danger:hover:not(:disabled) {
+    color: #fff;
+    background-color: #dc2626;
+  }
+
+  .icon-button:disabled {
+    opacity: 0.4;
+  }
+
+  /* One Undo toast for the feed and the viewer, above both. */
+  .toast {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.4rem 0.35rem 1rem;
+    font-size: 0.88rem;
+    color: #f9fafb;
+    background-color: #111827;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    animation: toast-in 0.15s ease-out;
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -6px);
+    }
+  }
+
+  .toast-undo {
+    padding: 0.25rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #93c5fd;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  .toast-undo:hover {
+    color: #bfdbfe;
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .toast-close {
+    display: inline-flex;
+    padding: 0.25rem;
+    color: #9ca3af;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  .toast-close:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .link-button {
+    padding: 0 0.3rem;
+    font-size: 0.82rem;
+    color: inherit;
+    background: none;
+    border: none;
+    text-decoration: underline;
+  }
+
+  .link-button:hover {
+    background: none;
+  }
+
+  .watch-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+  }
+
+  .watch-actions .reshuffle {
+    margin-left: 0;
+  }
+
+  .quiet-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.82rem;
+    color: #6b7280;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  .quiet-button:hover {
+    color: inherit;
+    background-color: rgba(127, 127, 127, 0.12);
+  }
+
+  .quiet-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .deleted-header {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.9rem;
+  }
+
+  .deleted-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  .deleted-sub {
+    font-size: 0.82rem;
+    color: #6b7280;
+  }
+
+  .back-button {
+    padding: 0.25rem 0.7rem;
+    font-size: 0.82rem;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  .watch-notice {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #047857;
+  }
+
+  .deleted-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 0.8rem;
+  }
+
+  .deleted-card {
+    border: 1px solid rgba(127, 127, 127, 0.25);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .deleted-card .tile {
+    border-radius: 0;
+  }
+
+  .deleted-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding: 0.45rem 0.55rem;
+  }
+
+  .days-left {
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+
+  .restore-button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #2563eb;
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: 9999px;
+    box-shadow: none;
+  }
+
+  .restore-button:hover:not(:disabled) {
+    color: white;
+    background-color: #2563eb;
+    border-color: #2563eb;
   }
 
   .viewer-tags {
@@ -493,6 +893,20 @@
 
     .watch-error {
       color: #fca5a5;
+    }
+
+    .quiet-button,
+    .deleted-sub,
+    .days-left {
+      color: #9ca3af;
+    }
+
+    .restore-button {
+      color: #60a5fa;
+    }
+
+    .restore-button:hover:not(:disabled) {
+      color: white;
     }
   }
 </style>

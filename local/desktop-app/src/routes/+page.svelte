@@ -8,7 +8,7 @@
   import { uploadThumbnail } from "$lib/functions/uploadThumbnail.js";
   import { computeFileHash } from "$lib/functions/computeFileHash.js";
   import { checkAssetIntegrityByHex } from "$lib/functions/checkAssetIntegrity.js";
-  import { purgeAssetMetadata } from "$lib/functions/purgeAssetMetadata.js";
+  import { deleteFromGrail } from "$lib/functions/grailItems.js";
   import { moveUploadedToRecycleBin } from "$lib/functions/recycleUploaded.js";
   import { fetchTagSummary, updateItemTags } from "$lib/functions/tags.js";
   import TagEditor from "$lib/components/TagEditor.svelte";
@@ -744,13 +744,13 @@
     }
   }
 
-  async function handleAssetPurge(file: FileEntry): Promise<void> {
+  async function handleDeleteFromGrail(file: FileEntry): Promise<void> {
     if (file.isDirectory || !isMediaFile(file.name)) {
       return;
     }
 
     const confirmed = window.confirm(
-      `Delete the DynamoDB metadata entry for ${file.name}? This leaves the local file and uploaded S3 objects untouched.`
+      `Delete ${file.name} from the Grail?\n\nIt disappears from every app now. You can restore it for 30 days from Watch → Deleted, or by uploading this file again. The file on this PC is not touched.`
     );
     if (!confirmed) {
       return;
@@ -761,19 +761,22 @@
       isUploading = true;
 
       const fileHash = fileHashes[file.path] || await computeFileHash(file.path);
-      await purgeAssetMetadata(fileHash);
+      await deleteFromGrail(fileHash);
 
       fileHashes[file.path] = fileHash;
       fileExists[file.path] = false;
       fileCheckStatus[file.path] = "done";
       fileRepairNeeded[file.path] = false;
       fileMissingParts[file.path] = [];
-      uploadStatus[file.path] = "completed";
+      savedTags[file.path] = [];
+      // Back to "New": uploading it again restores it in the Grail.
+      delete uploadStatus[file.path];
       errorMessage = "";
+      noticeMessage = `Deleted ${file.name} from the Grail. Restore it from Watch → Deleted within 30 days.`;
     } catch (error) {
-      console.error("Error purging asset metadata:", error);
+      console.error("Error deleting from the Grail:", error);
       uploadStatus[file.path] = "failed";
-      errorMessage = `Failed to purge ${file.name}: ${getErrorDetail(error)}`;
+      errorMessage = `Failed to delete ${file.name} from the Grail: ${getErrorDetail(error)}`;
     } finally {
       const activeUploads = Object.values(uploadStatus).filter((status) =>
         status === "uploading" || status === "repairing" || status === "thumbnailing" || status === "purging"
@@ -1116,15 +1119,15 @@
                       {/if}
                     </button>
                     <button
-                      onclick={() => handleAssetPurge(file)}
+                      onclick={() => handleDeleteFromGrail(file)}
                       class="purge-button"
-                      title="Delete metadata entry from DynamoDB"
+                      title="Delete from the Grail (restorable for 30 days)"
                       disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging")}
                     >
                       {#if uploadStatus[file.path] === "purging"}
-                        Purging...
+                        Deleting...
                       {:else}
-                        Purge
+                        Delete
                       {/if}
                     </button>
                     <button
@@ -1157,15 +1160,15 @@
                       {/if}
                     </button>
                     <button
-                      onclick={() => handleAssetPurge(file)}
+                      onclick={() => handleDeleteFromGrail(file)}
                       class="purge-button"
-                      title="Delete metadata entry from DynamoDB"
+                      title="Delete from the Grail (restorable for 30 days)"
                       disabled={isUploading && (uploadStatus[file.path] === "uploading" || uploadStatus[file.path] === "repairing" || uploadStatus[file.path] === "thumbnailing" || uploadStatus[file.path] === "purging")}
                     >
                       {#if uploadStatus[file.path] === "purging"}
-                        Purging...
+                        Deleting...
                       {:else}
-                        Purge
+                        Delete
                       {/if}
                     </button>
                     <button
